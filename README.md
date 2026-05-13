@@ -51,9 +51,21 @@ Start with:
 - `wiki/syntheses/GitHub Collaboration Task Breakdown.md`
 - `wiki/syntheses/ROS 2 Package Architecture.md`
 
-## PickAndAlign skeleton status
+## PickAndAlign no-motion status
 
-`PickAndAlignActionServer` remains `SKELETON_ONLY`. It publishes the PDF-derived state names and returns `success=false`; it does not call calibrated perception, RG2, MoveItPy, TF lookup, or real motion. TODO is limited to wiring those measured and verified subsystems after the calibration and safety gates pass.
+`PickAndAlignActionServer` defaults to `execution_mode=no_motion`. It waits for a
+`PoseStamped` on `/jarvis/tumbler_dispenser/tumbler_pose`, requires
+`header.frame_id: base_link` by default, computes pick/approach/lift poses for
+feedback/logging, and returns `NO_MOTION_PICK_SEQUENCE_OK` after
+`DONE_NO_MOTION`. It does not call MoveIt, Doosan motion, or real RG2 hardware.
+`execution_mode=skeleton` is still available for the original `SKELETON_ONLY`
+contract.
+
+No-motion action smoke:
+
+```bash
+/home/ssu/Azas/tools/smoke_pick_and_align_no_motion.sh
+```
 
 ## TF debug dry-run
 
