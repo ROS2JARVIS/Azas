@@ -60,6 +60,7 @@ run_step "Script syntax" bash -lc '
   "${RUN_DIR}/run_robot_dryrun.sh" \
   "${RUN_DIR}/run_robot_real.sh" \
   "${RUN_DIR}/run_rule_based_dispenser_then_shake_real.sh" \
+  "${RUN_DIR}/run_rule_based_dispenser_then_shake_sim.sh" \
   "${RUN_DIR}/run_rule_based_shake_real.sh" \
   "${SMOKE_DIR}/smoke_fake_hardware_path.sh" \
   "${SMOKE_DIR}/smoke_tumbler_shake_sequence.sh" \
