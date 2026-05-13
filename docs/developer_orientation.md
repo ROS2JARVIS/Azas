@@ -94,6 +94,28 @@ STT
 | `rg2_trigger.launch.py` | real support | RG2 Trigger wrapper |
 | `tumbler_dispenser_gazebo.launch.py` | visual preview | Gazebo asset preview, full physics pipeline 아님 |
 
+## launch 정리 판정
+
+아래는 현재 코드 참조와 역할 기준의 정리 후보입니다. 바로 삭제하지 말고, 한 번의 PR에서 `deprecated/experimental` 표기 후 다음 PR에서 제거합니다.
+
+| launch | 판정 | 이유 | 권장 조치 |
+| --- | --- | --- | --- |
+| `mvp_bringup.launch.py` | 삭제 후보 | 오래된 MVP 골격입니다. 현재 컵 pose bridge, jarvis floor-place, real gate 흐름을 쓰지 않습니다. | `deprecated_mvp_bringup.launch.py`로 이름 변경 또는 제거 |
+| `hardware_free_demo.launch.py` | 통합 후보 | `tumbler_floor_place_demo.launch.py`와 역할이 겹칩니다. 다만 voice/LLM/demo pose까지 묶는 차이가 있습니다. | RViz demo는 jarvis 쪽으로 통일하고, voice demo만 남길지 결정 |
+| `simulated_cup_grasp_dryrun.launch.py` | 통합 후보 | simulated cup detection + floor-place dry-run입니다. fake/smoke 경로와 목적이 겹칩니다. | `tools/smoke` 또는 `tools/run` 진입점으로 흡수 |
+| `gpd_grasp_adapter.launch.py` | 실험 보존 | GPD 외부 grasp adapter 경계입니다. 현재 메인 파이프라인은 아니지만 독립 실험 가치가 있습니다. | `experimental_gpd_grasp_adapter.launch.py`로 이름 명확화 |
+| `tumbler_floor_place_demo.launch.py` | 유지 | 컵 이동 단독 RViz 확인용입니다. | 단독 stage demo로 유지 |
+| `tumbler_dispenser_then_shake_demo.launch.py` | 유지 | 현재 사용자가 보는 통합 RViz demo의 권장 진입점입니다. | 대표 sim launch로 유지 |
+| `tumbler_dispenser_gazebo.launch.py` | 실험 보존 | Gazebo visual preview일 뿐, 현재 full physics/control 검증은 아닙니다. | `experimental_` 표기 또는 README 경고 유지 |
+
+정리 원칙:
+
+- `tools/run`에서 직접 쓰는 launch는 보존합니다.
+- smoke/check에서 검증하는 launch는 보존합니다.
+- 같은 목적의 demo launch가 둘 이상이면 하나만 공개 진입점으로 남깁니다.
+- 실제 로봇을 움직일 수 있는 launch는 직접 실행용으로 노출하지 말고 `tools/run` gate script 뒤에 둡니다.
+- 삭제 전에는 `rg <launch-name>`로 참조를 확인하고, COMMANDS/README/docs 링크를 같이 수정합니다.
+
 ## 대표 명령만 먼저 사용
 
 ### 전체 no-motion 준비도
