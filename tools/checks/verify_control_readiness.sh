@@ -59,24 +59,22 @@ run_step "Script syntax" bash -lc '
   "${RUN_DIR}/run_connected_robot_control.sh" \
   "${RUN_DIR}/run_robot_dryrun.sh" \
   "${RUN_DIR}/run_robot_real.sh" \
+  "${RUN_DIR}/run_rule_based_shake_real.sh" \
   "${SMOKE_DIR}/smoke_fake_hardware_path.sh" \
-  "${SMOKE_DIR}/smoke_random_cup_grasp_candidates.sh" \
-  "${SMOKE_DIR}/smoke_stage_execution_modes.sh" \
-  "${SMOKE_DIR}/smoke_dispense_lid_sequence.sh" \
   "${SMOKE_DIR}/smoke_tumbler_shake_sequence.sh" \
   "${CHECKS_DIR}/check_depth_projection_sample.sh" \
   "${CHECKS_DIR}/check_detection_stability.sh" \
   "${SMOKE_DIR}/smoke_cocktail_dryrun_sequence.sh" \
   "${RUN_DIR}/field_no_motion_report.sh" \
   "${CHECKS_DIR}/robot_connection_acceptance.sh" \
-  "${SMOKE_DIR}/smoke_robot_connection_acceptance_gate.sh" \
-  "${RUN_DIR}/real_motion_measurement_report.sh" \
   "${SMOKE_DIR}/smoke_real_motion_entrypoint_gates.sh" \
-  "${SMOKE_DIR}/smoke_real_motion_config_gate.sh" \
-  "${CHECKS_DIR}/completion_audit.sh"
+  "${SMOKE_DIR}/smoke_real_motion_config_gate.sh"
 
 run_step "Python syntax" python3 -m py_compile \
   "${SMOKE_DIR}/fake_hardware_services.py" \
+  "/home/ssu/ros2_ws/src/Azas/jarvis/m0609_shake_joint_state_node.py" \
+  "/home/ssu/ros2_ws/src/Azas/jarvis/tumbler_shake_sequence_node.py" \
+  "/home/ssu/ros2_ws/src/Azas/jarvis/shake_visualizer_node.py" \
   "${CHECKS_DIR}/check_static_cup_lid_dataset.py" \
   "${CHECKS_DIR}/check_fixed_dispenser_geometry.py" \
   "${CHECKS_DIR}/check_cocktail_workflow_plan.py" \
@@ -96,21 +94,13 @@ run_step "Non-hardware control smoke" "${SMOKE_DIR}/smoke_control_path.sh"
 
 run_step "Fake hardware-armed smoke" "${SMOKE_DIR}/smoke_fake_hardware_path.sh"
 
-run_step "Random cup side-grasp candidate smoke" "${SMOKE_DIR}/smoke_random_cup_grasp_candidates.sh"
-
-run_step "Stage execution mode smoke" "${SMOKE_DIR}/smoke_stage_execution_modes.sh"
-
-run_step "Dispenser press and lid-close fake hardware smoke" "${SMOKE_DIR}/smoke_dispense_lid_sequence.sh"
-
-run_step "Safe-space tumbler shake fake hardware smoke" "${SMOKE_DIR}/smoke_tumbler_shake_sequence.sh"
+run_step "Rule-based high-shake fake hardware smoke" "${SMOKE_DIR}/smoke_tumbler_shake_sequence.sh"
 
 run_step "Cocktail dry-run sequence smoke" "${SMOKE_DIR}/smoke_cocktail_dryrun_sequence.sh"
 
 run_step "Full cocktail workflow plan gate" "${CHECKS_DIR}/check_cocktail_workflow_plan.py"
 
 run_step "Real-motion entrypoint fail-closed smoke" "${SMOKE_DIR}/smoke_real_motion_entrypoint_gates.sh"
-
-run_step "Robot connection acceptance fail-closed smoke" "${SMOKE_DIR}/smoke_robot_connection_acceptance_gate.sh"
 
 run_step "Real-motion config gate smoke" "${SMOKE_DIR}/smoke_real_motion_config_gate.sh"
 

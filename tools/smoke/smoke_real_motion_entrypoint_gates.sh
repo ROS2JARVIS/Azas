@@ -22,6 +22,10 @@ expect_fail "missing strict stamp" env \
   LIVE_GATE_STAMP="${STAMP}" \
   /home/ssu/Azas/tools/run/run_robot_real.sh
 
+expect_fail "shake missing strict stamp" env \
+  LIVE_GATE_STAMP="${STAMP}" \
+  /home/ssu/Azas/tools/run/run_rule_based_shake_real.sh
+
 {
   echo "strict=false"
   echo "timestamp=$(date -Is)"
@@ -29,6 +33,10 @@ expect_fail "missing strict stamp" env \
 expect_fail "non-strict stamp" env \
   LIVE_GATE_STAMP="${STAMP}" \
   /home/ssu/Azas/tools/run/run_robot_real.sh
+
+expect_fail "shake non-strict stamp" env \
+  LIVE_GATE_STAMP="${STAMP}" \
+  /home/ssu/Azas/tools/run/run_rule_based_shake_real.sh
 
 {
   echo "strict=true"
@@ -38,5 +46,10 @@ expect_fail "strict stamp but placeholder config" env \
   LIVE_GATE_STAMP="${STAMP}" \
   LIVE_GATE_MAX_AGE_SEC=600 \
   /home/ssu/Azas/tools/run/run_robot_real.sh
+
+expect_fail "shake strict stamp but placeholder config" env \
+  LIVE_GATE_STAMP="${STAMP}" \
+  LIVE_GATE_MAX_AGE_SEC=600 \
+  /home/ssu/Azas/tools/run/run_rule_based_shake_real.sh
 
 echo "[PASS] real-motion entrypoint fail-closed checks passed"
