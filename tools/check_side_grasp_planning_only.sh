@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="${ROOT_DIR:-/home/ssu/Azas}"
 NODE_FILE="${ROOT_DIR}/src/azas_motion/azas_motion/alignment_executor_node.py"
-SWEEP_TOOL="${ROOT_DIR}/tools/sweep_side_grasp_planning_candidates.py"
+SWEEP_TOOL="${ROOT_DIR}/tools/pick/sweep_side_grasp_planning_candidates.py"
 
 echo "[Azas] Side grasp planning-only readiness check"
 echo "[INFO] If this repo was rebuilt recently, run:"

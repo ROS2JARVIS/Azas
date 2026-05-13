@@ -78,12 +78,14 @@ HOME
 -> DONE
 ```
 
-`OBSERVE_CUP_POSE` is a high camera/hand viewpoint candidate, not an automatic
-robot command. The default candidate is `base_link` pose
-`x=0.35, y=-0.25, z=0.45, q=(0,0,0,1)`, planned with
-`planning_group=manipulator` and `ee_link=tool0`. The action reports
-`PLAN_OBSERVE_CUP_POSE_NO_MOTION` and `DETECT_CUP_PENDING` before waiting for
-the tumbler pose, but it does not execute the observe move.
+`OBSERVE_CUP_POSE` is now handled by the supervised single-pick tool as a
+HOME-based joint target, because Cartesian observe IK produced confusing wrist
+solutions. The default sequence starts at HOME
+`j1=0, j2=0, j3=90, j4=0, j5=90, j6=0`, then moves to observe
+`j1=0, j2=25, j3=65, j4=0, j5=135, j6=0`. The positive `joint_2` observe
+target lifts the arm forward; `joint_5=135` is an operator-tunable camera
+direction candidate for seeing the cup/work area. This is not a calibrated
+camera pose guarantee.
 
 Planning-only observe check:
 
@@ -91,13 +93,15 @@ Planning-only observe check:
 /home/ssu/Azas/tools/check_observe_pose_planning_only.sh
 ```
 
-Supervised observe entrypoint defaults to planning-only. Real motion remains
-refused in this batch even if the explicit flags are provided, because the
-accepted MoveIt execution contract and operator clearance are not implemented:
+Supervised observe/pick entrypoint:
 
 ```bash
-python3 /home/ssu/Azas/tools/run_supervised_observe_pose.py
+python3 /home/ssu/Azas/tools/run_supervised_real_single_cup_pick.py --help
 ```
+
+Implementation files are organized under `tools/pick/`; root-level `tools/*.py`
+files are compatibility wrappers while older docs and teammate commands are
+migrated. See `tools/README.md` before adding new scripts.
 
 After an operator-approved observe pose is reached in a future batch, capture
 the cup scene with RealSense and export a detector frame:
