@@ -26,6 +26,9 @@
 | `run_doosan_real_no_motion_m0609.sh` | 실제 Doosan 비-모션 연결 |
 | `run_robot_dryrun.sh` | 카메라 기반 드라이런 |
 | `run_robot_real.sh` | 실제 로봇 모션 실행 |
+| `run_rule_based_dispenser_then_shake_sim.sh` | RViz에서 디스펜서 pre-place 이동 후 high-shake 시뮬레이션 |
+| `run_rule_based_dispenser_then_shake_real.sh` | 실제 로봇에서 디스펜서 pre-place 이동 후 high-shake 실행 |
+| `run_rule_based_shake_real.sh` | 실제 로봇 high-shake 단독 실행 |
 | `run_connected_robot_control.sh` | 연결 로봇 제어 통합 |
 | `run_supervised_observe_pose.py` | 감독 하에 관측 포즈 이동 |
 | `field_no_motion_report.sh` | 현장 비-모션 종합 보고서 |

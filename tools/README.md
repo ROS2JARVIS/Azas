@@ -2,6 +2,9 @@
 
 현장 운용 도구 모음입니다. 역할별 서브디렉토리로 정리되어 있습니다.
 
+신규 개발자는 먼저 [docs/developer_orientation.md](../docs/developer_orientation.md)를 읽으세요.
+이 문서가 `src/`, `tools/`, launch 파일의 책임과 현재 권장 진입점을 정리합니다.
+
 ## 먼저 외울 대표 명령
 
 `tools/` 아래에는 내부 점검용 `.sh`가 많습니다. 신규 협업자는 전부 외우지 말고 아래 대표 명령만 먼저 사용하세요.
@@ -13,6 +16,8 @@
 | 카메라 기반 드라이런 | `bash tools/run/run_robot_dryrun.sh` |
 | 실제 모션 전 게이트 | `STRICT=true GATE_STAMP=/tmp/azas_live_hardware_gates_passed bash tools/checks/check_live_hardware_gates.sh` |
 | 실제 모션 진입점 | `bash tools/run/run_robot_real.sh` |
+| 디스펜서 이동 + 쉐이킹 RViz | `bash tools/run/run_rule_based_dispenser_then_shake_sim.sh` |
+| 디스펜서 이동 + 쉐이킹 실제 로봇 | `bash tools/run/run_rule_based_dispenser_then_shake_real.sh` |
 
 ## 서브디렉토리 구조
 
