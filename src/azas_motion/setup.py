@@ -23,6 +23,7 @@ setup(
             "collision_obstacle_legacy = azas_motion.collision_obstacle_legacy:main",
             "dispenser_sequence_preview_node = azas_motion.dispenser_sequence_preview_node:main",
             "mp_basic_legacy = azas_motion.mp_basic_legacy:main",
+            "pick_and_place_legacy = azas_motion.pick_and_place_legacy:main",
             "side_grasp_ik_preview_node = azas_motion.side_grasp_ik_preview_node:main",
         ],
     },
