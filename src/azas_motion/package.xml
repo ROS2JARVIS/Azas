@@ -9,8 +9,10 @@
   <buildtool_depend>ament_python</buildtool_depend>
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>shape_msgs</depend>
   <depend>visualization_msgs</depend>
   <depend>azas_interfaces</depend>
   <exec_depend>dsr_moveit_config_m0609</exec_depend>
