@@ -44,7 +44,7 @@ def generate_launch_description():
 
     floor_place_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([FindPackageShare("jarvis"), "launch", "tumbler_floor_place.launch.py"])
+            PathJoinSubstitution([FindPackageShare("azas_bringup"), "launch", "tumbler_floor_place.launch.py"])
         ),
         launch_arguments={
             "selected_dispenser_id": selected_dispenser_id,

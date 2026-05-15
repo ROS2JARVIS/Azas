@@ -21,7 +21,11 @@ setup(
         "console_scripts": [
             "alignment_executor_node = azas_motion.alignment_executor_node:main",
             "dispenser_sequence_preview_node = azas_motion.dispenser_sequence_preview_node:main",
+            "m0609_shake_joint_state_node = azas_motion.m0609_shake_joint_state_node:main",
+            "shake_visualizer_node = azas_motion.shake_visualizer_node:main",
             "side_grasp_ik_preview_node = azas_motion.side_grasp_ik_preview_node:main",
+            "tumbler_floor_place_node = azas_motion.tumbler_floor_place_node:main",
+            "tumbler_shake_sequence_node = azas_motion.tumbler_shake_sequence_node:main",
         ],
     },
 )

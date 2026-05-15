@@ -171,7 +171,7 @@ kill "${FLOOR_STATUS_PID}" 2>/dev/null || true
 wait "${FLOOR_STATUS_PID}" 2>/dev/null || true
 
 echo "[Azas] Stage 2/2: run lifted high-shake while cup remains grasped"
-ros2 launch jarvis tumbler_shake_sequence.launch.py \
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   enable_hardware:=true \
   hardware_confirm:=ENABLE_REAL_ROBOT_MOTION \
   allow_service_control_without_moveit:=true \

@@ -74,7 +74,7 @@ source "${ROOT_DIR}/install/setup.bash"
 source /home/ssu/ros2_ws/install/setup.bash
 set -u
 
-exec ros2 launch jarvis tumbler_shake_sequence.launch.py \
+exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   enable_hardware:=true \
   hardware_confirm:=ENABLE_REAL_ROBOT_MOTION \
   allow_service_control_without_moveit:=true \

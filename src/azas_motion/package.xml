@@ -11,8 +11,11 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>visualization_msgs</depend>
   <depend>azas_interfaces</depend>
+  <exec_depend>dsr_msgs2</exec_depend>
   <exec_depend>dsr_moveit_config_m0609</exec_depend>
   <exec_depend>moveit_py</exec_depend>
   <test_depend>python3-pytest</test_depend>

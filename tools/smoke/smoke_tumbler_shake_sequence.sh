@@ -18,7 +18,6 @@ mkdir -p "${ROS_LOG_DIR}"
 set +u
 source /opt/ros/humble/setup.bash
 source /home/ssu/Azas/install/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
 set -u
 
 assert_no_preexisting_motion_target() {
@@ -121,7 +120,7 @@ if [[ -n "${SERVICE_PREFIX}" ]]; then
   LAUNCH_ARGS+=(service_prefix:="${SERVICE_PREFIX}")
 fi
 
-ros2 launch jarvis tumbler_shake_sequence.launch.py "${LAUNCH_ARGS[@]}" \
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py "${LAUNCH_ARGS[@]}" \
   >"${LOG_FILE}" 2>&1 &
 LAUNCH_PID=$!
 
@@ -174,7 +173,7 @@ BAD_STATUS_FILE="${BAD_STATUS_FILE:-/tmp/azas_smoke_tumbler_shake_bad_status.txt
 rm -f "${BAD_LOG_FILE}" "${BAD_STATUS_FILE}"
 
 echo "[Azas] Checking that unsafe shake space fails closed"
-ros2 launch jarvis tumbler_shake_sequence.launch.py \
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   use_visualizer:=false \
   shake_center_x:=0.58 \
   shake_center_y:=-0.12 \
