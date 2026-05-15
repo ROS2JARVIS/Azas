@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ros2 node:*)",
+      "Bash(python3:*)",
+      "Bash(source /home/deeptree/ros2_ws/install/setup.bash)",
+      "Bash(source /home/deeptree/ws_moveit/install/setup.bash)",
+      "Bash(colcon build:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(find /home/deeptree/ws_moveit/build/moveit_py -name *.cpp)",
+      "Bash(find /home/deeptree/ws_moveit/src -name *.cpp -path */moveit_py/*)",
+      "Bash(grep:*)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//home/deeptree/ros2_ws/src/doosan-robot2/dsr_practice/**)",
+      "Bash(done)",
+      "Bash(sudo apt-get:*)"
+    ]
+  }
+}
