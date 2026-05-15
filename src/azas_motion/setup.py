@@ -20,10 +20,18 @@ setup(
     entry_points={
         "console_scripts": [
             "alignment_executor_node = azas_motion.alignment_executor_node:main",
+            "collision_obstacle_legacy = azas_motion.collision_obstacle_legacy:main",
             "dispenser_sequence_preview_node = azas_motion.dispenser_sequence_preview_node:main",
+            "gear_assembly_legacy = azas_motion.gear_assembly_legacy:main",
             "m0609_shake_joint_state_node = azas_motion.m0609_shake_joint_state_node:main",
+            "mp_basic_legacy = azas_motion.mp_basic_legacy:main",
+            "mp_waypoint_legacy = azas_motion.mp_waypoint_legacy:main",
+            "mp_waypoint_pilz_legacy = azas_motion.mp_waypoint_pilz_legacy:main",
+            "mp_waypoint_pilz_lin_legacy = azas_motion.mp_waypoint_pilz_lin_legacy:main",
+            "pick_and_place_legacy = azas_motion.pick_and_place_legacy:main",
             "shake_visualizer_node = azas_motion.shake_visualizer_node:main",
             "side_grasp_ik_preview_node = azas_motion.side_grasp_ik_preview_node:main",
+            "syrup_pump_press_legacy = azas_motion.syrup_pump_press_legacy:main",
             "tumbler_floor_place_node = azas_motion.tumbler_floor_place_node:main",
             "tumbler_shake_sequence_node = azas_motion.tumbler_shake_sequence_node:main",
         ],
