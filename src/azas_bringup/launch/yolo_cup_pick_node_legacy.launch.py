@@ -23,6 +23,27 @@ def generate_launch_description():
         .to_moveit_configs()
     )
 
+    moveit_params = moveit_config.to_dict()
+    moveit_params["moveit_controller_manager"] = (
+        "moveit_simple_controller_manager/MoveItSimpleControllerManager"
+    )
+    moveit_params["moveit_simple_controller_manager"] = {
+        "controller_names": ["/dsr01/dsr_moveit_controller"],
+        "/dsr01/dsr_moveit_controller": {
+            "type": "FollowJointTrajectory",
+            "action_ns": "follow_joint_trajectory",
+            "default": True,
+            "joints": [
+                "joint_1",
+                "joint_2",
+                "joint_3",
+                "joint_4",
+                "joint_5",
+                "joint_6",
+            ],
+        },
+    }
+
     moveit_py_params = PathJoinSubstitution(
         [FindPackageShare("azas_bringup"), "config", "moveit_py.yaml"]
     )
@@ -51,7 +72,7 @@ def generate_launch_description():
     min_depth_m_arg = DeclareLaunchArgument("min_depth_m", default_value="0.15")
     max_depth_m_arg = DeclareLaunchArgument("max_depth_m", default_value="1.20")
     redetect_on_approach_arg = DeclareLaunchArgument(
-        "redetect_on_approach", default_value="true"
+        "redetect_on_approach", default_value="false"
     )
     redetect_settle_sec_arg = DeclareLaunchArgument(
         "redetect_settle_sec", default_value="0.5"
@@ -62,6 +83,11 @@ def generate_launch_description():
     )
     side_grasp_direction_arg = DeclareLaunchArgument(
         "side_grasp_direction", default_value="-1.0"
+    )
+    auto_side_grasp_direction_arg = DeclareLaunchArgument(
+        "auto_side_grasp_direction",
+        default_value="true",
+        description="Automatically choose +side/-side approach from the detected cup position.",
     )
     side_approach_offset_arg = DeclareLaunchArgument(
         "side_approach_offset", default_value="0.12"
@@ -76,7 +102,7 @@ def generate_launch_description():
     )
     side_grasp_z_offset_arg = DeclareLaunchArgument(
         "side_grasp_z_offset",
-        default_value="0.05",
+        default_value="0.02",
         description="Side grasp height offset from detected base point.",
     )
     side_orientation_mode_arg = DeclareLaunchArgument(
@@ -124,8 +150,23 @@ def generate_launch_description():
     )
     place_x_arg = DeclareLaunchArgument("place_x", default_value="0.45")
     place_y_arg = DeclareLaunchArgument("place_y", default_value="0.0")
-    place_z_arg = DeclareLaunchArgument("place_z", default_value="0.30")
+    place_z_arg = DeclareLaunchArgument("place_z", default_value="0.12")
     auto_pick_arg = DeclareLaunchArgument("auto_pick", default_value="false")
+    moveit_namespace_arg = DeclareLaunchArgument(
+        "moveit_namespace",
+        default_value="/dsr01",
+        description="Namespace where the Doosan MoveIt trajectory controller is running.",
+    )
+    controller_action_wait_sec_arg = DeclareLaunchArgument(
+        "controller_action_wait_sec",
+        default_value="8.0",
+        description="Seconds to wait for the FollowJointTrajectory action server.",
+    )
+    controller_discovery_settle_sec_arg = DeclareLaunchArgument(
+        "controller_discovery_settle_sec",
+        default_value="1.0",
+        description="Extra discovery settle time after MoveItPy initialization.",
+    )
 
     return LaunchDescription(
         [
@@ -145,6 +186,7 @@ def generate_launch_description():
             grasp_mode_arg,
             side_grasp_axis_arg,
             side_grasp_direction_arg,
+            auto_side_grasp_direction_arg,
             side_approach_offset_arg,
             side_staging_offset_arg,
             side_grasp_offset_arg,
@@ -166,6 +208,9 @@ def generate_launch_description():
             place_y_arg,
             place_z_arg,
             auto_pick_arg,
+            moveit_namespace_arg,
+            controller_action_wait_sec_arg,
+            controller_discovery_settle_sec_arg,
             Node(
                 package="azas_bringup",
                 executable="joint_state_relay_legacy",
@@ -183,7 +228,7 @@ def generate_launch_description():
                 executable="yolo_cup_pick_legacy_node",
                 output="screen",
                 parameters=[
-                    moveit_config.to_dict(),
+                    moveit_params,
                     moveit_py_params,
                     {
                         "model_path": ParameterValue(
@@ -229,6 +274,9 @@ def generate_launch_description():
                         "side_grasp_direction": LaunchConfiguration(
                             "side_grasp_direction"
                         ),
+                        "auto_side_grasp_direction": LaunchConfiguration(
+                            "auto_side_grasp_direction"
+                        ),
                         "side_approach_offset": LaunchConfiguration(
                             "side_approach_offset"
                         ),
@@ -267,6 +315,16 @@ def generate_launch_description():
                         "place_y": LaunchConfiguration("place_y"),
                         "place_z": LaunchConfiguration("place_z"),
                         "auto_pick": LaunchConfiguration("auto_pick"),
+                        "moveit_namespace": ParameterValue(
+                            LaunchConfiguration("moveit_namespace"),
+                            value_type=str,
+                        ),
+                        "controller_action_wait_sec": LaunchConfiguration(
+                            "controller_action_wait_sec"
+                        ),
+                        "controller_discovery_settle_sec": LaunchConfiguration(
+                            "controller_discovery_settle_sec"
+                        ),
                     },
                 ],
             ),

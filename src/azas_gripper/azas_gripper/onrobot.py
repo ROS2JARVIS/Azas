@@ -35,33 +35,42 @@ class RG:
 
     def _read_holding_registers(self, address, count):
         try:
-            return self.client.read_holding_registers(
-                address=address, count=count, slave=self.UNIT_ID
-            )
-        except TypeError:
-            return self.client.read_holding_registers(
+            result = self.client.read_holding_registers(
                 address=address, count=count, unit=self.UNIT_ID
             )
+        except TypeError:
+            result = self.client.read_holding_registers(
+                address=address, count=count, slave=self.UNIT_ID
+            )
+        return self._checked_response(result, f"read addr={address} count={count}")
 
     def _write_register(self, address, value):
         try:
-            return self.client.write_register(
-                address=address, value=value, slave=self.UNIT_ID
-            )
-        except TypeError:
-            return self.client.write_register(
+            result = self.client.write_register(
                 address=address, value=value, unit=self.UNIT_ID
             )
+        except TypeError:
+            result = self.client.write_register(
+                address=address, value=value, slave=self.UNIT_ID
+            )
+        return self._checked_response(result, f"write addr={address}")
 
     def _write_registers(self, address, values):
         try:
-            return self.client.write_registers(
-                address=address, values=values, slave=self.UNIT_ID
-            )
-        except TypeError:
-            return self.client.write_registers(
+            result = self.client.write_registers(
                 address=address, values=values, unit=self.UNIT_ID
             )
+        except TypeError:
+            result = self.client.write_registers(
+                address=address, values=values, slave=self.UNIT_ID
+            )
+        return self._checked_response(result, f"write addr={address} values={values}")
+
+    def _checked_response(self, result, operation):
+        is_error = getattr(result, "isError", lambda: False)()
+        if is_error or ("read" in operation and not hasattr(result, "registers")):
+            raise IOError(f"OnRobot Modbus {operation} failed: {result!r}")
+        return result
 
     def open_connection(self):
         """Open the TCP connection with the gripper."""
