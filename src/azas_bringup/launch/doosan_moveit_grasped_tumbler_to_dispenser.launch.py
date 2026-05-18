@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -15,6 +16,8 @@ def generate_launch_description():
     color = LaunchConfiguration("color")
     rt_host = LaunchConfiguration("rt_host")
     start_delay_sec = LaunchConfiguration("start_delay_sec")
+    collision_config_path = LaunchConfiguration("collision_config_path")
+    collision_publish_period_sec = LaunchConfiguration("collision_publish_period_sec")
 
     doosan_moveit = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -111,6 +114,22 @@ def generate_launch_description():
         ],
     )
 
+    measured_collision_scene = Node(
+        package="azas_motion",
+        executable="measured_dispenser_collision_scene_node",
+        name="measured_dispenser_collision_scene_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("enable_measured_collision_scene")),
+        parameters=[
+            {
+                "config_path": collision_config_path,
+                "publish_period_sec": ParameterValue(
+                    collision_publish_period_sec, value_type=float
+                ),
+            }
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("mode", default_value="virtual"),
@@ -151,7 +170,20 @@ def generate_launch_description():
             DeclareLaunchArgument("max_velocity_scaling_factor", default_value="0.10"),
             DeclareLaunchArgument("max_acceleration_scaling_factor", default_value="0.10"),
             DeclareLaunchArgument("max_single_segment_joint_motion_deg", default_value="170.0"),
+            DeclareLaunchArgument("enable_measured_collision_scene", default_value="true"),
+            DeclareLaunchArgument(
+                "collision_config_path",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("azas_bringup"),
+                        "config",
+                        "measured_dispenser_collision.yaml",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument("collision_publish_period_sec", default_value="1.0"),
             doosan_moveit,
+            measured_collision_scene,
             TimerAction(period=start_delay_sec, actions=[executor]),
         ]
     )

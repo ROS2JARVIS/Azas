@@ -16,6 +16,7 @@ LOG_DIR="${LOG_DIR:-/tmp}"
 SETUP_LOG="${SETUP_LOG:-${LOG_DIR}/azas_side_grip_hold.log}"
 DISPENSER_LOG="${DISPENSER_LOG:-${LOG_DIR}/azas_side_grip_current_to_dispenser.log}"
 RVIZ_LOG="${RVIZ_LOG:-${LOG_DIR}/azas_side_grip_current_to_dispenser_rviz.log}"
+COLLISION_LOG="${COLLISION_LOG:-${LOG_DIR}/azas_side_grip_current_to_dispenser_collision.log}"
 
 export SELECTED_DISPENSER_ID="${SELECTED_DISPENSER_ID:-2}"
 export ENABLE_DEMO_OBSTACLE="${ENABLE_DEMO_OBSTACLE:-false}"
@@ -105,6 +106,10 @@ cleanup() {
     kill -TERM "${DISPENSER_PID}" 2>/dev/null || true
     wait "${DISPENSER_PID}" 2>/dev/null || true
   fi
+  if [[ -n "${COLLISION_PID:-}" ]] && kill -0 "${COLLISION_PID}" 2>/dev/null; then
+    kill -TERM "${COLLISION_PID}" 2>/dev/null || true
+    wait "${COLLISION_PID}" 2>/dev/null || true
+  fi
   if [[ -n "${LAUNCH_PID:-}" ]] && kill -0 "${LAUNCH_PID}" 2>/dev/null; then
     kill -TERM "${LAUNCH_PID}" 2>/dev/null || true
     wait "${LAUNCH_PID}" 2>/dev/null || true
@@ -120,12 +125,13 @@ trap cleanup EXIT
 trap stop_kept_stack INT TERM
 
 cleanup_stale_ros
-rm -f "${SETUP_LOG}" "${DISPENSER_LOG}" "${RVIZ_LOG}"
+rm -f "${SETUP_LOG}" "${DISPENSER_LOG}" "${RVIZ_LOG}" "${COLLISION_LOG}"
 source_azas_ros_env
 
 DISPLAY= \
 TASK_MODE=side_grip_hold \
 ASSUME_ALREADY_AT_SIDE_GRIP=false \
+ENABLE_MEASURED_COLLISION_SCENE=false \
 START_DELAY_SEC="${START_DELAY_SEC:-18}" \
 /home/ssu/Azas/tools/run/run_doosan_moveit_grasped_tumbler_to_dispenser.sh \
   > >(tee "${SETUP_LOG}") 2>&1 &
@@ -145,6 +151,13 @@ while ! grep -q "DONE: robot is holding the assumed side-grip posture" "${SETUP_
 done
 
 source_azas_ros_env
+
+ros2 run azas_motion measured_dispenser_collision_scene_node \
+  --ros-args \
+  -p config_path:="${COLLISION_CONFIG_PATH:-/home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/measured_dispenser_collision.yaml}" \
+  -p publish_period_sec:="${COLLISION_PUBLISH_PERIOD_SEC:-1.0}" \
+  > >(tee "${COLLISION_LOG}") 2>&1 &
+COLLISION_PID=$!
 
 ros2 launch azas_bringup doosan_moveit_rviz_only.launch.py model:=m0609 \
   > >(tee "${RVIZ_LOG}") 2>&1 &

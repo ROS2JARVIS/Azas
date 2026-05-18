@@ -31,6 +31,9 @@ STATE_PLANNER_ID="${STATE_PLANNER_ID:-PTP}"
 POSE_PLANNER_ID="${POSE_PLANNER_ID:-LIN}"
 START_DELAY_SEC="${START_DELAY_SEC:-14.0}"
 EXECUTE_MOTION="${EXECUTE_MOTION:-true}"
+ENABLE_MEASURED_COLLISION_SCENE="${ENABLE_MEASURED_COLLISION_SCENE:-true}"
+COLLISION_CONFIG_PATH="${COLLISION_CONFIG_PATH:-/home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/measured_dispenser_collision.yaml}"
+COLLISION_PUBLISH_PERIOD_SEC="${COLLISION_PUBLISH_PERIOD_SEC:-1.0}"
 
 set +u
 unset AMENT_PREFIX_PATH
@@ -108,4 +111,7 @@ exec ros2 launch azas_bringup doosan_moveit_grasped_tumbler_to_dispenser.launch.
   state_planner_id:="${STATE_PLANNER_ID}" \
   pose_planner_id:="${POSE_PLANNER_ID}" \
   start_delay_sec:="${START_DELAY_SEC}" \
+  enable_measured_collision_scene:="${ENABLE_MEASURED_COLLISION_SCENE}" \
+  collision_config_path:="${COLLISION_CONFIG_PATH}" \
+  collision_publish_period_sec:="${COLLISION_PUBLISH_PERIOD_SEC}" \
   execute_motion:="${EXECUTE_MOTION}"
