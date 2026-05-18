@@ -46,10 +46,10 @@ ROBOT_STATE_NAMES = {
 }
 CAMERA_TABLE_VIEW_JOINTS = {
     "j1": "0",
-    "j2": "25",
-    "j3": "65",
+    "j2": "-5",
+    "j3": "50",
     "j4": "0",
-    "j5": "120",
+    "j5": "135",
     "j6": "0",
 }
 DISPENSER_PRESS_TARGETS = {
@@ -88,10 +88,10 @@ STEPS = [
         "lift_robot",
         "카메라 테이블 보기 자세 / J5 안전",
         "run",
-        "tools/run/direct_movej_joints.py --j1 0 --j2 25 --j3 65 --j4 0 --j5 120 --j6 0",
+        "tools/run/direct_movej_joints.py --j1 0 --j2 -5 --j3 50 --j4 0 --j5 135 --j6 0",
         True,
         True,
-        "MoveLine IK 대신 검증된 observe 계열 관절 자세 사용: joint_3=65°, joint_5=120°로 135° 초과 방지",
+        "MoveLine IK 대신 실측 관절 자세 사용: joint_2=-5°, joint_3=50°, joint_5=135° 상한으로 테이블 보기",
     ),
     Step("detect_cup_lid", "컵/텀블러와 뚜껑 인식", "run", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "카메라가 있을 때만 의미 있음"),
     Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT/레시피 노드"),
