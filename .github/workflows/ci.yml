@@ -20,7 +20,8 @@ jobs:
         run: |
           sudo apt-get update
           rosdep update
-          rosdep install --from-paths src --ignore-src --rosdistro humble -y
+          rosdep install --from-paths src --ignore-src --rosdistro humble -y \
+            --skip-keys "moveit_py dsr_description2 dsr_moveit_config_m0609 dsr_msgs2"
 
       - name: Build
         run: |
@@ -33,4 +34,3 @@ jobs:
           source install/setup.bash
           colcon test
           colcon test-result --verbose
-
