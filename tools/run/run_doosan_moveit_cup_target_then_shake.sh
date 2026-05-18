@@ -24,6 +24,7 @@ RELATIVE_LIFT_Z="${RELATIVE_LIFT_Z:-0.25}"
 SAFE_MIN_Z="${SAFE_MIN_Z:-0.55}"
 SAFE_MAX_Z="${SAFE_MAX_Z:-0.85}"
 USE_FIXED_SAFE_XY="${USE_FIXED_SAFE_XY:-false}"
+FALLBACK_TO_CURRENT_JOINT_SHAKE="${FALLBACK_TO_CURRENT_JOINT_SHAKE:-true}"
 
 set +u
 unset AMENT_PREFIX_PATH
@@ -56,4 +57,5 @@ exec ros2 launch azas_bringup doosan_moveit_cup_target_then_shake.launch.py \
   safe_min_z:="${SAFE_MIN_Z}" \
   safe_max_z:="${SAFE_MAX_Z}" \
   use_fixed_safe_xy:="${USE_FIXED_SAFE_XY}" \
+  fallback_to_current_joint_shake:="${FALLBACK_TO_CURRENT_JOINT_SHAKE}" \
   execute_motion:=true

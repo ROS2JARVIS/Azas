@@ -126,6 +126,9 @@ def generate_launch_description():
                 "use_fixed_safe_xy": ParameterValue(
                     LaunchConfiguration("use_fixed_safe_xy"), value_type=bool
                 ),
+                "fallback_to_current_joint_shake": ParameterValue(
+                    LaunchConfiguration("fallback_to_current_joint_shake"), value_type=bool
+                ),
                 "planning_pipeline": LaunchConfiguration("planning_pipeline"),
                 "planner_id": LaunchConfiguration("planner_id"),
                 "max_velocity_scaling_factor": ParameterValue(
@@ -204,6 +207,7 @@ def generate_launch_description():
             DeclareLaunchArgument("safe_min_z", default_value="0.55"),
             DeclareLaunchArgument("safe_max_z", default_value="0.85"),
             DeclareLaunchArgument("use_fixed_safe_xy", default_value="false"),
+            DeclareLaunchArgument("fallback_to_current_joint_shake", default_value="true"),
             DeclareLaunchArgument("planning_pipeline", default_value="pilz_industrial_motion_planner"),
             DeclareLaunchArgument("planner_id", default_value="PTP"),
             DeclareLaunchArgument("max_velocity_scaling_factor", default_value="0.10"),

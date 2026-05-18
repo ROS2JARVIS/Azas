@@ -82,6 +82,7 @@ class DoosanMoveItCupTargetThenShakeNode(Node):
         self.declare_parameter("safe_min_z", 0.55)
         self.declare_parameter("safe_max_z", 0.85)
         self.declare_parameter("use_fixed_safe_xy", False)
+        self.declare_parameter("fallback_to_current_joint_shake", True)
 
         self.latest_joint_positions: dict[str, float] = {}
         self.latest_cup_pose: PoseStamped | None = None
@@ -181,12 +182,28 @@ class DoosanMoveItCupTargetThenShakeNode(Node):
 
             shake_mode = str(self.get_parameter("shake_mode").value)
             if shake_mode == "relative_pose":
-                for label, pose in self.relative_shake_poses():
-                    self.plan_and_maybe_execute(robot, arm, params, label, pose, execute_motion)
-                    time.sleep(0.15)
-                self.get_logger().info(
-                    "DONE: collision-aware Doosan MoveIt relative-pose shake sequence."
-                )
+                try:
+                    for label, pose in self.relative_shake_poses():
+                        self.plan_and_maybe_execute(robot, arm, params, label, pose, execute_motion)
+                        time.sleep(0.15)
+                    self.get_logger().info(
+                        "DONE: collision-aware Doosan MoveIt relative-pose shake sequence."
+                    )
+                except RuntimeError as exc:
+                    if not bool(self.get_parameter("fallback_to_current_joint_shake").value):
+                        raise
+                    self.get_logger().warning(
+                        "Relative-pose shake failed; falling back to current-joint shake: "
+                        f"{exc}"
+                    )
+                    for label, state in self.current_joint_shake_states(robot):
+                        self.plan_and_maybe_execute_state(
+                            robot, arm, params, label, state, execute_motion
+                        )
+                        time.sleep(0.15)
+                    self.get_logger().info(
+                        "DONE: collision-aware Doosan MoveIt current-joint shake fallback."
+                    )
                 return
 
             if shake_mode == "joint":
@@ -320,8 +337,11 @@ class DoosanMoveItCupTargetThenShakeNode(Node):
         safe_max_z = float(self.get_parameter("safe_max_z").value)
         if safe_max_z < safe_min_z:
             safe_max_z = safe_min_z
-        requested_z = current.position.z if current.position.z >= safe_min_z else current.position.z + relative_lift_z
-        center_z = min(max(requested_z, safe_min_z), safe_max_z)
+        if current.position.z >= safe_min_z:
+            center_z = current.position.z
+        else:
+            requested_z = current.position.z + relative_lift_z
+            center_z = min(max(requested_z, safe_min_z), safe_max_z)
         use_fixed_xy = bool(self.get_parameter("use_fixed_safe_xy").value)
         center_x = float(self.get_parameter("target_x").value) if use_fixed_xy else current.position.x
         center_y = float(self.get_parameter("target_y").value) if use_fixed_xy else current.position.y
@@ -411,6 +431,23 @@ class DoosanMoveItCupTargetThenShakeNode(Node):
         base_deg = self.safe_shake_joints_deg() if bool(
             self.get_parameter("move_to_safe_shake_space").value
         ) else self.side_grip_joints_deg()
+        return self.offset_joint_shake_states(robot, base_deg)
+
+    def current_joint_shake_states(self, robot) -> list[tuple[str, RobotState]]:
+        self.wait_for_joint_state()
+        missing = [name for name in JOINT_NAMES if name not in self.latest_joint_positions]
+        if missing:
+            raise RuntimeError(f"missing joint states for fallback shake: {missing}")
+        base_deg = [math.degrees(self.latest_joint_positions[name]) for name in JOINT_NAMES]
+        self.get_logger().info(
+            "Using current joints for fallback shake deg: "
+            + ", ".join(f"{name}={value:.1f}" for name, value in zip(JOINT_NAMES, base_deg))
+        )
+        return self.offset_joint_shake_states(robot, base_deg)
+
+    def offset_joint_shake_states(
+        self, robot, base_deg: list[float]
+    ) -> list[tuple[str, RobotState]]:
         cycles = max(int(self.get_parameter("shake_cycles").value), 1)
         offsets = [
             ("shake_center_start", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
