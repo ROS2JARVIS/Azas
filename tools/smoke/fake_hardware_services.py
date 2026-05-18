@@ -8,11 +8,16 @@ success=True so the hardware-armed control path can be verified safely.
 from __future__ import annotations
 
 import rclpy
-from azas_interfaces.srv import SetGripper
-from dsr_msgs2.srv import MoveJoint, MoveLine
+from std_msgs.msg import Float64MultiArray
+from dsr_msgs2.srv import GetCurrentPosx, MoveJoint, MoveLine, MoveWait
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_srvs.srv import Trigger
+
+try:
+    from azas_interfaces.srv import SetGripper
+except Exception:
+    SetGripper = None
 
 
 class FakeHardwareServices(Node):
@@ -22,14 +27,23 @@ class FakeHardwareServices(Node):
 
         prefix = str(self.get_parameter("service_prefix").value).strip("/")
         motion_prefix = f"/{prefix}/motion" if prefix else "/motion"
+        aux_prefix = f"/{prefix}/aux_control" if prefix else "/aux_control"
         self.create_service(MoveJoint, f"{motion_prefix}/move_joint", self.on_move_joint)
         self.create_service(MoveLine, f"{motion_prefix}/move_line", self.on_move_line)
+        self.create_service(MoveWait, f"{motion_prefix}/move_wait", self.on_move_wait)
+        self.create_service(
+            GetCurrentPosx,
+            f"{aux_prefix}/get_current_posx",
+            self.on_get_current_posx,
+        )
         self.create_service(Trigger, "/jarvis/rg2/open", self.on_open)
         self.create_service(Trigger, "/jarvis/rg2/close", self.on_close)
-        self.create_service(SetGripper, "/jarvis/rg2/set_width", self.on_set_width)
+        if SetGripper is not None:
+            self.create_service(SetGripper, "/jarvis/rg2/set_width", self.on_set_width)
         self.get_logger().info(
             "Fake/no-motion hardware services ready; does not command real RG2 or Doosan: "
             f"{motion_prefix}/move_joint, {motion_prefix}/move_line, "
+            f"{motion_prefix}/move_wait, {aux_prefix}/get_current_posx, "
             "/jarvis/rg2/open, /jarvis/rg2/close, /jarvis/rg2/set_width"
         )
 
@@ -39,6 +53,27 @@ class FakeHardwareServices(Node):
             f"pos={list(request.pos)} vel={request.vel} acc={request.acc}"
         )
         response.success = True
+        return response
+
+    def on_move_wait(self, request, response):
+        self.get_logger().info("fake move_wait")
+        response.success = True
+        return response
+
+    def on_get_current_posx(self, request, response):
+        pose = Float64MultiArray()
+        pose.data = [
+            62.04436492919922,
+            12.101080894470215,
+            723.31494140625,
+            7.947062969207764,
+            146.6581573486328,
+            -175.5945281982422,
+            2.0,
+        ]
+        response.task_pos_info = [pose]
+        response.success = True
+        self.get_logger().info(f"fake get_current_posx(ref={request.ref}): {pose.data}")
         return response
 
     def on_move_line(self, request, response):

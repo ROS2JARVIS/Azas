@@ -4,6 +4,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import PathJoinSubstitution
 
@@ -33,7 +34,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="vision_node",
                 name="vision_node",
                 output="screen",
-                parameters=[params_file, {"debug": debug}],
+                parameters=[params_file, {"debug": ParameterValue(debug, value_type=bool)}],
             ),
         ]
     )

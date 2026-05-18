@@ -26,6 +26,12 @@ detection_3d_node:
     roi_shrink_ratio: 0.50
     minimum_valid_depth_pixels: 20
 
+    # Modes:
+    # - static_base_camera: use hand_eye_transform_matrix as fixed T_base_camera.
+    # - eye_in_hand_npy: load T_gripper_camera from npy and combine it with
+    #   /dsr01/aux_control/get_current_posx at runtime.
+    # - translation_rpy: use hand_eye_translation_xyz + hand_eye_rotation_rpy_deg.
+    hand_eye_mode: "static_base_camera"
     use_hand_eye_matrix: true
     hand_eye_transform_matrix: [
       -0.833861128, -0.065379771, 0.548088592, 0.100599857,
@@ -36,6 +42,12 @@ detection_3d_node:
 
     hand_eye_translation_xyz: [0.35, 0.00, 0.45]
     hand_eye_rotation_rpy_deg: [0.0, 0.0, 0.0]
+    gripper_to_camera_matrix_path: "config/calibration/T_gripper2camera.npy"
+    gripper_to_camera_translation_unit: "auto"
+    robot_id: "dsr01"
+    current_posx_service: "/dsr01/aux_control/get_current_posx"
+    robot_pose_poll_period_sec: 0.20
+    robot_pose_service_timeout_sec: 0.05
     object_pose_orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
     log_3d_detections: true
 

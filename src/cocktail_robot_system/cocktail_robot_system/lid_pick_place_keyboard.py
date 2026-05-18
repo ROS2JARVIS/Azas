@@ -8,12 +8,12 @@ from typing import Any, Dict, List, Optional
 
 import cv2
 import rclpy
-from cv_bridge import CvBridge, CvBridgeError
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
 from cocktail_robot_system.doosan_adapter import DoosanAdapter
+from cocktail_robot_system.image_utils import image_msg_to_cv_image
 
 
 class LidPickPlaceKeyboard(Node):
@@ -105,7 +105,6 @@ class LidPickPlaceKeyboard(Node):
             float(v) for v in self.get_parameter("workspace_max_mm").value
         ]
 
-        self.bridge = CvBridge()
         self.latest_image = None
         self.latest_detections: List[Dict[str, Any]] = []
         self.latest_target: Optional[Dict[str, Any]] = None
@@ -149,8 +148,8 @@ class LidPickPlaceKeyboard(Node):
 
     def _image_callback(self, msg: Image) -> None:
         try:
-            image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        except CvBridgeError as exc:
+            image = image_msg_to_cv_image(msg, desired_encoding="bgr8")
+        except Exception as exc:
             self.get_logger().error(f"Failed to convert debug image: {exc}")
             return
 

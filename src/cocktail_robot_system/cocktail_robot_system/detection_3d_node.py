@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import json
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import rclpy
-from cv_bridge import CvBridge, CvBridgeError
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
+
+from cocktail_robot_system.image_utils import image_msg_to_cv_image
 
 
 class Detection3DNode(Node):
@@ -37,6 +40,7 @@ class Detection3DNode(Node):
         self.declare_parameter("max_depth_m", 2.00)
         self.declare_parameter("roi_shrink_ratio", 0.50)
         self.declare_parameter("minimum_valid_depth_pixels", 20)
+        self.declare_parameter("hand_eye_mode", "static_base_camera")
         self.declare_parameter("use_hand_eye_matrix", False)
         self.declare_parameter(
             "hand_eye_transform_matrix",
@@ -61,6 +65,14 @@ class Detection3DNode(Node):
         )
         self.declare_parameter("hand_eye_translation_xyz", [0.35, 0.00, 0.45])
         self.declare_parameter("hand_eye_rotation_rpy_deg", [0.0, 0.0, 0.0])
+        self.declare_parameter("gripper_to_camera_matrix_path", "")
+        self.declare_parameter("gripper_to_camera_translation_unit", "auto")
+        self.declare_parameter("robot_id", "dsr01")
+        self.declare_parameter(
+            "current_posx_service", "/dsr01/aux_control/get_current_posx"
+        )
+        self.declare_parameter("robot_pose_poll_period_sec", 0.20)
+        self.declare_parameter("robot_pose_service_timeout_sec", 0.05)
         self.declare_parameter("object_pose_orientation_xyzw", [0.0, 0.0, 0.0, 1.0])
         self.declare_parameter("log_3d_detections", True)
 
@@ -80,11 +92,24 @@ class Detection3DNode(Node):
         self.minimum_valid_depth_pixels = int(
             self.get_parameter("minimum_valid_depth_pixels").value
         )
+        self.hand_eye_mode = str(self.get_parameter("hand_eye_mode").value)
         self.object_pose_orientation_xyzw = [
             float(v)
             for v in self.get_parameter("object_pose_orientation_xyzw").value
         ]
         self.log_3d_detections = bool(self.get_parameter("log_3d_detections").value)
+        self.gripper_to_camera_matrix_path = str(
+            self.get_parameter("gripper_to_camera_matrix_path").value
+        )
+        self.gripper_to_camera_translation_unit = str(
+            self.get_parameter("gripper_to_camera_translation_unit").value
+        )
+        self.current_posx_service = str(
+            self.get_parameter("current_posx_service").value
+        )
+        self.robot_pose_service_timeout_sec = float(
+            self.get_parameter("robot_pose_service_timeout_sec").value
+        )
 
         hand_eye_translation = [
             float(v) for v in self.get_parameter("hand_eye_translation_xyz").value
@@ -98,12 +123,33 @@ class Detection3DNode(Node):
         hand_eye_matrix = [
             float(v) for v in self.get_parameter("hand_eye_transform_matrix").value
         ]
-        if self.use_hand_eye_matrix:
+
+        self.camera_to_base = np.eye(4)
+        self.gripper_to_camera: Optional[np.ndarray] = None
+        self.latest_base_to_gripper: Optional[np.ndarray] = None
+        self._GetCurrentPosx: Optional[Any] = None
+        self._current_posx_client: Optional[Any] = None
+        self._current_posx_future: Optional[Any] = None
+
+        if self.hand_eye_mode == "eye_in_hand_npy":
+            self.gripper_to_camera = self._load_gripper_to_camera_matrix(
+                self.gripper_to_camera_matrix_path
+            )
+            self._setup_current_posx_client()
+            self.create_timer(
+                float(self.get_parameter("robot_pose_poll_period_sec").value),
+                self._poll_current_posx,
+            )
+            self.get_logger().info(
+                "Using eye-in-hand calibration: "
+                "T_base_camera = T_base_gripper(current) * T_gripper_camera(.npy)."
+            )
+        elif self.hand_eye_mode == "static_base_camera" or self.use_hand_eye_matrix:
             self.camera_to_base = self._make_transform_from_matrix(hand_eye_matrix)
             self.get_logger().info(
                 "Using hand_eye_transform_matrix as T_base_camera."
             )
-        else:
+        elif self.hand_eye_mode == "translation_rpy":
             self.camera_to_base = self._make_transform(
                 hand_eye_translation, hand_eye_rpy_deg
             )
@@ -111,8 +157,12 @@ class Detection3DNode(Node):
                 "Using hand_eye_translation_xyz and hand_eye_rotation_rpy_deg "
                 "as T_base_camera."
             )
+        else:
+            raise ValueError(
+                "hand_eye_mode must be one of: static_base_camera, "
+                "eye_in_hand_npy, translation_rpy."
+            )
 
-        self.bridge = CvBridge()
         self.latest_color_msg: Optional[Image] = None
         self.latest_depth_image: Optional[np.ndarray] = None
         self.latest_depth_encoding: str = ""
@@ -146,11 +196,11 @@ class Detection3DNode(Node):
 
     def _depth_callback(self, msg: Image) -> None:
         try:
-            self.latest_depth_image = self.bridge.imgmsg_to_cv2(
+            self.latest_depth_image = image_msg_to_cv_image(
                 msg, desired_encoding="passthrough"
             )
             self.latest_depth_encoding = msg.encoding
-        except CvBridgeError as exc:
+        except Exception as exc:
             self.get_logger().error(f"Failed to convert depth image: {exc}")
 
     def _camera_info_callback(self, msg: CameraInfo) -> None:
@@ -311,8 +361,21 @@ class Detection3DNode(Node):
         self, camera_xyz: Tuple[float, float, float]
     ) -> Tuple[float, float, float]:
         point = np.array([camera_xyz[0], camera_xyz[1], camera_xyz[2], 1.0])
-        transformed = self.camera_to_base @ point
+        camera_to_base = self._current_camera_to_base()
+        transformed = camera_to_base @ point
         return (float(transformed[0]), float(transformed[1]), float(transformed[2]))
+
+    def _current_camera_to_base(self) -> np.ndarray:
+        if self.hand_eye_mode != "eye_in_hand_npy":
+            return self.camera_to_base
+
+        if self.latest_base_to_gripper is None or self.gripper_to_camera is None:
+            raise RuntimeError(
+                "No current robot pose for eye-in-hand transform yet. "
+                f"Check service {self.current_posx_service}."
+            )
+
+        return self.latest_base_to_gripper @ self.gripper_to_camera
 
     def _select_best_detection(
         self, detections_3d: List[Dict[str, Any]]
@@ -371,6 +434,130 @@ class Detection3DNode(Node):
         if abs(transform[3, 3]) < 1e-9:
             raise ValueError("Invalid hand-eye matrix: bottom-right value is zero.")
         return transform
+
+    def _load_gripper_to_camera_matrix(self, matrix_path: str) -> np.ndarray:
+        if not matrix_path:
+            raise ValueError(
+                "gripper_to_camera_matrix_path is required when "
+                "hand_eye_mode=eye_in_hand_npy."
+            )
+
+        path = self._resolve_calibration_path(matrix_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Hand-eye npy file not found: {path}")
+
+        transform = np.load(str(path)).astype(float)
+        if transform.shape != (4, 4):
+            raise ValueError(f"Expected 4x4 hand-eye matrix, got {transform.shape}")
+
+        unit = self.gripper_to_camera_translation_unit
+        translation_abs_max = float(np.max(np.abs(transform[:3, 3])))
+        if unit == "mm" or (unit == "auto" and translation_abs_max > 5.0):
+            transform[:3, 3] /= 1000.0
+            self.get_logger().info(
+                f"Loaded T_gripper_camera from {path} and converted mm -> m."
+            )
+        elif unit in ("m", "auto"):
+            self.get_logger().info(f"Loaded T_gripper_camera from {path} in meters.")
+        else:
+            raise ValueError(
+                "gripper_to_camera_translation_unit must be auto, mm, or m."
+            )
+
+        return transform
+
+    def _resolve_calibration_path(self, matrix_path: str) -> Path:
+        path = Path(matrix_path).expanduser()
+        if path.is_absolute():
+            return path
+
+        candidates = [Path.cwd() / path]
+
+        try:
+            package_share = Path(get_package_share_directory("cocktail_robot_system"))
+            candidates.append(package_share / path)
+            if len(path.parts) == 1:
+                candidates.append(package_share / "config" / "calibration" / path)
+        except Exception as exc:
+            self.get_logger().warn(
+                f"Could not resolve cocktail_robot_system share directory: {exc}"
+            )
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        return candidates[-1]
+
+    def _setup_current_posx_client(self) -> None:
+        try:
+            from dsr_msgs2.srv import GetCurrentPosx
+        except Exception as exc:
+            self.get_logger().error(f"Cannot import dsr_msgs2/GetCurrentPosx: {exc}")
+            return
+
+        self._GetCurrentPosx = GetCurrentPosx
+        self._current_posx_client = self.create_client(
+            GetCurrentPosx, self.current_posx_service
+        )
+
+    def _poll_current_posx(self) -> None:
+        if self._GetCurrentPosx is None or self._current_posx_client is None:
+            return
+
+        if self._current_posx_future is not None:
+            if not self._current_posx_future.done():
+                return
+
+            try:
+                response = self._current_posx_future.result()
+            except Exception as exc:
+                self.get_logger().warn(f"get_current_posx failed: {exc}")
+                response = None
+
+            self._current_posx_future = None
+            if response is not None and getattr(response, "success", False):
+                task_pos_info = getattr(response, "task_pos_info", [])
+                if task_pos_info:
+                    values = list(task_pos_info[0].data)
+                    if len(values) >= 6:
+                        self.latest_base_to_gripper = self._posex_to_transform(values[:6])
+            return
+
+        if not self._current_posx_client.service_is_ready():
+            self._current_posx_client.wait_for_service(
+                timeout_sec=self.robot_pose_service_timeout_sec
+            )
+            if not self._current_posx_client.service_is_ready():
+                self.get_logger().warn(
+                    f"Waiting for robot pose service: {self.current_posx_service}"
+                )
+                return
+
+        req = self._GetCurrentPosx.Request()
+        req.ref = 0
+        self._current_posx_future = self._current_posx_client.call_async(req)
+
+    def _posex_to_transform(self, posex: List[float]) -> np.ndarray:
+        x, y, z, rx, ry, rz = [float(v) for v in posex]
+        transform = np.eye(4)
+        transform[:3, :3] = self._rotation_zyz_deg(rx, ry, rz)
+        transform[:3, 3] = np.array([x, y, z], dtype=float) / 1000.0
+        return transform
+
+    def _rotation_zyz_deg(self, rx: float, ry: float, rz: float) -> np.ndarray:
+        z1 = math.radians(rx)
+        y = math.radians(ry)
+        z2 = math.radians(rz)
+
+        cz1, sz1 = math.cos(z1), math.sin(z1)
+        cy, sy = math.cos(y), math.sin(y)
+        cz2, sz2 = math.cos(z2), math.sin(z2)
+
+        rot_z1 = np.array([[cz1, -sz1, 0.0], [sz1, cz1, 0.0], [0.0, 0.0, 1.0]])
+        rot_y = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]])
+        rot_z2 = np.array([[cz2, -sz2, 0.0], [sz2, cz2, 0.0], [0.0, 0.0, 1.0]])
+        return rot_z1 @ rot_y @ rot_z2
 
 
 def main(args: Optional[List[str]] = None) -> None:

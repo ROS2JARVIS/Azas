@@ -9,10 +9,14 @@ from typing import Any, Dict, List, Optional
 import cv2
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from cv_bridge import CvBridge, CvBridgeError
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
+
+from cocktail_robot_system.image_utils import (
+    cv_image_to_image_msg,
+    image_msg_to_cv_image,
+)
 
 
 class VisionNode(Node):
@@ -49,7 +53,6 @@ class VisionNode(Node):
         self.yolo_device = str(self.get_parameter("yolo_device").value)
         self.log_detections = bool(self.get_parameter("log_detections").value)
 
-        self.bridge = CvBridge()
         self.model: Optional[Any] = None
         self._model_error_logged = False
 
@@ -110,8 +113,8 @@ class VisionNode(Node):
             return
 
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        except CvBridgeError as exc:
+            cv_image = image_msg_to_cv_image(msg, desired_encoding="bgr8")
+        except Exception as exc:
             self.get_logger().error(f"Failed to convert color image: {exc}")
             return
 
@@ -236,10 +239,11 @@ class VisionNode(Node):
             )
 
         try:
-            debug_msg = self.bridge.cv2_to_imgmsg(debug_image, encoding="bgr8")
-            debug_msg.header = source_msg.header
+            debug_msg = cv_image_to_image_msg(
+                debug_image, encoding="bgr8", header=source_msg.header
+            )
             self.debug_image_pub.publish(debug_msg)
-        except CvBridgeError as exc:
+        except Exception as exc:
             self.get_logger().error(f"Failed to publish debug image: {exc}")
 
 
