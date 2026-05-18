@@ -241,6 +241,9 @@
         <label class="field">RG2_IP
           <input id="rg2Ip" type="text" value="192.168.1.1">
         </label>
+        <label class="field">DISPENSER_TCP_NAME
+          <input id="dispenserTcpName" type="text" value="rg2_tcp" placeholder="Doosan controller TCP 이름">
+        </label>
       </div>
       <label class="arm">
         <input id="armed" type="checkbox">
@@ -284,6 +287,7 @@
         service_prefix: document.getElementById("servicePrefix").value.trim(),
         rt_host: document.getElementById("rtHost").value.trim(),
         rg2_ip: document.getElementById("rg2Ip").value.trim(),
+        dispenser_tcp_name: document.getElementById("dispenserTcpName").value.trim(),
         armed: document.getElementById("armed").checked,
         selected: Array.from(document.querySelectorAll(".step-check:checked")).map((item) => item.value)
       };

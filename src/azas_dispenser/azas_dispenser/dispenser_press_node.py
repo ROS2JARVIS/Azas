@@ -3,7 +3,14 @@ import time
 
 from azas_interfaces.srv import SetGripper
 import rclpy
-from dsr_msgs2.srv import GetCurrentPosx, MoveJoint, MoveLine, MoveWait
+from dsr_msgs2.srv import (
+    GetCurrentPosx,
+    GetCurrentTcp,
+    MoveJoint,
+    MoveLine,
+    MoveWait,
+    SetCurrentTcp,
+)
 
 
 DR_BASE = 0
@@ -42,6 +49,10 @@ class DispenserPressNode:
         self.logger = self.node.get_logger()
 
         self.service_prefix = str(get_param(self.node, "service_prefix", ""))
+        self.tcp_name = str(get_param(self.node, "tcp_name", "")).strip()
+        self.require_tcp_for_taught_posx = bool(
+            get_param(self.node, "require_tcp_for_taught_posx", True)
+        )
         self.move_home_first = bool(get_param(self.node, "move_home_first", True))
         self.return_home = bool(get_param(self.node, "return_home", True))
         self.use_home_as_reference = bool(
@@ -72,6 +83,12 @@ class DispenserPressNode:
         )
         self.service_wait_timeout_sec = float(
             get_param(self.node, "service_wait_timeout_sec", 10.0)
+        )
+        self.pose_position_tolerance_mm = float(
+            get_param(self.node, "pose_position_tolerance_mm", 5.0)
+        )
+        self.pose_orientation_tolerance_deg = float(
+            get_param(self.node, "pose_orientation_tolerance_deg", 5.0)
         )
         self.taught_posx_by_name = {
             "red": [
@@ -172,6 +189,14 @@ class DispenserPressNode:
             GetCurrentPosx,
             service_name(self.service_prefix, "aux_control/get_current_posx"),
         )
+        self.set_current_tcp = self.node.create_client(
+            SetCurrentTcp,
+            service_name(self.service_prefix, "tcp/set_current_tcp"),
+        )
+        self.get_current_tcp = self.node.create_client(
+            GetCurrentTcp,
+            service_name(self.service_prefix, "tcp/get_current_tcp"),
+        )
         self.gripper_client = self.node.create_client(
             SetGripper,
             self.gripper_service_name,
@@ -182,12 +207,21 @@ class DispenserPressNode:
 
     def wait_for_services(self):
         deadline = time.monotonic() + max(self.service_wait_timeout_sec, 0.1)
-        for client, label in (
+        required_clients = [
             (self.move_joint, "motion/move_joint"),
             (self.move_line, "motion/move_line"),
             (self.move_wait, "motion/move_wait"),
             (self.get_current_posx, "aux_control/get_current_posx"),
-        ):
+        ]
+        if self.tcp_name or (self.use_taught_posx and self.require_tcp_for_taught_posx):
+            required_clients.extend(
+                [
+                    (self.set_current_tcp, "tcp/set_current_tcp"),
+                    (self.get_current_tcp, "tcp/get_current_tcp"),
+                ]
+            )
+
+        for client, label in required_clients:
             while rclpy.ok() and not client.wait_for_service(timeout_sec=1.0):
                 if time.monotonic() > deadline:
                     self.logger.error(
@@ -205,6 +239,49 @@ class DispenserPressNode:
             return False
         if not future.result().success:
             self.logger.error(f"{label} 가 success=false를 반환했습니다")
+            return False
+        return True
+
+    def configure_tcp(self):
+        if not self.tcp_name:
+            if self.use_taught_posx and self.require_tcp_for_taught_posx:
+                self.logger.error(
+                    "use_taught_posx=true 프레스는 Doosan controller TCP 이름이 필요합니다. "
+                    "tcp_name 파라미터가 비어 있어 link_6/flange 기준 프레스를 막습니다."
+                )
+                return False
+            self.logger.warning(
+                "tcp_name이 비어 있습니다. 현재 컨트롤러 TCP를 그대로 사용합니다."
+            )
+            return True
+
+        req = SetCurrentTcp.Request()
+        req.name = self.tcp_name
+        self.logger.info(f"Doosan current TCP 설정: {self.tcp_name}")
+        if not self.call_service(self.set_current_tcp, req, "tcp/set_current_tcp"):
+            self.logger.error(
+                f"Doosan controller가 TCP '{self.tcp_name}' 설정을 거부했습니다. "
+                "티치펜던트/컨트롤러에 해당 TCP가 등록되어 있는지 확인하세요."
+            )
+            return False
+
+        get_req = GetCurrentTcp.Request()
+        future = self.get_current_tcp.call_async(get_req)
+        rclpy.spin_until_future_complete(self.node, future)
+        result = future.result()
+        if result is None:
+            self.logger.error(f"tcp/get_current_tcp 호출 실패: {future.exception()}")
+            return False
+        if not result.success:
+            self.logger.error("tcp/get_current_tcp 가 success=false를 반환했습니다")
+            return False
+        current_name = str(result.info).strip()
+        self.logger.info(f"현재 Doosan TCP 확인: {current_name}")
+        if current_name != self.tcp_name:
+            self.logger.error(
+                f"요청 TCP '{self.tcp_name}' 와 현재 TCP '{current_name}' 가 다릅니다. "
+                "link_6/flange 기준 프레스를 막습니다."
+            )
             return False
         return True
 
@@ -340,6 +417,18 @@ class DispenserPressNode:
             f"rpy_max={max_rpy_error:.2f} deg "
             f"(drx={drx:.2f}, dry={dry:.2f}, drz={drz:.2f})"
         )
+        if position_error > self.pose_position_tolerance_mm:
+            self.logger.error(
+                f"{label}: 위치 오차 {position_error:.2f} mm가 허용값 "
+                f"{self.pose_position_tolerance_mm:.2f} mm를 초과했습니다."
+            )
+            return False
+        if max_rpy_error > self.pose_orientation_tolerance_deg:
+            self.logger.error(
+                f"{label}: 자세 오차 {max_rpy_error:.2f} deg가 허용값 "
+                f"{self.pose_orientation_tolerance_deg:.2f} deg를 초과했습니다."
+            )
+            return False
         return True
 
     def build_press_steps(self):
@@ -466,6 +555,8 @@ class DispenserPressNode:
 
         if not self.wait_for_services():
             return False
+        if not self.configure_tcp():
+            return False
 
         if self.move_home_first:
             if not self.movej(self.home_joints_deg, "move to HOME"):
@@ -493,7 +584,9 @@ class DispenserPressNode:
             if not self.wait_for_motion_done(label):
                 self.logger.error(f"{label} 단계의 모션이 완료되지 않았습니다")
                 return False
-            self.verify_reached_pose([x_mm, y_mm, z_mm, self.rx, self.ry, self.rz], label)
+            if not self.verify_reached_pose([x_mm, y_mm, z_mm, self.rx, self.ry, self.rz], label):
+                self.logger.error(f"{label} 단계가 목표 포즈에 도달하지 못했습니다")
+                return False
             self.logger.info(f"단계 {idx}/{len(steps)}: 완료 '{label}'")
             if label == "approach above dispenser" and self.approach_pause_seconds > 0.0:
                 self.logger.info(

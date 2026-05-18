@@ -26,6 +26,7 @@ ROOT = Path("/home/ssu/Azas")
 HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
 ROS_SETUP = "source /opt/ros/humble/setup.bash && source /home/ssu/Azas/install/local_setup.bash"
 DEFAULT_ROBOT_HOST = "192.168.1.100"
+DEFAULT_DISPENSER_TCP_NAME = "rg2_tcp"
 FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
 RVIZ_PREVIEW_ROS_DOMAIN_ID = "79"
@@ -142,7 +143,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=red",
         True,
         True,
-        "feature/dispenser의 taught posx red 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+        "feature/dispenser의 taught posx red 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_2",
@@ -151,7 +152,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=green",
         True,
         True,
-        "feature/dispenser의 taught posx green 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+        "feature/dispenser의 taught posx green 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_3",
@@ -160,7 +161,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=yellow",
         True,
         True,
-        "feature/dispenser의 taught posx yellow 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+        "feature/dispenser의 taught posx yellow 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_4",
@@ -169,7 +170,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=blue",
         True,
         True,
-        "feature/dispenser의 taught posx blue 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+        "feature/dispenser의 taught posx blue 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
@@ -579,6 +580,8 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/motion/move_wait",
             f"/{clean}/motion/check_motion",
             f"/{clean}/aux_control/get_current_posx",
+            f"/{clean}/tcp/set_current_tcp",
+            f"/{clean}/tcp/get_current_tcp",
         ]
     if step.key == "shake_closed_cup":
         return [
@@ -943,15 +946,24 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
     if step.key.startswith("press_dispenser_"):
         dispenser_id = step.key.rsplit("_", 1)[-1]
         target = DISPENSER_PRESS_TARGETS.get(dispenser_id, "red")
+        tcp_name = str(
+            payload.get("dispenser_tcp_name")
+            or os.environ.get("DISPENSER_TCP_NAME")
+            or DEFAULT_DISPENSER_TCP_NAME
+        ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && ros2 run azas_dispenser dispenser_press_node --ros-args "
             f"-p service_prefix:={shlex.quote(service_prefix)} "
             "-p use_taught_posx:=true "
+            f"-p tcp_name:={shlex.quote(tcp_name)} "
+            "-p require_tcp_for_taught_posx:=true "
             f"-p target_dispenser:={shlex.quote(target)} "
             "-p move_home_first:=false "
-            "-p return_home:=false "
+            "-p return_home:=true "
             "-p close_gripper_at_home:=false "
             "-p service_wait_timeout_sec:=10.0 "
+            "-p pose_position_tolerance_mm:=8.0 "
+            "-p pose_orientation_tolerance_deg:=6.0 "
             "-p line_velocity:=10.0 "
             "-p line_acceleration:=15.0 "
             "-p joint_velocity:=20.0 "
@@ -1296,6 +1308,9 @@ class Handler(BaseHTTPRequestHandler):
                 "robot_name": os.environ.get("ROBOT_NAME", "dsr01"),
                 "service_prefix": os.environ.get("SERVICE_PREFIX", "dsr01"),
                 "rg2_ip": os.environ.get("RG2_IP", "192.168.1.1"),
+                "dispenser_tcp_name": os.environ.get(
+                    "DISPENSER_TCP_NAME", DEFAULT_DISPENSER_TCP_NAME
+                ),
                 "selected_dispenser_id": os.environ.get("SELECTED_DISPENSER_ID", "2"),
             }
             data = []
