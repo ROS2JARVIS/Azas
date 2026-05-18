@@ -9,6 +9,7 @@ services, or any hardware API.
 
 from __future__ import annotations
 
+import math
 from typing import List, Optional
 
 import rclpy
@@ -59,7 +60,11 @@ class SideGraspIkPreviewNode(Node):
         self.declare_parameter("ee_link", "tool0")
         self.declare_parameter("robot_model", "m0609")
         self.declare_parameter("moveit_config_package", "dsr_moveit_config_m0609")
+        self.declare_parameter("planning_pipeline", "pilz_industrial_motion_planner")
+        self.declare_parameter("planner_id", "PTP")
         self.declare_parameter("planning_timeout_sec", 1.0)
+        self.declare_parameter("max_velocity_scaling_factor", 0.1)
+        self.declare_parameter("max_acceleration_scaling_factor", 0.1)
         self.declare_parameter("publish_rate", 30.0)
         self.declare_parameter("frames_per_step", 90)
         self.declare_parameter("hold_frames", 35)
@@ -173,11 +178,15 @@ class SideGraspIkPreviewNode(Node):
 
         request_parameters = PlanRequestParameters(self.moveit_py)
         request_parameters.planning_time = float(self.get_parameter("planning_timeout_sec").value)
-        request_parameters.planning_pipeline = "ompl"
-        request_parameters.planner_id = "RRTConnectkConfigDefault"
+        request_parameters.planning_pipeline = str(self.get_parameter("planning_pipeline").value)
+        request_parameters.planner_id = str(self.get_parameter("planner_id").value)
         request_parameters.planning_attempts = 1
-        request_parameters.max_velocity_scaling_factor = 0.1
-        request_parameters.max_acceleration_scaling_factor = 0.1
+        request_parameters.max_velocity_scaling_factor = float(
+            self.get_parameter("max_velocity_scaling_factor").value
+        )
+        request_parameters.max_acceleration_scaling_factor = float(
+            self.get_parameter("max_acceleration_scaling_factor").value
+        )
         self.planning_component.set_start_state_to_current_state()
         self.planning_component.set_goal_state(
             pose_stamped_msg=pose_stamped,
@@ -213,8 +222,9 @@ class SideGraspIkPreviewNode(Node):
         size = min(len(start), len(end))
         frames: List[List[float]] = []
         for step in range(steps):
-            t = step / steps
-            frames.append([start[index] + (end[index] - start[index]) * t for index in range(size)])
+            t = step / max(steps - 1, 1)
+            smooth = 0.5 - 0.5 * math.cos(math.pi * t)
+            frames.append([start[index] + (end[index] - start[index]) * smooth for index in range(size)])
         frames.extend([end[:size]] * hold_frames)
         return frames
 

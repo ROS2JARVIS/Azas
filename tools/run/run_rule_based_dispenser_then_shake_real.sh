@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Real robot sequence:
 # 1. detect cup from camera
-# 2. grasp cup and move to selected dispenser pre-place pose without opening RG2
+# 2. grasp cup and move to selected dispenser outlet-front hold pose without opening RG2
 # 3. move to the lifted shake volume and run the high-shake path
 #
 # This script intentionally keeps the same strict gates as run_robot_real.sh.
@@ -15,15 +15,15 @@ RG2_IP="${RG2_IP:-192.168.1.1}"
 COLOR_TOPIC="${COLOR_TOPIC:-/camera/camera/color/image_raw}"
 DEPTH_TOPIC="${DEPTH_TOPIC:-/camera/camera/aligned_depth_to_color/image_raw}"
 CAMERA_INFO_TOPIC="${CAMERA_INFO_TOPIC:-/camera/camera/color/camera_info}"
-PLACE_MOUTH_UNDER_OUTLET="${PLACE_MOUTH_UNDER_OUTLET:-true}"
+PLACE_MOUTH_UNDER_OUTLET="${PLACE_MOUTH_UNDER_OUTLET:-false}"
 OUTLET_MOUTH_CLEARANCE="${OUTLET_MOUTH_CLEARANCE:-0.0}"
 SERVICE_PREFIX="${SERVICE_PREFIX:-}"
 LIVE_GATE_STAMP="${LIVE_GATE_STAMP:-/tmp/azas_live_hardware_gates_passed}"
 LIVE_GATE_MAX_AGE_SEC="${LIVE_GATE_MAX_AGE_SEC:-600}"
 REAL_MOTION_CONFIG_CHECK="${REAL_MOTION_CONFIG_CHECK:-${CHECKS_DIR}/check_real_motion_config.sh}"
 MOTION_HOLD_FILE="${MOTION_HOLD_FILE:-/tmp/azas_motion_hold}"
-FLOOR_STATUS_FILE="${FLOOR_STATUS_FILE:-/tmp/azas_dispenser_then_shake_floor_status.txt}"
-FLOOR_LOG_FILE="${FLOOR_LOG_FILE:-/tmp/azas_dispenser_then_shake_floor.log}"
+OUTLET_HOLD_STATUS_FILE="${OUTLET_HOLD_STATUS_FILE:-/tmp/azas_dispenser_then_shake_outlet_hold_status.txt}"
+OUTLET_HOLD_LOG_FILE="${OUTLET_HOLD_LOG_FILE:-/tmp/azas_dispenser_then_shake_outlet_hold.log}"
 SHAKE_STATUS_FILE="${SHAKE_STATUS_FILE:-/tmp/azas_dispenser_then_shake_status.txt}"
 SHAKE_LOG_FILE="${SHAKE_LOG_FILE:-/tmp/azas_dispenser_then_shake.log}"
 SHAKE_CENTER_X="${SHAKE_CENTER_X:-0.28}"
@@ -36,13 +36,13 @@ MIN_SHAKE_Z="${MIN_SHAKE_Z:-0.55}"
 DISPENSER_KEEPOUT_RADIUS="${DISPENSER_KEEPOUT_RADIUS:-0.20}"
 
 cleanup() {
-  if [[ -n "${FLOOR_LAUNCH_PID:-}" ]] && kill -0 "${FLOOR_LAUNCH_PID}" 2>/dev/null; then
-    kill "${FLOOR_LAUNCH_PID}" 2>/dev/null || true
-    wait "${FLOOR_LAUNCH_PID}" 2>/dev/null || true
+  if [[ -n "${OUTLET_HOLD_LAUNCH_PID:-}" ]] && kill -0 "${OUTLET_HOLD_LAUNCH_PID}" 2>/dev/null; then
+    kill "${OUTLET_HOLD_LAUNCH_PID}" 2>/dev/null || true
+    wait "${OUTLET_HOLD_LAUNCH_PID}" 2>/dev/null || true
   fi
-  if [[ -n "${FLOOR_STATUS_PID:-}" ]] && kill -0 "${FLOOR_STATUS_PID}" 2>/dev/null; then
-    kill "${FLOOR_STATUS_PID}" 2>/dev/null || true
-    wait "${FLOOR_STATUS_PID}" 2>/dev/null || true
+  if [[ -n "${OUTLET_HOLD_STATUS_PID:-}" ]] && kill -0 "${OUTLET_HOLD_STATUS_PID}" 2>/dev/null; then
+    kill "${OUTLET_HOLD_STATUS_PID}" 2>/dev/null || true
+    wait "${OUTLET_HOLD_STATUS_PID}" 2>/dev/null || true
   fi
   if [[ -n "${SHAKE_LAUNCH_PID:-}" ]] && kill -0 "${SHAKE_LAUNCH_PID}" 2>/dev/null; then
     kill "${SHAKE_LAUNCH_PID}" 2>/dev/null || true
@@ -95,7 +95,7 @@ require_real_motion_gates() {
   echo "  - /azas/cup_detection status starts with detected:upright for the tumbler body"
   echo "  - detected:lid, rejected:*, or ambiguous detections are not accepted as cup poses"
   echo "  - /jarvis/tumbler_dispenser/tumbler_pose is from real camera detection, not demo"
-  echo "  - cup mouth alignment is intended: place_mouth_under_outlet=${PLACE_MOUTH_UNDER_OUTLET}, clearance=${OUTLET_MOUTH_CLEARANCE}m"
+  echo "  - outlet-front transfer keeps low side-grasp height unless PLACE_MOUTH_UNDER_OUTLET=true"
   echo "  - e-stop is reachable"
   echo "  - no person is inside the robot workspace"
   echo "  - cup, dispenser, table, cable, camera mount, and lifted shake volume were checked"
@@ -133,7 +133,7 @@ wait_for_status_done() {
 }
 
 require_real_motion_gates
-rm -f "${FLOOR_STATUS_FILE}" "${FLOOR_LOG_FILE}" "${SHAKE_STATUS_FILE}" "${SHAKE_LOG_FILE}"
+rm -f "${OUTLET_HOLD_STATUS_FILE}" "${OUTLET_HOLD_LOG_FILE}" "${SHAKE_STATUS_FILE}" "${SHAKE_LOG_FILE}"
 
 set +u
 source /opt/ros/humble/setup.bash
@@ -141,7 +141,7 @@ source "${ROOT_DIR}/install/setup.bash"
 source /home/ssu/ros2_ws/install/setup.bash
 set -u
 
-echo "[Azas] Stage 1/2: grasp cup and move to selected dispenser pre-place without releasing"
+echo "[Azas] Stage 1/2: grasp cup and hold it in front of the selected dispenser outlet"
 ros2 launch azas_bringup robot_connection_control.launch.py \
   selected_dispenser_id:="${SELECTED_DISPENSER_ID}" \
   enable_realsense:=true \
@@ -153,22 +153,23 @@ ros2 launch azas_bringup robot_connection_control.launch.py \
   place_mouth_under_outlet:="${PLACE_MOUTH_UNDER_OUTLET}" \
   outlet_mouth_clearance:="${OUTLET_MOUTH_CLEARANCE}" \
   service_prefix:="${SERVICE_PREFIX}" \
-  execution_stage:=pre_place \
+  delivery_mode:=hold_under_outlet \
+  execution_stage:=full \
   enable_hardware:=true \
   hardware_confirm:=ENABLE_REAL_ROBOT_MOTION \
   allow_service_control_without_moveit:=true \
-  >"${FLOOR_LOG_FILE}" 2>&1 &
-FLOOR_LAUNCH_PID=$!
+  >"${OUTLET_HOLD_LOG_FILE}" 2>&1 &
+OUTLET_HOLD_LAUNCH_PID=$!
 
-timeout 90s ros2 topic echo /jarvis/tumbler_floor_place/status --field data --no-daemon >"${FLOOR_STATUS_FILE}" &
-FLOOR_STATUS_PID=$!
+timeout 90s ros2 topic echo /jarvis/tumbler_floor_place/status --field data --no-daemon >"${OUTLET_HOLD_STATUS_FILE}" &
+OUTLET_HOLD_STATUS_PID=$!
 
-wait_for_status_done "dispenser pre-place transfer" "${FLOOR_STATUS_FILE}" "${FLOOR_LOG_FILE}" 140
+wait_for_status_done "dispenser outlet-front hold transfer" "${OUTLET_HOLD_STATUS_FILE}" "${OUTLET_HOLD_LOG_FILE}" 140
 
-kill "${FLOOR_LAUNCH_PID}" 2>/dev/null || true
-wait "${FLOOR_LAUNCH_PID}" 2>/dev/null || true
-kill "${FLOOR_STATUS_PID}" 2>/dev/null || true
-wait "${FLOOR_STATUS_PID}" 2>/dev/null || true
+kill "${OUTLET_HOLD_LAUNCH_PID}" 2>/dev/null || true
+wait "${OUTLET_HOLD_LAUNCH_PID}" 2>/dev/null || true
+kill "${OUTLET_HOLD_STATUS_PID}" 2>/dev/null || true
+wait "${OUTLET_HOLD_STATUS_PID}" 2>/dev/null || true
 
 echo "[Azas] Stage 2/2: run lifted high-shake while cup remains grasped"
 ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
@@ -193,4 +194,4 @@ SHAKE_STATUS_PID=$!
 
 wait_for_status_done "lifted high-shake" "${SHAKE_STATUS_FILE}" "${SHAKE_LOG_FILE}" 100
 
-echo "[Azas] DONE: cup moved to dispenser pre-place and lifted shake completed."
+echo "[Azas] DONE: cup moved to dispenser outlet-front hold and lifted shake completed."

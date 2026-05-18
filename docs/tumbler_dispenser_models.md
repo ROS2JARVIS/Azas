@@ -1,5 +1,8 @@
 # Tumbler And Dispenser 3D Models
 
+> 폐기 안내: 이 문서의 예전 외부 워크스페이스 복사 절차는 사용하지 않습니다.
+> Azas 모델과 RViz/MoveIt 작업은 `/home/ssu/Azas` 아래에서만 관리합니다.
+
 Generated from `wiki/sources/User Supplied Tumbler And Dispenser Specs.md`.
 
 ## Asset Locations
@@ -13,8 +16,8 @@ Source copy:
 ROS package copy for RViz:
 
 ```text
-/home/ssu/ros2_ws/src/Azas/models
-/home/ssu/ros2_ws/install/jarvis/share/jarvis/models
+/home/ssu/Azas/models
+/home/ssu/Azas/install/azas_bringup/share/azas_bringup/models
 ```
 
 ## RViz Mesh Resources
@@ -49,10 +52,9 @@ The `.usda` stage references the OBJ files and lays out a four-dispenser row plu
 ```bash
 cd /home/ssu/Azas
 ./tools/generate_tumbler_dispenser_models.py
-cp -f models/* /home/ssu/ros2_ws/src/Azas/models/
-cd /home/ssu/ros2_ws
 source /opt/ros/humble/setup.bash
-colcon build --packages-select jarvis
+colcon build --packages-select azas_bringup azas_motion --symlink-install
+source /home/ssu/Azas/install/local_setup.bash
 ```
 
 ## Safety Note

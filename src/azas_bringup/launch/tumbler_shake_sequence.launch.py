@@ -17,12 +17,19 @@ def generate_launch_description():
     shake_center_x = LaunchConfiguration("shake_center_x")
     shake_center_y = LaunchConfiguration("shake_center_y")
     shake_center_z = LaunchConfiguration("shake_center_z")
+    shake_approach_height = LaunchConfiguration("shake_approach_height")
     shake_amplitude_x = LaunchConfiguration("shake_amplitude_x")
     shake_amplitude_y = LaunchConfiguration("shake_amplitude_y")
     shake_amplitude_z = LaunchConfiguration("shake_amplitude_z")
     shake_cycles = LaunchConfiguration("shake_cycles")
+    line_time = LaunchConfiguration("line_time")
+    service_wait_timeout_sec = LaunchConfiguration("service_wait_timeout_sec")
+    motion_response_timeout_sec = LaunchConfiguration("motion_response_timeout_sec")
     min_shake_z = LaunchConfiguration("min_shake_z")
     dispenser_keepout_radius = LaunchConfiguration("dispenser_keepout_radius")
+    rx = LaunchConfiguration("rx")
+    ry = LaunchConfiguration("ry")
+    rz = LaunchConfiguration("rz")
     use_visualizer = LaunchConfiguration("use_visualizer")
 
     params = {
@@ -53,7 +60,7 @@ def generate_launch_description():
         "shake_center_x": ParameterValue(shake_center_x, value_type=float),
         "shake_center_y": ParameterValue(shake_center_y, value_type=float),
         "shake_center_z": ParameterValue(shake_center_z, value_type=float),
-        "shake_approach_height": 0.10,
+        "shake_approach_height": ParameterValue(shake_approach_height, value_type=float),
         "shake_amplitude_x": ParameterValue(shake_amplitude_x, value_type=float),
         "shake_amplitude_y": ParameterValue(shake_amplitude_y, value_type=float),
         "shake_amplitude_z": ParameterValue(shake_amplitude_z, value_type=float),
@@ -70,11 +77,17 @@ def generate_launch_description():
             dispenser_keepout_radius,
             value_type=float,
         ),
-        "rx": 180.0,
-        "ry": 0.0,
-        "rz": 180.0,
+        "rx": ParameterValue(rx, value_type=float),
+        "ry": ParameterValue(ry, value_type=float),
+        "rz": ParameterValue(rz, value_type=float),
         "line_velocity": 45.0,
         "line_acceleration": 80.0,
+        "line_time": ParameterValue(line_time, value_type=float),
+        "service_wait_timeout_sec": ParameterValue(service_wait_timeout_sec, value_type=float),
+        "motion_response_timeout_sec": ParameterValue(
+            motion_response_timeout_sec,
+            value_type=float,
+        ),
     }
 
     return LaunchDescription(
@@ -90,12 +103,19 @@ def generate_launch_description():
             DeclareLaunchArgument("shake_center_x", default_value="0.28"),
             DeclareLaunchArgument("shake_center_y", default_value="-0.30"),
             DeclareLaunchArgument("shake_center_z", default_value="0.62"),
+            DeclareLaunchArgument("shake_approach_height", default_value="0.10"),
             DeclareLaunchArgument("shake_amplitude_x", default_value="0.100"),
             DeclareLaunchArgument("shake_amplitude_y", default_value="0.040"),
             DeclareLaunchArgument("shake_amplitude_z", default_value="0.055"),
             DeclareLaunchArgument("shake_cycles", default_value="4"),
+            DeclareLaunchArgument("line_time", default_value="0.0"),
+            DeclareLaunchArgument("service_wait_timeout_sec", default_value="5.0"),
+            DeclareLaunchArgument("motion_response_timeout_sec", default_value="10.0"),
             DeclareLaunchArgument("min_shake_z", default_value="0.55"),
             DeclareLaunchArgument("dispenser_keepout_radius", default_value="0.20"),
+            DeclareLaunchArgument("rx", default_value="180.0"),
+            DeclareLaunchArgument("ry", default_value="0.0"),
+            DeclareLaunchArgument("rz", default_value="180.0"),
             DeclareLaunchArgument("use_visualizer", default_value="true"),
             Node(
                 package="azas_motion",

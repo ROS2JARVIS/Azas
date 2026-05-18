@@ -110,6 +110,9 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("rz", 180.0)
         self.declare_parameter("line_velocity", 45.0)
         self.declare_parameter("line_acceleration", 80.0)
+        self.declare_parameter("line_time", 0.0)
+        self.declare_parameter("service_wait_timeout_sec", 5.0)
+        self.declare_parameter("motion_response_timeout_sec", 10.0)
 
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.service_prefix = str(self.get_parameter("service_prefix").value)
@@ -274,26 +277,46 @@ class TumblerShakeSequenceNode(Node):
             float(self.get_parameter("ry").value),
             float(self.get_parameter("rz").value),
         ]
-        req.vel = [float(self.get_parameter("line_velocity").value)] * 2
-        req.acc = [float(self.get_parameter("line_acceleration").value)] * 2
-        req.time = 0.0
+        line_time = max(float(self.get_parameter("line_time").value), 0.0)
+        if line_time > 0.0:
+            req.time = line_time
+        else:
+            req.vel = [float(self.get_parameter("line_velocity").value)] * 2
+            req.acc = [float(self.get_parameter("line_acceleration").value)] * 2
+            req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
         req.mode = MOVE_MODE_ABSOLUTE
         req.blend_type = BLENDING_SPEED_TYPE_DUPLICATE
         req.sync_type = SYNC
 
-        self.get_logger().info(f"{step.label}: calling hardware service")
+        self.get_logger().info(
+            f"{step.label}: calling hardware service "
+            f"pos_mm=[{req.pos[0]:.1f}, {req.pos[1]:.1f}, {req.pos[2]:.1f}, "
+            f"{req.pos[3]:.1f}, {req.pos[4]:.1f}, {req.pos[5]:.1f}] "
+            f"time={req.time:.2f} vel={list(req.vel)} acc={list(req.acc)}"
+        )
         future = self.move_line.call_async(req)
-        deadline = time.monotonic() + 10.0
+        timeout_sec = max(float(self.get_parameter("motion_response_timeout_sec").value), 0.1)
+        deadline = time.monotonic() + timeout_sec
         while rclpy.ok() and not future.done():
             if time.monotonic() > deadline:
-                self.get_logger().error(f"{step.label} timed out waiting for service response")
+                self.get_logger().error(
+                    f"{step.label} timed out waiting {timeout_sec:.1f}s for service response"
+                )
                 return False
             time.sleep(0.01)
+        if future.exception() is not None:
+            self.get_logger().error(f"{step.label} service call raised: {future.exception()}")
+            return False
         result = future.result()
         if result is None or not result.success:
-            self.get_logger().error(f"{step.label} failed")
+            self.get_logger().error(
+                f"{step.label} returned success=false for "
+                f"pos_mm=[{req.pos[0]:.1f}, {req.pos[1]:.1f}, {req.pos[2]:.1f}, "
+                f"{req.pos[3]:.1f}, {req.pos[4]:.1f}, {req.pos[5]:.1f}]. "
+                "Check the Doosan controller log for the exact reject reason."
+            )
             return False
         return True
 
@@ -306,7 +329,14 @@ class TumblerShakeSequenceNode(Node):
             )
             return True
 
+        service_timeout_sec = max(float(self.get_parameter("service_wait_timeout_sec").value), 0.1)
+        service_deadline = time.monotonic() + service_timeout_sec
         while rclpy.ok() and self.move_line is not None and not self.move_line.wait_for_service(timeout_sec=1.0):
+            if time.monotonic() > service_deadline:
+                self.get_logger().error(
+                    f"motion/move_line service was not available within {service_timeout_sec:.1f}s"
+                )
+                return False
             self.get_logger().info("Waiting for motion/move_line")
         for step in steps:
             if not self.call_movel(step):

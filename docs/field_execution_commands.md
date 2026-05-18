@@ -1,5 +1,9 @@
 # Field Execution Commands
 
+> 폐기 안내: 이 문서는 예전 현장 명령 기록입니다. 현재 실제 로봇 디스펜서 테스트는
+> [real_robot_dispenser_test_commands.md](real_robot_dispenser_test_commands.md)를 사용하세요.
+> Azas 작업은 `/home/ssu/Azas`와 `/home/ssu/Azas/install`만 사용합니다.
+
 Purpose: exact commands to run when the physical Doosan M0609 and camera are
 connected in class.
 
@@ -30,7 +34,7 @@ IP and robot-side state are correct.
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py mode:=real model:=m0609 host:=192.168.137.100 port:=12345
 ```
 
@@ -38,7 +42,7 @@ If the lab controller uses the other documented default subnet:
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py mode:=real model:=m0609 host:=192.168.127.100 port:=12345
 ```
 
@@ -46,7 +50,7 @@ Confirm motion services are visible:
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 service list | grep motion
 ```
 
@@ -63,7 +67,7 @@ STT jog-control demo:
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch dsr_practice stt_robot_control.launch.py
 ```
 
@@ -83,7 +87,7 @@ STT pick/place demo:
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch dsr_practice stt_pick_and_place.launch.py
 ```
 

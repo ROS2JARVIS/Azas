@@ -20,7 +20,7 @@ class RealSenseDataCollector(Node):
         )
         self.declare_parameter("camera_info_topic", "/camera/camera/color/camera_info")
         self.declare_parameter(
-            "output_dir", "/home/ssu/ros2_ws/realsense_dataset/raw"
+            "output_dir", "/home/ssu/Azas/data/realsense_dataset/raw"
         )
         self.declare_parameter("save_interval_sec", 1.0)
         self.declare_parameter("max_frames", 0)

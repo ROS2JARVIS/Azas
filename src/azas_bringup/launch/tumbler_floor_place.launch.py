@@ -32,6 +32,7 @@ def generate_launch_description():
     side_grasp_preferred_axes = LaunchConfiguration("side_grasp_preferred_axes")
     use_detected_grasp_yaw = LaunchConfiguration("use_detected_grasp_yaw")
     lift_height = LaunchConfiguration("lift_height")
+    delivery_mode = LaunchConfiguration("delivery_mode")
     place_approach_height = LaunchConfiguration("place_approach_height")
     place_mouth_under_outlet = LaunchConfiguration("place_mouth_under_outlet")
     outlet_mouth_clearance = LaunchConfiguration("outlet_mouth_clearance")
@@ -80,6 +81,7 @@ def generate_launch_description():
         "side_grasp_preferred_axes": side_grasp_preferred_axes,
         "use_detected_grasp_yaw": ParameterValue(use_detected_grasp_yaw, value_type=bool),
         "lift_height": ParameterValue(lift_height, value_type=float),
+        "delivery_mode": delivery_mode,
         "place_approach_height": ParameterValue(place_approach_height, value_type=float),
         "placement_floor_z": 0.0,
         "place_mouth_under_outlet": ParameterValue(place_mouth_under_outlet, value_type=bool),
@@ -174,6 +176,7 @@ def generate_launch_description():
             DeclareLaunchArgument("side_grasp_preferred_axes", default_value=""),
             DeclareLaunchArgument("use_detected_grasp_yaw", default_value="true"),
             DeclareLaunchArgument("lift_height", default_value="0.04"),
+            DeclareLaunchArgument("delivery_mode", default_value="floor_place"),
             DeclareLaunchArgument("place_approach_height", default_value="0.06"),
             DeclareLaunchArgument("place_mouth_under_outlet", default_value="false"),
             DeclareLaunchArgument("outlet_mouth_clearance", default_value="0.0"),

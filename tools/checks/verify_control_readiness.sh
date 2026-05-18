@@ -137,6 +137,7 @@ run_step "Real-motion config gate smoke" "${SMOKE_DIR}/smoke_real_motion_config_
 run_step "Doosan virtual launch args" bash -lc '
   source /opt/ros/humble/setup.bash
   source /home/ssu/ros2_ws/install/setup.bash
+  source /home/ssu/ws_moveit/install/setup.bash
   timeout 20s ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py --show-args
 '
 

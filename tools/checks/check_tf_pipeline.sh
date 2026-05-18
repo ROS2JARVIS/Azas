@@ -13,6 +13,12 @@ export ROS_LOG_DIR
 
 set +u
 source /opt/ros/humble/setup.bash
+if [[ -f /home/ssu/ros2_ws/install/setup.bash ]]; then
+  source /home/ssu/ros2_ws/install/setup.bash
+fi
+if [[ -f /home/ssu/ws_moveit/install/setup.bash ]]; then
+  source /home/ssu/ws_moveit/install/setup.bash
+fi
 if [[ -f /home/ssu/Azas/install/setup.bash ]]; then
   source /home/ssu/Azas/install/setup.bash
 fi

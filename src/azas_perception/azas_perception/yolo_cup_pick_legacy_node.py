@@ -148,7 +148,7 @@ class YoloCupPickNode(Node):
 
         self.declare_parameter(
             "model_path",
-            "/home/ssu/ros2_ws/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
+            "/home/ssu/Azas/data/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
         )
         self.declare_parameter("conf", 0.35)
         self.declare_parameter("imgsz", 640)

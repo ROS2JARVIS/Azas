@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Dry-run first tumbler pick and floor placement controller.
+"""Dry-run first tumbler side-grasp transfer controller.
 
 Default behavior is planning/logging only. Doosan motion clients are created
-only when all explicit hardware gates are enabled.
+only when all explicit hardware gates are enabled. The legacy default still
+plans floor placement; set delivery_mode:=hold_under_outlet to keep the cup
+grasped at low side-grasp transfer height in front of the dispenser outlet
+instead of placing it on the floor.
 """
 
 import math
@@ -221,6 +224,7 @@ class TumblerFloorPlaceNode(Node):
         self.declare_parameter("side_grasp_preferred_axes", "")
         self.declare_parameter("use_detected_grasp_yaw", True)
         self.declare_parameter("lift_height", 0.04)
+        self.declare_parameter("delivery_mode", "floor_place")
         self.declare_parameter("place_approach_height", 0.06)
         self.declare_parameter("placement_floor_z", 0.0)
         self.declare_parameter("place_mouth_under_outlet", False)
@@ -349,6 +353,7 @@ class TumblerFloorPlaceNode(Node):
 
         self.get_logger().info(
             "tumbler_floor_place_node ready. "
+            f"delivery_mode={self.delivery_mode()}; "
             f"hardware_armed={self.hardware_armed}; default is dry-run."
         )
 
@@ -436,6 +441,22 @@ class TumblerFloorPlaceNode(Node):
             raise ValueError("dispenser_bottle_positions and dispenser_outlet_positions must be flat XYZ arrays")
         return xyz_list_from_flat(bottle_values, count), xyz_list_from_flat(outlet_values, count), selected_id - 1
 
+    def delivery_mode(self) -> str:
+        mode = str(self.get_parameter("delivery_mode").value).strip().lower()
+        if mode in {"", "floor", "floor_place", "place_on_floor"}:
+            return "floor_place"
+        if mode in {
+            "hold",
+            "outlet_hold",
+            "hold_under_outlet",
+            "outlet_front_hold",
+            "move_to_outlet",
+        }:
+            return "hold_under_outlet"
+        raise RuntimeError(
+            "unsupported delivery_mode. Use one of: floor_place, hold_under_outlet"
+        )
+
     def build_steps(self) -> List[MotionStep]:
         bottle_positions, outlet_positions, selected_index = self.selected_layout()
         tumbler_base = self.tumbler_base()
@@ -445,6 +466,7 @@ class TumblerFloorPlaceNode(Node):
         approach_height = float(self.get_parameter("place_approach_height").value)
         floor_z = float(self.get_parameter("placement_floor_z").value)
         target_outlet = outlet_positions[selected_index]
+        delivery_mode = self.delivery_mode()
         grasp_width, preopen_width = self.gripper_width_targets(grasp_height)
         grasp_force = float(self.get_parameter("gripper_grasp_force_n").value)
         preopen_force = float(self.get_parameter("gripper_preopen_force_n").value)
@@ -458,12 +480,15 @@ class TumblerFloorPlaceNode(Node):
                 - float(self.get_parameter("outlet_mouth_clearance").value)
             )
         grasp = (tumbler_base[0], tumbler_base[1], tumbler_base[2] + grasp_height)
-        place = (target_outlet[0], target_outlet[1], target_base_z + grasp_height)
-        pre_place = (place[0], place[1], place[2] + approach_height)
+        target = (target_outlet[0], target_outlet[1], target_base_z + grasp_height)
+        pre_target = (target[0], target[1], target[2] + approach_height)
         lift_z = grasp[2] + lift_height
         if mouth_under_outlet:
-            lift_z = max(lift_z, pre_place[2])
+            lift_z = max(lift_z, pre_target[2])
         lift = (grasp[0], grasp[1], lift_z)
+        if delivery_mode == "hold_under_outlet" and not mouth_under_outlet:
+            target = (target_outlet[0], target_outlet[1], lift_z)
+            pre_target = target
         safety_radius = 0.041 + float(self.get_parameter("clearance").value)
         safety_radius += float(self.get_parameter("tumbler_radius").value)
         side_pre_grasp = self.select_side_pre_grasp(
@@ -482,18 +507,26 @@ class TumblerFloorPlaceNode(Node):
         current = lift
         for index, bottle in enumerate(bottle_positions, start=1):
             bottle_xy = (bottle[0], bottle[1])
-            if path_intersects_bottle(current, pre_place, bottle_xy, safety_radius):
-                detour = compute_detour(current, pre_place, bottle_xy, safety_radius, current[2])
+            if path_intersects_bottle(current, pre_target, bottle_xy, safety_radius):
+                detour = compute_detour(current, pre_target, bottle_xy, safety_radius, current[2])
                 steps.append(MotionStep(f"detour_around_dispenser_{index}", detour))
                 current = detour
 
-        steps.extend(
-            [
-                MotionStep("pre_floor_place", pre_place),
-                MotionStep("floor_place", place, "open"),
-                MotionStep("retreat_after_place", pre_place),
-            ]
-        )
+        if delivery_mode == "hold_under_outlet":
+            steps.extend(
+                [
+                    MotionStep("pre_outlet_front_hold", pre_target),
+                    MotionStep("outlet_front_hold", target),
+                ]
+            )
+        else:
+            steps.extend(
+                [
+                    MotionStep("pre_floor_place", pre_target),
+                    MotionStep("floor_place", target, "open"),
+                    MotionStep("retreat_after_place", pre_target),
+                ]
+            )
         return self.limit_steps_for_stage(steps)
 
     def limit_steps_for_stage(self, steps: Sequence[MotionStep]) -> List[MotionStep]:
@@ -508,11 +541,17 @@ class TumblerFloorPlaceNode(Node):
             "pre_place": "pre_floor_place",
             "pre_floor_place": "pre_floor_place",
             "place": "floor_place",
+            "pre_outlet": "pre_outlet_front_hold",
+            "pre_outlet_hold": "pre_outlet_front_hold",
+            "outlet": "outlet_front_hold",
+            "outlet_hold": "outlet_front_hold",
+            "hold": "outlet_front_hold",
         }
         terminal = terminal_by_stage.get(stage)
         if terminal is None:
             raise RuntimeError(
-                "unsupported execution_stage. Use one of: full, approach, grasp, lift, pre_place, place"
+                "unsupported execution_stage. Use one of: full, approach, grasp, lift, "
+                "pre_place, place, pre_outlet, outlet_hold"
             )
 
         limited: List[MotionStep] = []
@@ -660,7 +699,8 @@ class TumblerFloorPlaceNode(Node):
             path.poses.append(pose)
         self.path_pub.publish(path)
         if path.poses:
-            self.target_pub.publish(path.poses[-2])
+            target_index = -2 if steps[-1].label.startswith("retreat_after_") and len(path.poses) >= 2 else -1
+            self.target_pub.publish(path.poses[target_index])
 
     def wait_for_hardware_services(self) -> bool:
         clients = [(self.move_joint, "motion/move_joint"), (self.move_line, "motion/move_line")]

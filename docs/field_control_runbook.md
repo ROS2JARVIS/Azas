@@ -1,5 +1,8 @@
 # Field Control Runbook
 
+> 폐기 안내: 이 문서는 예전 외부 워크스페이스 병행 운용 시절의 runbook입니다.
+> 현재 실제 로봇 디스펜서 테스트는 `docs/real_robot_dispenser_test_commands.md`를 사용하세요.
+
 Purpose: move from open-source stack readiness to controlled Azas dry-run evidence without accidentally commanding real robot motion.
 
 For the higher-level decision of whether to simulate first or connect hardware, see `docs/simulation_and_connection_plan.md`.
@@ -7,7 +10,7 @@ For copy-paste field commands, see `docs/field_execution_commands.md`.
 
 ## Preconditions
 
-- Azas and `ros2_ws` have been built.
+- Azas has been built under `/home/ssu/Azas`.
 - `tools/checks/check_oss_stack.sh` passes with `failures=0`.
 - `tools/smoke/smoke_control_path.sh` reaches `DONE`.
 - The operator has read `docs/safety_checklist.md`.

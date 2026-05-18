@@ -20,6 +20,10 @@ def generate_launch_description():
     frame_id = LaunchConfiguration("frame_id")
     robot_color = LaunchConfiguration("robot_color")
     rviz_config = LaunchConfiguration("rviz_config")
+    show_sequence_markers = LaunchConfiguration("show_sequence_markers")
+    show_dispenser_markers = LaunchConfiguration("show_dispenser_markers")
+    show_animated_cup = LaunchConfiguration("show_animated_cup")
+    show_demo_arm = LaunchConfiguration("show_demo_arm")
 
     robot_description = {
         "robot_description": Command(
@@ -61,9 +65,17 @@ def generate_launch_description():
             DeclareLaunchArgument("mouth_y", default_value="-0.24"),
             DeclareLaunchArgument("mouth_z", default_value="0.22"),
             DeclareLaunchArgument("robot_color", default_value="white"),
+            DeclareLaunchArgument("show_sequence_markers", default_value="true"),
+            DeclareLaunchArgument("show_dispenser_markers", default_value="true"),
+            DeclareLaunchArgument("show_animated_cup", default_value="true"),
+            DeclareLaunchArgument("show_demo_arm", default_value="true"),
             DeclareLaunchArgument("planning_group", default_value="manipulator"),
             DeclareLaunchArgument("ee_link", default_value="tool0"),
+            DeclareLaunchArgument("planning_pipeline", default_value="pilz_industrial_motion_planner"),
+            DeclareLaunchArgument("planner_id", default_value="PTP"),
             DeclareLaunchArgument("planning_timeout_sec", default_value="1.0"),
+            DeclareLaunchArgument("max_velocity_scaling_factor", default_value="0.1"),
+            DeclareLaunchArgument("max_acceleration_scaling_factor", default_value="0.1"),
             DeclareLaunchArgument("loop_preview", default_value="true"),
             DeclareLaunchArgument("preview_publish_rate", default_value="30.0"),
             DeclareLaunchArgument("preview_frames_per_step", default_value="45"),
@@ -71,7 +83,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "rviz_config",
                 default_value=PathJoinSubstitution(
-                    [FindPackageShare("azas_bringup"), "rviz", "azas_dispenser_sequence.rviz"]
+                    [FindPackageShare("azas_bringup"), "rviz", "azas_dispenser_sequence_clean.rviz"]
                 ),
             ),
             Node(
@@ -153,6 +165,14 @@ def generate_launch_description():
                         "selected_dispenser_id": ParameterValue(
                             selected_dispenser_id, value_type=int
                         ),
+                        "show_sequence_markers": ParameterValue(
+                            show_sequence_markers, value_type=bool
+                        ),
+                        "show_dispenser_markers": ParameterValue(
+                            show_dispenser_markers, value_type=bool
+                        ),
+                        "show_animated_cup": ParameterValue(show_animated_cup, value_type=bool),
+                        "show_demo_arm": ParameterValue(show_demo_arm, value_type=bool),
                     }
                 ],
             ),
@@ -174,8 +194,16 @@ def generate_launch_description():
                         "plan_topic": "/azas/dispenser_sequence/plan",
                         "planning_group": LaunchConfiguration("planning_group"),
                         "ee_link": LaunchConfiguration("ee_link"),
+                        "planning_pipeline": LaunchConfiguration("planning_pipeline"),
+                        "planner_id": LaunchConfiguration("planner_id"),
                         "planning_timeout_sec": ParameterValue(
                             LaunchConfiguration("planning_timeout_sec"), value_type=float
+                        ),
+                        "max_velocity_scaling_factor": ParameterValue(
+                            LaunchConfiguration("max_velocity_scaling_factor"), value_type=float
+                        ),
+                        "max_acceleration_scaling_factor": ParameterValue(
+                            LaunchConfiguration("max_acceleration_scaling_factor"), value_type=float
                         ),
                         "publish_rate": ParameterValue(
                             LaunchConfiguration("preview_publish_rate"), value_type=float

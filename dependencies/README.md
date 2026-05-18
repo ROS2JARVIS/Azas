@@ -103,7 +103,7 @@ RTX 5080 (16 GB VRAM) 환경 기준 추천 설치 순서:
 
 ## 비-하드웨어 스택 점검
 
-Azas와 `ros2_ws` 브릿지 패키지 빌드 후 실행하세요:
+Azas 빌드 후 실행하세요:
 
 ```bash
 bash /home/ssu/Azas/tools/checks/check_oss_stack.sh
