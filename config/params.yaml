@@ -1,0 +1,98 @@
+vision_node:
+  ros__parameters:
+    model_path: "models/best.pt"
+    color_topic: "/camera/color/image_raw"
+    detections_topic: "/cocktail/vision/detections"
+    debug_image_topic: "/cocktail/vision/debug_image"
+    class_names: ["cup", "lid"]
+    confidence_threshold: 0.50
+    debug: true
+    publish_debug_image: true
+    yolo_device: ""
+    log_detections: true
+
+detection_3d_node:
+  ros__parameters:
+    color_topic: "/camera/color/image_raw"
+    depth_topic: "/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/color/camera_info"
+    detections_topic: "/cocktail/vision/detections"
+    detections_3d_topic: "/cocktail/detection_3d/detections"
+    pose_topic: "/cocktail/detection_3d/target_pose"
+    target_frame: "base_link"
+    depth_scale: 0.001
+    min_depth_m: 0.05
+    max_depth_m: 2.00
+    roi_shrink_ratio: 0.50
+    minimum_valid_depth_pixels: 20
+
+    use_hand_eye_matrix: true
+    hand_eye_transform_matrix: [
+      -0.833861128, -0.065379771, 0.548088592, 0.100599857,
+      -0.032159563, 0.997028126, 0.070004852, -0.042743981,
+      -0.551036643, 0.040748035, -0.833485582, 0.730537383,
+      0.000000000, 0.000000000, 0.000000000, 1.000000000
+    ]
+
+    hand_eye_translation_xyz: [0.35, 0.00, 0.45]
+    hand_eye_rotation_rpy_deg: [0.0, 0.0, 0.0]
+    object_pose_orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    log_3d_detections: true
+
+robot_move_test:
+  ros__parameters:
+    detections_3d_topic: "/cocktail/detection_3d/detections"
+    target_class: "cup"
+    target_frame: "base_link"
+    pregrasp_z_offset: 0.10
+    pregrasp_orientation_xyzw: [0.0, 1.0, 0.0, 0.0]
+    min_confidence: 0.40
+    move_once: true
+    move_home_on_start: false
+    use_real_robot: false
+    robot_id: "dsr01"
+    robot_model: "m0609"
+    robot_velocity: 50.0
+    robot_acceleration: 50.0
+
+lid_pick_place_keyboard:
+  ros__parameters:
+    debug_image_topic: "/cocktail/vision/debug_image"
+    detections_3d_topic: "/cocktail/detection_3d/detections"
+    target_class: "lid"
+    min_confidence: 0.40
+    execute_motion: false
+    robot_id: "dsr01"
+    robot_model: "m0609"
+    use_real_robot: true
+    linear_vel_mm_s: 30.0
+    linear_acc_mm_s2: 60.0
+    rot_vel_deg_s: 20.0
+    rot_acc_deg_s2: 40.0
+    service_timeout_sec: 10.0
+    approach_offset_mm: 80.0
+    grasp_z_offset_mm: 10.0
+    lift_offset_mm: 120.0
+    place_approach_offset_mm: 100.0
+    release_retreat_offset_mm: 100.0
+    pick_orientation_rpy_deg: [108.40734100341797, -176.3208770751953, 175.9803924560547]
+    place_pose_mm_deg: [499.37957763671875, -15.573370933532715, 155.22544860839844, 108.40734100341797, -176.3208770751953, 175.9803924560547]
+    workspace_min_mm: [150.0, -450.0, 40.0]
+    workspace_max_mm: [750.0, 450.0, 650.0]
+    gripper_enabled: true
+    gripper_name: "rg2"
+    gripper_ip: "192.168.1.1"
+    gripper_port: 502
+    gripper_open_width: 500
+    gripper_close_width: 200
+    gripper_force: 200
+
+lid_close_state_machine:
+  ros__parameters:
+    detections_3d_topic: "/cocktail/detection_3d/detections"
+    timer_period_sec: 0.5
+
+holder:
+  ros__parameters:
+    holder_position_xyz: [0.45, -0.20, 0.12]
+    holder_orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
