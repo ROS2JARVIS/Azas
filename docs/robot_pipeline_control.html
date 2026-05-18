@@ -110,6 +110,13 @@
       padding: 10px;
       min-height: 64px;
     }
+    .step.status-running { border-color: #8bb8ff; background: #f4f8ff; }
+    .step.status-passed { border-color: #9bd5aa; background: #f3fbf5; }
+    .step.status-failed,
+    .step.status-timeout { border-color: #efb0b0; background: #fff5f5; }
+    .step.status-blocked { border-color: #e6c872; background: #fffaf0; }
+    .step.status-started,
+    .step.status-restarted { border-color: #9fc4ff; background: #f4f8ff; }
     .step code {
       display: block;
       margin-top: 8px;
@@ -144,6 +151,19 @@
     .ok { color: var(--green); background: #effaf2; border-color: #b7dfc2; }
     .blocked { color: var(--yellow); background: #fff8e6; border-color: #efd38b; }
     .motion { color: var(--red); background: #fff1f1; border-color: #efc2c2; }
+    .result-badge {
+      display: none;
+      margin-top: 6px;
+      text-align: center;
+    }
+    .result-badge.visible { display: inline-block; }
+    .result-running { color: var(--blue); background: #eef5ff; border-color: #a8c8ff; }
+    .result-passed { color: var(--green); background: #effaf2; border-color: #9bd5aa; }
+    .result-failed,
+    .result-timeout { color: var(--red); background: #fff1f1; border-color: #efb0b0; }
+    .result-blocked { color: var(--yellow); background: #fff8e6; border-color: #e6c872; }
+    .result-started,
+    .result-restarted { color: var(--blue); background: #eef5ff; border-color: #a8c8ff; }
     .actions {
       position: sticky;
       top: 12px;
@@ -247,6 +267,15 @@
     ]);
     const log = document.getElementById("log");
     const stepsEl = document.getElementById("steps");
+    const statusLabels = {
+      running: "실행 중",
+      started: "시작됨",
+      restarted: "재시작",
+      passed: "성공",
+      failed: "실패",
+      blocked: "차단",
+      timeout: "시간초과"
+    };
 
     function payload() {
       return {
@@ -265,6 +294,7 @@
       for (const step of steps) {
         const row = document.createElement("label");
         row.className = "step";
+        row.dataset.stepKey = step.key;
         row.innerHTML = `
           <input class="step-check" type="checkbox" value="${step.key}">
           <div>
@@ -275,11 +305,53 @@
           <div>
             <span class="badge ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
             ${step.real_motion ? `<span class="badge motion">실제모션</span>` : ""}
+            <span class="badge result-badge" data-result-for="${step.key}"></span>
           </div>
         `;
         stepsEl.appendChild(row);
       }
       log.textContent = "단계 목록 로드 완료";
+    }
+
+    function resetResultBadges() {
+      for (const row of document.querySelectorAll(".step")) {
+        row.classList.remove(
+          "status-running",
+          "status-started",
+          "status-restarted",
+          "status-passed",
+          "status-failed",
+          "status-blocked",
+          "status-timeout"
+        );
+      }
+      for (const badge of document.querySelectorAll(".result-badge")) {
+        badge.className = "badge result-badge";
+        badge.textContent = "";
+      }
+    }
+
+    function setStepStatus(key, status) {
+      const row = document.querySelector(`.step[data-step-key="${CSS.escape(key)}"]`);
+      const badge = document.querySelector(`.result-badge[data-result-for="${CSS.escape(key)}"]`);
+      if (!row || !badge) return;
+      const safeStatus = statusLabels[status] ? status : "failed";
+      row.classList.remove(
+        "status-running",
+        "status-started",
+        "status-restarted",
+        "status-passed",
+        "status-failed",
+        "status-blocked",
+        "status-timeout"
+      );
+      row.classList.add(`status-${safeStatus}`);
+      badge.className = `badge result-badge visible result-${safeStatus}`;
+      badge.textContent = statusLabels[safeStatus];
+    }
+
+    function selectedStepKeys() {
+      return Array.from(document.querySelectorAll(".step-check:checked")).map((item) => item.value);
     }
 
     async function loadSteps() {
@@ -294,13 +366,22 @@
     });
 
     document.getElementById("run").addEventListener("click", async () => {
+      const selected = selectedStepKeys();
+      resetResultBadges();
+      for (const key of selected) {
+        setStepStatus(key, "running");
+      }
       log.textContent = "실행 중...";
       const res = await fetch("/api/run", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(payload())
       });
-      log.textContent = JSON.stringify(await res.json(), null, 2);
+      const data = await res.json();
+      for (const result of data.results || []) {
+        setStepStatus(result.key, result.status);
+      }
+      log.textContent = JSON.stringify(data, null, 2);
     });
 
     document.getElementById("stop").addEventListener("click", async () => {
