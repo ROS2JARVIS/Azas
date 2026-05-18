@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Azas 실로봇 좌표 기록 가이드</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #5d6978;
+      --line: #d9dee7;
+      --accent: #0f766e;
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --code-bg: #111827;
+      --code-text: #e5e7eb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 36px 20px 64px;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.25;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+    }
+
+    h2 {
+      font-size: 22px;
+      margin-bottom: 14px;
+    }
+
+    h3 {
+      font-size: 17px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 17px;
+      margin-bottom: 24px;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      margin-top: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+
+    .note {
+      border-left: 4px solid var(--accent);
+      background: #eefaf8;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+
+    .warn {
+      border-left: 4px solid var(--warn);
+      background: #fff7ed;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+
+    .danger {
+      border-left: 4px solid var(--danger);
+      background: #fef2f2;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.95em;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      border-radius: 8px;
+      padding: 14px;
+      overflow-x: auto;
+      margin: 12px 0;
+      line-height: 1.45;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 15px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef1f5;
+    }
+
+    ol, ul {
+      padding-left: 22px;
+      margin: 8px 0;
+    }
+
+    .step {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin: 14px 0;
+    }
+
+    .num {
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    .step > div:last-child {
+      min-width: 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Azas 실로봇 연결부터 좌표 기록까지</h1>
+    <p class="lead">교안 26~28장 기준: MoveIt 목표 Pose는 보통 <code>base_link</code> 기준이고, 좌표 기록은 <code>base_link -> link_6</code> TF를 읽어서 수행한다.</p>
+
+    <section>
+      <h2>핵심 개념</h2>
+      <div class="grid">
+        <div>
+          <h3>base_link</h3>
+          <p>로봇이 생각하는 좌표 원점이다. 보통 로봇 베이스 중심을 기준으로 한다.</p>
+        </div>
+        <div>
+          <h3>link_6</h3>
+          <p>6번 관절 이후의 로봇 손목 끝 링크다. 그리퍼가 장착되는 기준 위치로 보면 된다.</p>
+        </div>
+        <div>
+          <h3>TF 읽기</h3>
+          <p><code>tf2_echo base_link link_6</code>는 로봇 기준에서 손목 끝이 어디 있는지 보여준다.</p>
+        </div>
+      </div>
+      <div class="note">
+        <strong>핵심:</strong> 사람이 좌표를 상상해서 만드는 것이 아니라, 로봇 끝단을 원하는 위치로 가져간 뒤 그 순간의 TF 값을 기록한다.
+      </div>
+    </section>
+
+    <section>
+      <h2>안전 전제</h2>
+      <ul>
+        <li>처음 연결은 자동 동작 목적이 아니라 좌표 확인 목적이다.</li>
+        <li>비상정지 버튼과 티치펜던트를 바로 누를 수 있는 위치에서 진행한다.</li>
+        <li>RViz에서 임의로 Plan & Execute를 누르지 않는다.</li>
+        <li>Azas 작업에서는 <code>/home/ssu/Azas</code> 환경만 사용한다.</li>
+      </ul>
+      <div class="danger">
+        실측 전 임의 좌표를 실제 로봇 motion에 넣지 않는다. 좌표는 직접교시 또는 TF 확인으로 얻은 값만 사용한다.
+      </div>
+    </section>
+
+    <section>
+      <h2>1. 로봇 연결 준비</h2>
+      <div class="step">
+        <span class="num">1</span>
+        <div>
+          <h3>로봇 전원과 네트워크 확인</h3>
+          <p>로봇 전원 ON, 비상정지 해제, 로봇 IP 확인. 예시는 <code>192.168.1.100</code>이다.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="num">2</span>
+        <div>
+          <h3>Azas 환경만 source</h3>
+          <pre><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/Azas/install/local_setup.bash</code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <span class="num">3</span>
+        <div>
+          <h3>패키지 경로 확인</h3>
+          <pre><code>ros2 pkg prefix dsr_bringup2
+ros2 pkg prefix dsr_moveit_config_m0609
+ros2 pkg prefix moveit_py</code></pre>
+          <p>정상이라면 대부분 <code>/home/ssu/Azas/install/...</code>로 잡힌다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 실로봇 MoveIt bringup</h2>
+      <p>터미널 1에서 실행한다. <code>host</code>는 실제 로봇 IP로 바꾼다.</p>
+      <pre><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
+
+ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py \
+  mode:=real \
+  model:=m0609 \
+  host:=192.168.1.100 \
+  port:=12345</code></pre>
+      <div class="warn">
+        이 단계는 연결과 상태 확인 목적이다. 좌표 기록 전까지 자동 동작 명령을 보내지 않는다.
+      </div>
+    </section>
+
+    <section>
+      <h2>3. base_link 기준 link_6 좌표 읽기</h2>
+      <p>터미널 2에서 실행한다.</p>
+      <pre><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
+
+ros2 run tf2_ros tf2_echo base_link link_6</code></pre>
+      <p>예시 출력:</p>
+      <pre><code>Translation: [0.512, -0.083, 0.274]
+Rotation: in Quaternion [0.000, 0.707, 0.000, 0.707]</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>값</th>
+            <th>의미</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Translation [x, y, z]</code></td>
+            <td><code>base_link</code> 기준 손목 끝 위치, 단위 meter</td>
+          </tr>
+          <tr>
+            <td><code>Rotation Quaternion [x, y, z, w]</code></td>
+            <td><code>link_6</code>의 방향</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. 좌표 찍는 절차</h2>
+      <ol>
+        <li>로봇을 HOME 자세에 둔다. 교안 기준은 <code>J1=0, J2=0, J3=90, J4=0, J5=90, J6=0</code>.</li>
+        <li>티치펜던트 또는 직접교시 모드로 로봇 끝단을 원하는 위치에 가져간다.</li>
+        <li>터미널 2의 <code>tf2_echo</code>에서 <code>Translation</code>과 <code>Rotation</code>을 기록한다.</li>
+        <li>다음 위치로 이동해서 같은 방식으로 반복한다.</li>
+      </ol>
+      <p>고정 좌표로 기록할 위치 예시:</p>
+      <pre><code>dispenser_1_front
+dispenser_2_front
+dispenser_3_front
+dispenser_4_front
+floor_place</code></pre>
+      <div class="warn">
+        <strong>컵 side grip은 고정 좌표로 기록하지 않는다.</strong>
+        컵 위치는 비전 파이프라인이 매번 <code>/jarvis/tumbler_dispenser/tumbler_pose</code>로 제공한다.
+        여기서 기록하는 것은 디스펜서, floor, collision box처럼 작업 공간에 고정된 기준점이다.
+      </div>
+      <p>기록 형식 예시:</p>
+      <pre><code>dispenser_2_front:
+  frame_id: base_link
+  position:
+    x: 0.580
+    y: 0.020
+    z: 0.200
+  orientation:
+    x: 0.000
+    y: 0.707
+    z: 0.000
+    w: 0.707</code></pre>
+    </section>
+
+    <section>
+      <h2>5. Collision Geometry 측정</h2>
+      <p>교안 27장의 Planning Scene 방식대로 collision object는 <code>base_link</code> 기준의 primitive box/cylinder로 넣는다.</p>
+      <h3>디스펜서 box 측정</h3>
+      <p>디스펜서 하나당 아래 지점에 <code>link_6</code>를 가져가서 TF를 기록한다.</p>
+      <pre><code>dispenser_1_left
+dispenser_1_right
+dispenser_1_front
+dispenser_1_back
+dispenser_1_top
+dispenser_1_bottom_or_table_top</code></pre>
+      <p>계산:</p>
+      <pre><code>size_x = abs(front_x - back_x) + 0.02~0.03
+size_y = abs(left_y - right_y) + 0.02~0.03
+size_z = abs(top_z - bottom_z) + 0.02~0.03
+
+center_x = (front_x + back_x) / 2
+center_y = (left_y + right_y) / 2
+center_z = (top_z + bottom_z) / 2</code></pre>
+      <h3>MoveIt collision object 형식</h3>
+      <pre><code>header.frame_id = "base_link"
+primitive = SolidPrimitive.BOX
+dimensions = [size_x, size_y, size_z]
+primitive_pose.position = [center_x, center_y, center_z]
+primitive_pose.orientation.w = 1.0
+operation = ADD</code></pre>
+      <div class="note">
+        디스펜서 OBJ 모델은 RViz 시각화용이고, 실제 collision에는 보수적인 box를 쓰는 것이 안전하다.
+      </div>
+    </section>
+
+    <section>
+      <h2>6. 컵을 잡은 상태의 Collision</h2>
+      <p>컵은 월드에 고정된 박스가 아니라, 잡은 뒤에는 <code>link_6</code>에 붙은 물체로 다룬다.</p>
+      <pre><code>AttachedCollisionObject
+link_name = "link_6"
+shape = cylinder 또는 box
+offset = link_6 기준 컵 중심 위치</code></pre>
+      <p>side grip 상태에서는 컵 중심이 <code>link_6</code>와 다르다. 그리퍼 길이와 컵을 문 위치만큼 offset이 필요하다.</p>
+      <p>따라서 기록해야 하는 것은 <code>cup_side_grip</code>의 고정 위치가 아니라 아래 값이다.</p>
+      <pre><code>side_grip_reference:
+  meaning: 컵을 side grip 했을 때 link_6 기준 컵 중심 오프셋과 컵 자세
+  cup_center_offset_from_link_6:
+    x:
+    y:
+    z:
+  cup_collision:
+    radius:
+    height:
+  preferred_gripper_orientation:
+    x:
+    y:
+    z:
+    w:</code></pre>
+      <p>실제 컵 위치는 비전이 주는 컵 pose를 사용하고, 위 오프셋은 "잡은 뒤 컵 collision을 link_6에 어떻게 붙일지"에만 사용한다.</p>
+    </section>
+
+    <section>
+      <h2>7. 빠른 체크리스트</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>확인 항목</th>
+            <th>완료</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>로봇 IP 확인</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>Azas local setup만 source</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>MoveIt bringup 실행</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td><code>tf2_echo base_link link_6</code> 출력 확인</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>side grip 컵 오프셋/자세 기준 기록</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>4개 디스펜서 front pose 기록</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>디스펜서 collision box 경계점 기록</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>컵 attached collision offset 기록</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
