@@ -34,6 +34,7 @@ export MAX_ACCELERATION_SCALING_FACTOR="${MAX_ACCELERATION_SCALING_FACTOR:-0.03}
 export WAYPOINT_HOLD_SEC="${WAYPOINT_HOLD_SEC:-1.5}"
 export DISPENSER_TRANSFER_WAIT_SEC="${DISPENSER_TRANSFER_WAIT_SEC:-120}"
 export DISPENSER_SEQUENCE_WAIT_SEC="${DISPENSER_SEQUENCE_WAIT_SEC:-240}"
+export PUBLISH_MEASURED_COLLISION_OBJECTS="${PUBLISH_MEASURED_COLLISION_OBJECTS:-true}"
 
 cleanup_stale_ros() {
   if [[ "${SKIP_STALE_CLEANUP:-false}" == "true" ]]; then
@@ -156,6 +157,7 @@ ros2 run azas_motion measured_dispenser_collision_scene_node \
   --ros-args \
   -p config_path:="${COLLISION_CONFIG_PATH:-/home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/measured_dispenser_collision.yaml}" \
   -p publish_period_sec:="${COLLISION_PUBLISH_PERIOD_SEC:-1.0}" \
+  -p publish_collision_objects:="${PUBLISH_MEASURED_COLLISION_OBJECTS}" \
   > >(tee "${COLLISION_LOG}") 2>&1 &
 COLLISION_PID=$!
 
