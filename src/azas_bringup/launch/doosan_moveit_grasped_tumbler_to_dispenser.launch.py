@@ -68,6 +68,21 @@ def generate_launch_description():
                 "transfer_z_override": ParameterValue(
                     LaunchConfiguration("transfer_z_override"), value_type=float
                 ),
+                "enable_safe_lift_transfer": ParameterValue(
+                    LaunchConfiguration("enable_safe_lift_transfer"), value_type=bool
+                ),
+                "safe_lift_min_z": ParameterValue(
+                    LaunchConfiguration("safe_lift_min_z"), value_type=float
+                ),
+                "safe_lift_delta_z": ParameterValue(
+                    LaunchConfiguration("safe_lift_delta_z"), value_type=float
+                ),
+                "safe_lift_max_z": ParameterValue(
+                    LaunchConfiguration("safe_lift_max_z"), value_type=float
+                ),
+                "dispenser_above_z": ParameterValue(
+                    LaunchConfiguration("dispenser_above_z"), value_type=float
+                ),
                 "enable_demo_obstacle": ParameterValue(
                     LaunchConfiguration("enable_demo_obstacle"), value_type=bool
                 ),
@@ -152,6 +167,11 @@ def generate_launch_description():
             DeclareLaunchArgument("front_approach_offset_x", default_value="0.12"),
             DeclareLaunchArgument("outlet_front_offset_x", default_value="0.02"),
             DeclareLaunchArgument("transfer_z_override", default_value="0.20"),
+            DeclareLaunchArgument("enable_safe_lift_transfer", default_value="true"),
+            DeclareLaunchArgument("safe_lift_min_z", default_value="0.40"),
+            DeclareLaunchArgument("safe_lift_delta_z", default_value="0.15"),
+            DeclareLaunchArgument("safe_lift_max_z", default_value="0.55"),
+            DeclareLaunchArgument("dispenser_above_z", default_value="0.40"),
             DeclareLaunchArgument("enable_demo_obstacle", default_value="true"),
             DeclareLaunchArgument("enable_obstacle_detour", default_value="true"),
             DeclareLaunchArgument("detour_y", default_value="-0.24"),

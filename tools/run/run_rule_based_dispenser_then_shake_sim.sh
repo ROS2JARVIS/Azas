@@ -28,6 +28,10 @@ SHAKE_AMPLITUDE_X="${SHAKE_AMPLITUDE_X:-0.100}"
 SHAKE_AMPLITUDE_Y="${SHAKE_AMPLITUDE_Y:-0.040}"
 SHAKE_AMPLITUDE_Z="${SHAKE_AMPLITUDE_Z:-0.055}"
 SHAKE_CYCLES="${SHAKE_CYCLES:-4}"
+SHAKE_TWIST_RX_DEG="${SHAKE_TWIST_RX_DEG:-6.0}"
+SHAKE_TWIST_RZ_DEG="${SHAKE_TWIST_RZ_DEG:-22.0}"
+APPROACH_LINE_TIME="${APPROACH_LINE_TIME:-3.5}"
+SHAKE_LINE_TIME="${SHAKE_LINE_TIME:-0.40}"
 MIN_SHAKE_Z="${MIN_SHAKE_Z:-0.55}"
 DISPENSER_KEEPOUT_RADIUS="${DISPENSER_KEEPOUT_RADIUS:-0.20}"
 
@@ -61,5 +65,9 @@ exec ros2 launch azas_bringup tumbler_dispenser_then_shake_demo.launch.py \
   shake_amplitude_y:="${SHAKE_AMPLITUDE_Y}" \
   shake_amplitude_z:="${SHAKE_AMPLITUDE_Z}" \
   shake_cycles:="${SHAKE_CYCLES}" \
+  shake_twist_rx_deg:="${SHAKE_TWIST_RX_DEG}" \
+  shake_twist_rz_deg:="${SHAKE_TWIST_RZ_DEG}" \
+  approach_line_time:="${APPROACH_LINE_TIME}" \
+  shake_line_time:="${SHAKE_LINE_TIME}" \
   min_shake_z:="${MIN_SHAKE_Z}" \
   dispenser_keepout_radius:="${DISPENSER_KEEPOUT_RADIUS}"

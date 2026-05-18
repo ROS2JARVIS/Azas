@@ -22,7 +22,15 @@ def generate_launch_description():
     shake_amplitude_y = LaunchConfiguration("shake_amplitude_y")
     shake_amplitude_z = LaunchConfiguration("shake_amplitude_z")
     shake_cycles = LaunchConfiguration("shake_cycles")
+    shake_twist_rx_deg = LaunchConfiguration("shake_twist_rx_deg")
+    shake_twist_rz_deg = LaunchConfiguration("shake_twist_rz_deg")
     line_time = LaunchConfiguration("line_time")
+    approach_line_time = LaunchConfiguration("approach_line_time")
+    shake_line_time = LaunchConfiguration("shake_line_time")
+    approach_line_velocity = LaunchConfiguration("approach_line_velocity")
+    approach_line_acceleration = LaunchConfiguration("approach_line_acceleration")
+    shake_line_velocity = LaunchConfiguration("shake_line_velocity")
+    shake_line_acceleration = LaunchConfiguration("shake_line_acceleration")
     service_wait_timeout_sec = LaunchConfiguration("service_wait_timeout_sec")
     motion_response_timeout_sec = LaunchConfiguration("motion_response_timeout_sec")
     min_shake_z = LaunchConfiguration("min_shake_z")
@@ -65,6 +73,8 @@ def generate_launch_description():
         "shake_amplitude_y": ParameterValue(shake_amplitude_y, value_type=float),
         "shake_amplitude_z": ParameterValue(shake_amplitude_z, value_type=float),
         "shake_cycles": ParameterValue(shake_cycles, value_type=int),
+        "shake_twist_rx_deg": ParameterValue(shake_twist_rx_deg, value_type=float),
+        "shake_twist_rz_deg": ParameterValue(shake_twist_rz_deg, value_type=float),
         "shake_hold_seconds": 0.0,
         "workspace_min_x": 0.0,
         "workspace_max_x": 0.80,
@@ -83,6 +93,12 @@ def generate_launch_description():
         "line_velocity": 45.0,
         "line_acceleration": 80.0,
         "line_time": ParameterValue(line_time, value_type=float),
+        "approach_line_velocity": ParameterValue(approach_line_velocity, value_type=float),
+        "approach_line_acceleration": ParameterValue(approach_line_acceleration, value_type=float),
+        "approach_line_time": ParameterValue(approach_line_time, value_type=float),
+        "shake_line_velocity": ParameterValue(shake_line_velocity, value_type=float),
+        "shake_line_acceleration": ParameterValue(shake_line_acceleration, value_type=float),
+        "shake_line_time": ParameterValue(shake_line_time, value_type=float),
         "service_wait_timeout_sec": ParameterValue(service_wait_timeout_sec, value_type=float),
         "motion_response_timeout_sec": ParameterValue(
             motion_response_timeout_sec,
@@ -108,7 +124,15 @@ def generate_launch_description():
             DeclareLaunchArgument("shake_amplitude_y", default_value="0.040"),
             DeclareLaunchArgument("shake_amplitude_z", default_value="0.055"),
             DeclareLaunchArgument("shake_cycles", default_value="4"),
+            DeclareLaunchArgument("shake_twist_rx_deg", default_value="6.0"),
+            DeclareLaunchArgument("shake_twist_rz_deg", default_value="22.0"),
             DeclareLaunchArgument("line_time", default_value="0.0"),
+            DeclareLaunchArgument("approach_line_velocity", default_value="20.0"),
+            DeclareLaunchArgument("approach_line_acceleration", default_value="25.0"),
+            DeclareLaunchArgument("approach_line_time", default_value="3.5"),
+            DeclareLaunchArgument("shake_line_velocity", default_value="85.0"),
+            DeclareLaunchArgument("shake_line_acceleration", default_value="130.0"),
+            DeclareLaunchArgument("shake_line_time", default_value="0.40"),
             DeclareLaunchArgument("service_wait_timeout_sec", default_value="5.0"),
             DeclareLaunchArgument("motion_response_timeout_sec", default_value="10.0"),
             DeclareLaunchArgument("min_shake_z", default_value="0.55"),

@@ -72,8 +72,7 @@ fi
 
 set +u
 source /opt/ros/humble/setup.bash
-source "${ROOT_DIR}/install/setup.bash"
-source /home/ssu/ros2_ws/install/setup.bash
+source "${ROOT_DIR}/install/local_setup.bash"
 set -u
 
 exec ros2 launch azas_bringup robot_connection_control.launch.py \

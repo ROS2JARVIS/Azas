@@ -21,6 +21,10 @@ def generate_launch_description():
     shake_amplitude_y = LaunchConfiguration("shake_amplitude_y")
     shake_amplitude_z = LaunchConfiguration("shake_amplitude_z")
     shake_cycles = LaunchConfiguration("shake_cycles")
+    shake_twist_rx_deg = LaunchConfiguration("shake_twist_rx_deg")
+    shake_twist_rz_deg = LaunchConfiguration("shake_twist_rz_deg")
+    approach_line_time = LaunchConfiguration("approach_line_time")
+    shake_line_time = LaunchConfiguration("shake_line_time")
     min_shake_z = LaunchConfiguration("min_shake_z")
     dispenser_keepout_radius = LaunchConfiguration("dispenser_keepout_radius")
 
@@ -65,6 +69,10 @@ def generate_launch_description():
             "shake_amplitude_y": shake_amplitude_y,
             "shake_amplitude_z": shake_amplitude_z,
             "shake_cycles": shake_cycles,
+            "shake_twist_rx_deg": shake_twist_rx_deg,
+            "shake_twist_rz_deg": shake_twist_rz_deg,
+            "approach_line_time": approach_line_time,
+            "shake_line_time": shake_line_time,
             "min_shake_z": min_shake_z,
             "dispenser_keepout_radius": dispenser_keepout_radius,
         }.items(),
@@ -98,6 +106,10 @@ def generate_launch_description():
             DeclareLaunchArgument("shake_amplitude_y", default_value="0.040"),
             DeclareLaunchArgument("shake_amplitude_z", default_value="0.055"),
             DeclareLaunchArgument("shake_cycles", default_value="4"),
+            DeclareLaunchArgument("shake_twist_rx_deg", default_value="6.0"),
+            DeclareLaunchArgument("shake_twist_rz_deg", default_value="22.0"),
+            DeclareLaunchArgument("approach_line_time", default_value="3.5"),
+            DeclareLaunchArgument("shake_line_time", default_value="0.40"),
             DeclareLaunchArgument("min_shake_z", default_value="0.55"),
             DeclareLaunchArgument("dispenser_keepout_radius", default_value="0.0"),
             cup_target_launch,

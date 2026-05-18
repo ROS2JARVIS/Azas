@@ -1,0 +1,920 @@
+#!/usr/bin/env python3
+"""Local button panel for supervised Azas robot pipeline commands."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import signal
+import subprocess
+import time
+from dataclasses import asdict, dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+try:
+    import psutil
+except ImportError:  # pragma: no cover - local panel can still run without tree cleanup.
+    psutil = None
+
+
+ROOT = Path("/home/ssu/Azas")
+HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
+ROS_SETUP = "source /opt/ros/humble/setup.bash && source /home/ssu/Azas/install/local_setup.bash"
+DEFAULT_ROBOT_HOST = "192.168.1.100"
+FAST_MOVE_VELOCITY = "30"
+FAST_MOVE_ACCELERATION = "30"
+RVIZ_PREVIEW_ROS_DOMAIN_ID = "79"
+BACKGROUND_LOG_DIR = ROOT / "log" / "panel"
+ROBOT_STATE_NAMES = {
+    0: "STATE_INITIALIZING",
+    1: "STATE_STANDBY",
+    2: "STATE_MOVING",
+    3: "STATE_SAFE_OFF",
+    4: "STATE_TEACHING",
+    5: "STATE_SAFE_STOP",
+    6: "STATE_EMERGENCY_STOP",
+    7: "STATE_HOMMING",
+    8: "STATE_RECOVERY",
+    9: "STATE_SAFE_STOP2",
+    10: "STATE_SAFE_OFF2",
+    15: "STATE_NOT_READY",
+}
+CAMERA_TABLE_VIEW_JOINTS = {
+    "j1": "0",
+    "j2": "0",
+    "j3": "110",
+    "j4": "0",
+    "j5": "120",
+    "j6": "0",
+}
+
+
+@dataclass(frozen=True)
+class Step:
+    key: str
+    label: str
+    kind: str
+    command: str
+    implemented: bool
+    real_motion: bool
+    note: str
+
+
+STEPS = [
+    Step(
+        "connect_robot",
+        "로봇 연결 / 스마트 재연결",
+        "background",
+        "tools/run/run_doosan_real_no_motion_m0609.sh",
+        True,
+        False,
+        "준비됨/시작중이면 유지하고, stale 상태일 때만 정리 후 시작",
+    ),
+    Step("status_check", "연결 확인", "run", "ros2 service list | grep /dsr01/motion", True, False, "명령 후보만 있음: /dsr01/motion 서비스가 보여야 통과"),
+    Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch jarvis rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close) 시작"),
+    Step("home_robot", "로봇 원위치 / HOME", "run", "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 90 --j4 0 --j5 90 --j6 0", True, True, "실제모션 후보: HOME 관절값 [0, 0, 90, 0, 90, 0]"),
+    Step(
+        "lift_robot",
+        "카메라 테이블 보기 자세 / J5 안전",
+        "run",
+        "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 110 --j4 0 --j5 120 --j6 0",
+        True,
+        True,
+        "MoveLine IK 대신 관절 자세 사용: joint_3를 올리고 joint_5는 120°로 두어 135° 초과를 방지",
+    ),
+    Step("detect_cup_lid", "컵/텀블러와 뚜껑 인식", "run", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "카메라가 있을 때만 의미 있음"),
+    Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT/레시피 노드"),
+    Step("recipe_generate", "레시피 생성", "blocked", "", False, False, "음성/레시피 토픽 통합 버튼은 별도 연결 필요"),
+    Step("side_grip", "컵 잡기 side grip", "run", "tools/run/direct_movej_joints.py --j1 159 --j2 -43 --j3 -105 --j4 -81 --j5 85 --j6 31", True, True, "수동 테스트 전용: 불필요한 후퇴 모션을 막기 위해 핵심 자동선택에서는 제외"),
+    Step("gripper_soft_grasp", "그리퍼 살짝 잡기", "run", "ros2 service call /jarvis/rg2/set_width azas_interfaces/srv/SetGripper", True, True, "큰 컵용: 완전 close 대신 폭 75mm/약한 힘으로 살짝 오므림"),
+    Step("gripper_open", "그리퍼 open / 컵 놓기", "run", "ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'", True, True, "컵을 배출구 아래에 둔 뒤 RG2 open"),
+    Step(
+        "move_to_dispenser_1",
+        "고정 디스펜서 1 배출구 아래로 컵 이동",
+        "run",
+        "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 1",
+        True,
+        True,
+        "실제모션 후보: front_hold_poses.dispenser_1 좌표 사용",
+    ),
+    Step(
+        "move_to_dispenser_2",
+        "고정 디스펜서 2 배출구 아래로 컵 이동",
+        "run",
+        "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 2",
+        True,
+        True,
+        "실제모션 후보: front_hold_poses.dispenser_2 좌표 사용",
+    ),
+    Step(
+        "move_to_dispenser_3",
+        "고정 디스펜서 3 배출구 아래로 컵 이동",
+        "run",
+        "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 3",
+        True,
+        True,
+        "실제모션 후보: front_hold_poses.dispenser_3 좌표 사용",
+    ),
+    Step(
+        "move_to_dispenser_4",
+        "고정 디스펜서 4 배출구 아래로 컵 이동",
+        "run",
+        "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 4",
+        True,
+        True,
+        "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용",
+    ),
+    Step("press_dispenser", "디스펜서를 누르기", "blocked", "", False, True, "프레스 좌표/힘 제한 확정 후 연결"),
+    Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
+    Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
+    Step("place_cup_holder", "컵을 컵홀더에 놓기", "blocked", "", False, True, "컵홀더 좌표 필요"),
+    Step("attach_lid", "뚜껑을 컵에 끼우기", "blocked", "", False, True, "뚜껑 체결 동작 미구현"),
+    Step(
+        "shake_rviz_preview",
+        "쉐이킹 RViz 미리보기 / 무모션",
+        "background",
+        "tools/run/run_rule_based_dispenser_then_shake_sim.sh",
+        True,
+        False,
+        "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
+    ),
+    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: 고정 안전공간 쉐이킹"),
+    Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
+    Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
+]
+
+processes: dict[str, subprocess.Popen[str]] = {}
+process_logs: dict[str, Path] = {}
+
+DOOSAN_STACK_PATTERNS = (
+    "run_doosan_real_no_motion_m0609.sh",
+    "dsr_bringup2_moveit.launch.py",
+    "dsr_controller2",
+    "dsr_moveit_controller",
+    "ros2_control_node",
+    "controller_manager",
+    "joint_state_broadcaster",
+    "robot_state_publisher",
+    "virtual_node",
+    "move_group",
+    "moveit_simple_controller_manager",
+    "dsr_moveit_config_m0609",
+)
+
+PANEL_PROTECTED_PATTERNS = (
+    "robot_pipeline_control_server.py",
+    "run_robot_pipeline_control_panel.sh",
+)
+
+
+def command_line(proc: Any) -> str:
+    try:
+        cmdline = proc.info.get("cmdline") if hasattr(proc, "info") else proc.cmdline()
+    except Exception:
+        return ""
+    if not cmdline:
+        return ""
+    return " ".join(str(part) for part in cmdline)
+
+
+def tail_file(path: Path | None, *, max_chars: int = 8000) -> str:
+    if path is None or not path.exists():
+        return ""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - max_chars), os.SEEK_SET)
+            data = handle.read()
+    except OSError as exc:
+        return f"[Azas] failed to read log {path}: {exc}"
+    return data.decode("utf-8", errors="replace")
+
+
+def background_log_path(step_key: str) -> Path:
+    BACKGROUND_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    return BACKGROUND_LOG_DIR / f"{step_key}-{stamp}.log"
+
+
+def terminate_process_tree(proc: subprocess.Popen[str], *, label: str, grace_sec: float = 3.0) -> list[str]:
+    """Terminate a Popen process and its children without killing the panel server."""
+    events: list[str] = []
+    if proc.poll() is not None:
+        return events
+    if psutil is not None:
+        try:
+            root = psutil.Process(proc.pid)
+            targets = root.children(recursive=True) + [root]
+            for target in targets:
+                if target.pid == os.getpid():
+                    continue
+                events.append(f"{label}: terminate pid={target.pid} cmd={command_line(target)[:160]}")
+                target.terminate()
+            _, alive = psutil.wait_procs(targets, timeout=grace_sec)
+            for target in alive:
+                if target.pid == os.getpid():
+                    continue
+                events.append(f"{label}: kill pid={target.pid} cmd={command_line(target)[:160]}")
+                target.kill()
+            return events
+        except psutil.Error as exc:
+            events.append(f"{label}: psutil tree cleanup failed: {exc}")
+
+    proc.send_signal(signal.SIGINT)
+    try:
+        proc.wait(timeout=grace_sec)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        events.append(f"{label}: killed pid={proc.pid}")
+    else:
+        events.append(f"{label}: stopped pid={proc.pid}")
+    return events
+
+
+def cleanup_doosan_stack(*, grace_sec: float = 3.0) -> list[str]:
+    """Best-effort cleanup of stale Doosan/MoveIt graph processes before reconnect."""
+    events: list[str] = []
+    old = processes.pop("connect_robot", None)
+    if old is not None:
+        events.extend(terminate_process_tree(old, label="stored connect_robot", grace_sec=grace_sec))
+
+    if psutil is None:
+        return events
+
+    current_pid = os.getpid()
+    candidates: list[Any] = []
+    for proc in psutil.process_iter(["pid", "cmdline", "name"]):
+        if proc.pid == current_pid:
+            continue
+        cmd = command_line(proc)
+        if not cmd:
+            continue
+        if any(protected in cmd for protected in PANEL_PROTECTED_PATTERNS):
+            continue
+        if any(pattern in cmd for pattern in DOOSAN_STACK_PATTERNS):
+            candidates.append(proc)
+
+    if not candidates:
+        events.append("cleanup: no stale Doosan/MoveIt processes found")
+        return events
+
+    for proc in candidates:
+        events.append(f"cleanup: terminate pid={proc.pid} cmd={command_line(proc)[:160]}")
+        try:
+            proc.terminate()
+        except psutil.Error as exc:
+            events.append(f"cleanup: terminate failed pid={proc.pid}: {exc}")
+
+    _, alive = psutil.wait_procs(candidates, timeout=grace_sec)
+    for proc in alive:
+        try:
+            events.append(f"cleanup: kill pid={proc.pid} cmd={command_line(proc)[:160]}")
+            proc.kill()
+        except psutil.Error as exc:
+            events.append(f"cleanup: kill failed pid={proc.pid}: {exc}")
+
+    return events
+
+
+def find_existing_doosan_launch() -> tuple[int | None, str]:
+    """Return one existing Doosan launch PID/cmd if a bringup is already starting/running."""
+    if psutil is None:
+        return None, ""
+    current_pid = os.getpid()
+    launch_markers = (
+        "run_doosan_real_no_motion_m0609.sh",
+        "dsr_bringup2_moveit.launch.py",
+    )
+    for proc in psutil.process_iter(["pid", "cmdline", "name"]):
+        if proc.pid == current_pid:
+            continue
+        cmd = command_line(proc)
+        if not cmd:
+            continue
+        if any(protected in cmd for protected in PANEL_PROTECTED_PATTERNS):
+            continue
+        if any(marker in cmd for marker in launch_markers):
+            return int(proc.pid), cmd
+    return None, ""
+
+
+def infer_rt_host(robot_host: str) -> str:
+    """Return the local source IP used to reach the robot, if discoverable."""
+    robot_host = robot_host.strip()
+    if not robot_host or robot_host.startswith("<"):
+        return ""
+    try:
+        completed = subprocess.run(
+            ["ip", "route", "get", robot_host],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    parts = completed.stdout.split()
+    if "src" not in parts:
+        return ""
+    index = parts.index("src") + 1
+    return parts[index] if index < len(parts) else ""
+
+
+def robot_graph_ready(service_prefix: str) -> bool:
+    """Check that an existing Doosan graph is responsive before starting another."""
+    clean = service_prefix.strip("/") or "dsr01"
+    state_service = f"/{clean}/system/get_robot_state"
+    check_motion_service = f"/{clean}/motion/check_motion"
+    cmd = (
+        f"{ROS_SETUP} && "
+        f"timeout 6s ros2 service call {shlex.quote(state_service)} "
+        "dsr_msgs2/srv/GetRobotState '{}' && "
+        f"timeout 6s ros2 service call {shlex.quote(check_motion_service)} "
+        "dsr_msgs2/srv/CheckMotion '{}'"
+    )
+    try:
+        completed = subprocess.run(
+            ["bash", "-lc", cmd],
+            cwd=str(ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=14,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return completed.returncode == 0 and "success=True" in completed.stdout
+
+
+def ros2_call(command: str, timeout_sec: float = 8.0) -> tuple[int, str]:
+    cmd = f"{ROS_SETUP} && timeout {max(timeout_sec, 0.1):.1f}s {command}"
+    completed = subprocess.run(
+        ["bash", "-lc", cmd],
+        cwd=str(ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=max(timeout_sec + 3.0, 1.0),
+        check=False,
+    )
+    return completed.returncode, completed.stdout
+
+
+def ros_service_names(timeout_sec: float = 6.0) -> tuple[set[str], str]:
+    rc, output = ros2_call("ros2 service list --no-daemon", timeout_sec=timeout_sec)
+    if rc != 0:
+        return set(), output
+    return {line.strip() for line in output.splitlines() if line.strip().startswith("/")}, output
+
+
+def motion_services_ready(service_prefix: str) -> tuple[bool, str]:
+    clean = service_prefix.strip("/") or "dsr01"
+    required = {
+        f"/{clean}/motion/move_line",
+        f"/{clean}/motion/move_joint",
+        f"/{clean}/motion/ikin",
+        f"/{clean}/motion/check_motion",
+    }
+    services, output = ros_service_names(timeout_sec=6.0)
+    missing = sorted(required - services)
+    if missing:
+        return False, "missing motion services: " + ", ".join(missing) + "\n--- services ---\n" + output
+    return True, "motion services are present"
+
+
+def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
+    clean = service_prefix.strip("/") or "dsr01"
+    if step.key == "gripper_open":
+        return ["/jarvis/rg2/open"]
+    if step.key == "gripper_soft_grasp":
+        return ["/jarvis/rg2/set_width"]
+    if step.key in {"home_robot", "side_grip"}:
+        return [
+            f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/check_motion",
+        ]
+    if step.key == "lift_robot" or step.key.startswith("move_to_dispenser_"):
+        return [
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/check_motion",
+        ]
+    if step.key == "shake_closed_cup":
+        return [
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/aux_control/get_current_posx",
+            f"/{clean}/aux_control/get_current_posj",
+            f"/{clean}/system/get_robot_state",
+        ]
+    return []
+
+
+def missing_required_services(step: Step, service_prefix: str) -> tuple[list[str], str]:
+    required = required_services_for_step(step, service_prefix)
+    if not required:
+        return [], ""
+    services, output = ros_service_names(timeout_sec=6.0)
+    missing = [service for service in required if service not in services]
+    return missing, output
+
+
+def requires_doosan_motion(step: Step) -> bool:
+    return step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"} or step.key.startswith(
+        "move_to_dispenser_"
+    )
+
+
+def doosan_robot_ready(service_prefix: str) -> tuple[bool, str]:
+    clean = service_prefix.strip("/") or "dsr01"
+    state_rc, state_output = ros2_call(
+        f"ros2 service call /{clean}/system/get_robot_state dsr_msgs2/srv/GetRobotState '{{}}'",
+        timeout_sec=8.0,
+    )
+    if state_rc != 0:
+        return False, "--- get_robot_state failed ---\n" + state_output
+
+    state_match = re.search(r"(?:robot_state|state)[:=]\s*(\d+)", state_output)
+    if state_match and state_match.group(1) != "1":
+        state_id = int(state_match.group(1))
+        state_name = ROBOT_STATE_NAMES.get(state_id, f"UNKNOWN_STATE_{state_id}")
+        return (
+            False,
+            "--- get_robot_state ---\n"
+            + state_output
+            + f"\n[Azas] robot_state={state_id}({state_name}) is not STATE_STANDBY(1); refusing motion.",
+        )
+
+    motion_rc, motion_output = ros2_call(
+        f"ros2 service call /{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion '{{}}'",
+        timeout_sec=8.0,
+    )
+    if motion_rc != 0:
+        return False, "--- check_motion failed ---\n" + motion_output
+
+    return True, "--- get_robot_state ---\n" + state_output + "\n--- check_motion ---\n" + motion_output
+
+
+def parse_numeric_array(text: str) -> list[float]:
+    match = re.search(r"(?:data|pos)[:=]\s*(?:array\()?\[([^\]]+)\]", text, re.S)
+    if not match:
+        return []
+    values = re.findall(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", match.group(1))
+    return [float(value) for value in values]
+
+
+def current_posx_mm(service_prefix: str) -> tuple[list[float], str]:
+    clean = service_prefix.strip("/") or "dsr01"
+    rc, output = ros2_call(
+        f"ros2 service call /{clean}/aux_control/get_current_posx "
+        "dsr_msgs2/srv/GetCurrentPosx '{ref: 0}'"
+    )
+    if rc != 0:
+        return [], output
+    return parse_numeric_array(output), output
+
+
+def last_alarm(service_prefix: str) -> str:
+    clean = service_prefix.strip("/") or "dsr01"
+    _rc, output = ros2_call(
+        f"ros2 service call /{clean}/system/get_last_alarm "
+        "dsr_msgs2/srv/GetLastAlarm '{}'"
+    )
+    return output
+
+
+def motion_status(service_prefix: str) -> tuple[str, str]:
+    clean = service_prefix.strip("/") or "dsr01"
+    rc, output = ros2_call(
+        f"ros2 service call /{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion '{{}}'"
+    )
+    if rc != 0:
+        return "unknown", output
+    match = re.search(r"status=(\d+)|status:\s*(\d+)", output)
+    status = next((group for group in match.groups() if group is not None), "unknown") if match else "unknown"
+    return status, output
+
+
+def distance_mm(a: list[float], b: list[float]) -> float:
+    return sum((a[index] - b[index]) ** 2 for index in range(3)) ** 0.5
+
+
+def wait_for_xyz_target(
+    service_prefix: str,
+    target_xyz_mm: list[float],
+    *,
+    tolerance_mm: float = 15.0,
+    timeout_sec: float = 70.0,
+) -> tuple[bool, str]:
+    deadline = time.monotonic() + timeout_sec
+    lines: list[str] = []
+    while time.monotonic() < deadline:
+        pose, pose_output = current_posx_mm(service_prefix)
+        if pose:
+            dist = distance_mm(pose, target_xyz_mm)
+            lines.append(
+                f"[Azas] verify pose xyz=[{pose[0]:.1f}, {pose[1]:.1f}, {pose[2]:.1f}] "
+                f"target=[{target_xyz_mm[0]:.1f}, {target_xyz_mm[1]:.1f}, {target_xyz_mm[2]:.1f}] "
+                f"distance={dist:.1f}mm"
+            )
+            if dist <= tolerance_mm:
+                status, status_output = motion_status(service_prefix)
+                return True, "\n".join(lines + [status_output])
+        else:
+            lines.append("[Azas] verify pose read failed:\n" + pose_output)
+
+        time.sleep(1.0)
+
+    status, status_output = motion_status(service_prefix)
+    alarm_output = last_alarm(service_prefix)
+    return False, "\n".join(lines[-8:] + ["--- motion status ---", status_output, "--- last alarm ---", alarm_output])
+
+
+def target_xyz_for_step(step_key: str) -> list[float] | None:
+    return None
+
+
+def shell_env(payload: dict[str, Any]) -> dict[str, str]:
+    env = os.environ.copy()
+    env["ROBOT_HOST"] = str(payload.get("robot_host") or env.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
+    env["ROBOT_NAME"] = str(payload.get("robot_name") or env.get("ROBOT_NAME") or "dsr01")
+    env["SERVICE_PREFIX"] = str(payload.get("service_prefix") or env.get("SERVICE_PREFIX") or "dsr01")
+    env["RG2_IP"] = str(payload.get("rg2_ip") or env.get("RG2_IP") or "192.168.1.1")
+    env["SELECTED_DISPENSER_ID"] = str(
+        payload.get("selected_dispenser_id") or env.get("SELECTED_DISPENSER_ID") or "2"
+    )
+    env["RT_HOST"] = str(
+        payload.get("rt_host")
+        or env.get("RT_HOST")
+        or infer_rt_host(env["ROBOT_HOST"])
+        or "192.168.137.50"
+    )
+    env["DOOSAN_NO_MOTION_CONFIRM"] = "CONNECT_DOOSAN_NO_MOTION"
+    return env
+
+
+def command_for(step: Step, payload: dict[str, Any]) -> str:
+    service_prefix = str(payload.get("service_prefix") or "dsr01")
+    if step.key == "connect_robot":
+        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
+        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
+        rt_host = str(
+            payload.get("rt_host")
+            or os.environ.get("RT_HOST")
+            or infer_rt_host(robot_host)
+            or "<RT_HOST>"
+        )
+        return (
+            f"cd {ROOT} && ROBOT_HOST={shlex.quote(robot_host)} "
+            f"ROBOT_NAME={shlex.quote(robot_name)} RT_HOST={shlex.quote(rt_host)} "
+            "DOOSAN_NO_MOTION_CONFIRM=CONNECT_DOOSAN_NO_MOTION "
+            f"{step.command}"
+        )
+    if step.key == "status_check":
+        clean = service_prefix.strip("/") or "dsr01"
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "echo '--- nodes ---' && ros2 node list && "
+            "echo '--- required motion service types ---' && "
+            f"ros2 service type /{clean}/motion/move_line && "
+            f"ros2 service type /{clean}/motion/move_joint && "
+            "echo '--- robot state ---' && "
+            f"timeout 8s ros2 service call /{clean}/system/get_robot_state "
+            "dsr_msgs2/srv/GetRobotState '{}' && "
+            "echo '--- check motion ---' && "
+            f"timeout 8s ros2 service call /{clean}/motion/check_motion "
+            "dsr_msgs2/srv/CheckMotion '{}'"
+        )
+    if step.key == "lift_robot":
+        joints = {
+            name: str(os.environ.get(f"CAMERA_TABLE_VIEW_{name.upper()}", value))
+            for name, value in CAMERA_TABLE_VIEW_JOINTS.items()
+        }
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
+            f"--service-prefix {service_prefix} "
+            f"--j1 {shlex.quote(joints['j1'])} --j2 {shlex.quote(joints['j2'])} "
+            f"--j3 {shlex.quote(joints['j3'])} --j4 {shlex.quote(joints['j4'])} "
+            f"--j5 {shlex.quote(joints['j5'])} --j6 {shlex.quote(joints['j6'])} "
+            f"--velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} "
+            "--j5-min-deg -135 --j5-max-deg 135 --timeout-sec 60 "
+            "--execute --confirm ENABLE_DIRECT_MOVEJ"
+        )
+    if step.key == "home_robot":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
+            f"--service-prefix {service_prefix} --j1 0 --j2 0 --j3 90 "
+            f"--j4 0 --j5 90 --j6 0 --velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} "
+            "--execute --confirm ENABLE_DIRECT_MOVEJ"
+        )
+    if step.key == "connect_gripper":
+        rg2_ip = str(payload.get("rg2_ip") or os.environ.get("RG2_IP") or "192.168.1.1")
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            f"ros2 launch jarvis rg2_trigger.launch.py ip:={shlex.quote(rg2_ip)} "
+            "port:=502 connect:=true open_width:=900 close_width:=700 force:=120 settle_seconds:=0.4"
+        )
+    if step.key == "detect_cup_lid":
+        return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
+    if step.key == "voice_input":
+        return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py"
+    if step.key == "side_grip":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
+            f"--service-prefix {service_prefix} --j1 159 --j2 -43 --j3 -105 "
+            f"--j4 -81 --j5 85 --j6 31 --velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} "
+            "--execute --confirm ENABLE_DIRECT_MOVEJ"
+        )
+    if step.key == "gripper_open":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "timeout 12s ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'"
+        )
+    if step.key == "gripper_soft_grasp":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "timeout 12s ros2 service call /jarvis/rg2/set_width "
+            "azas_interfaces/srv/SetGripper "
+            "\"{command: 'grasp', width_m: 0.075, force_n: 12.0}\""
+        )
+    if step.key == "shake_rviz_preview":
+        return (
+            f"cd {ROOT} && ROS_DOMAIN_ID={RVIZ_PREVIEW_ROS_DOMAIN_ID} "
+            "TARGET_X=0.430 TARGET_Y=0.080 TARGET_Z=0.135 "
+            "SHAKE_DELAY_SEC=4.0 SHAKE_CENTER_X=0.430 SHAKE_CENTER_Y=0.080 "
+            "SHAKE_CENTER_Z=0.620 "
+            "SHAKE_AMPLITUDE_X=0.100 SHAKE_AMPLITUDE_Y=0.040 "
+            "SHAKE_AMPLITUDE_Z=0.055 SHAKE_CYCLES=4 "
+            "SHAKE_TWIST_RX_DEG=6.0 SHAKE_TWIST_RZ_DEG=22.0 "
+            "APPROACH_LINE_TIME=3.5 SHAKE_LINE_TIME=0.40 MIN_SHAKE_Z=0.550 "
+            "tools/run/run_cup_target_then_shake_rviz.sh"
+        )
+    if step.key.startswith("move_to_dispenser_"):
+        dispenser_id = step.key.rsplit("_", 1)[-1]
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/move_to_measured_dispenser_front_hold.py "
+            f"--service-prefix {service_prefix} --dispenser-id {shlex.quote(dispenser_id)} "
+            f"--velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} --timeout-sec 180 "
+            "--verify-target --verify-timeout-sec 70 --target-tolerance-mm 15"
+            " --execute --confirm ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
+        )
+    if step.key == "shake_closed_cup":
+        return (
+            f"cd {ROOT} && SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
+            "REQUIRE_ROBOT_STANDBY=false SHAKE_CENTER_X=0.280 SHAKE_CENTER_Y=-0.300 "
+            "SHAKE_CENTER_Z=0.620 MIN_SHAKE_Z=0.550 SHAKE_AMPLITUDE_X=0.060 "
+            "SHAKE_AMPLITUDE_Y=0.030 SHAKE_AMPLITUDE_Z=0.035 SHAKE_CYCLES=2 "
+            "SHAKE_TWIST_RX_DEG=5.0 SHAKE_TWIST_RZ_DEG=18.0 "
+            "LINE_TIME=0.0 APPROACH_LINE_TIME=3.5 SHAKE_LINE_TIME=0.45 "
+            "tools/run/run_rule_based_shake_real.sh"
+        )
+    return ""
+
+
+def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
+    if not step.implemented:
+        return {"key": step.key, "status": "blocked", "output": step.note}
+    if step.real_motion and not payload.get("armed"):
+        return {"key": step.key, "status": "blocked", "output": "실제 모션 허용 체크가 꺼져 있습니다."}
+    if step.real_motion:
+        service_prefix = str(payload.get("service_prefix") or "dsr01")
+        missing, service_output = missing_required_services(step, service_prefix)
+        if missing:
+            return {
+                "key": step.key,
+                "status": "blocked",
+                "output": (
+                    "필수 ROS 서비스가 없어 실제 동작을 막았습니다.\n"
+                    f"missing: {', '.join(missing)}\n"
+                    "--- current services ---\n"
+                    f"{service_output}"
+                ),
+            }
+        if requires_doosan_motion(step):
+            ready, ready_output = doosan_robot_ready(service_prefix)
+            if not ready:
+                return {
+                    "key": step.key,
+                    "status": "blocked",
+                    "output": (
+                        "로봇이 motion-ready 상태가 아니라 실제 동작을 막았습니다.\n"
+                        "티치펜던트에서 비상정지/보호정지/안전구역/servo 상태를 확인한 뒤 다시 시도하세요.\n"
+                        f"{ready_output}"
+                    ),
+                }
+    if step.key == "connect_robot" and not (
+        payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST
+    ):
+        return {"key": step.key, "status": "blocked", "output": "ROBOT_HOST가 필요합니다."}
+
+    cmd = command_for(step, payload)
+    env = shell_env(payload)
+    if step.kind == "background":
+        restart_output = ""
+        if step.key == "connect_robot":
+            ready, ready_output = motion_services_ready(env["SERVICE_PREFIX"])
+            if ready:
+                return {
+                    "key": step.key,
+                    "status": "running",
+                    "output": "이미 Doosan motion 서비스가 보입니다. 재시작하지 않습니다.\n" + ready_output,
+                }
+            old = processes.get(step.key)
+            if old and old.poll() is None:
+                log_tail = tail_file(process_logs.get(step.key))
+                return {
+                    "key": step.key,
+                    "status": "starting",
+                    "output": (
+                        "로봇 연결 프로세스가 이미 시작 중입니다. 반복 재시작하지 않습니다.\n"
+                        "motion 서비스가 아직 없으면 티치펜던트/컨트롤러 상태, 네트워크, RT_HOST를 확인하세요.\n"
+                        "정말 죽였다가 다시 시작하려면 '실행 중지' 후 '로봇 연결 / 스마트 재연결'을 다시 누르세요.\n"
+                        f"pid={old.pid}\n"
+                        f"--- readiness ---\n{ready_output}\n"
+                        f"--- log tail ---\n{log_tail}"
+                    ),
+                    "pid": old.pid,
+                }
+            existing_pid, existing_cmd = find_existing_doosan_launch()
+            if existing_pid is not None:
+                return {
+                    "key": step.key,
+                    "status": "starting",
+                    "output": (
+                        "기존 Doosan bringup이 아직 실행/시작 중이라 반복 재시작하지 않습니다.\n"
+                        "motion 서비스가 없으면 로봇 컨트롤러 안전상태/비상정지/보호정지/네트워크/RT_HOST를 먼저 확인하세요.\n"
+                        "정말 중복 노드를 정리하고 다시 시작하려면 '실행 중지' 후 '로봇 연결 / 스마트 재연결'을 다시 누르세요.\n"
+                        f"pid={existing_pid}\ncmd={existing_cmd[:500]}\n"
+                        f"--- readiness ---\n{ready_output}"
+                    ),
+                    "pid": existing_pid,
+                }
+            cleanup_events = cleanup_doosan_stack()
+            # Give DDS/service discovery a short moment to forget killed duplicate nodes.
+            time.sleep(1.5)
+            restart_output = "\n".join(cleanup_events)
+        else:
+            old = processes.get(step.key)
+            if old and old.poll() is None:
+                return {
+                    "key": step.key,
+                    "status": "running",
+                    "output": "이미 실행 중입니다.\n" + tail_file(process_logs.get(step.key)),
+                    "pid": old.pid,
+                }
+        log_path = background_log_path(step.key)
+        log_handle = log_path.open("w", encoding="utf-8", buffering=1)
+        log_handle.write(f"[Azas panel] command: {cmd}\n\n")
+        proc = subprocess.Popen(
+            ["bash", "-lc", cmd],
+            cwd=str(ROOT),
+            env=env,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+        log_handle.close()
+        processes[step.key] = proc
+        process_logs[step.key] = log_path
+        time.sleep(2.0)
+        if proc.poll() is not None:
+            output = tail_file(log_path)
+            if restart_output:
+                output = f"{restart_output}\n--- start output ---\n{output}"
+            return {"key": step.key, "status": "failed", "returncode": proc.returncode, "output": output}
+        output = f"{cmd}\n--- log ---\n{log_path}"
+        if restart_output:
+            output = f"{restart_output}\n--- start command ---\n{cmd}"
+            output += f"\n--- log ---\n{log_path}"
+        return {
+            "key": step.key,
+            "status": "started",
+            "pid": proc.pid,
+            "output": output,
+        }
+
+    try:
+        completed = subprocess.run(
+            ["bash", "-lc", cmd],
+            cwd=str(ROOT),
+            env=env,
+            input="ENABLE_REAL_ROBOT_MOTION\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        output = completed.stdout
+        if completed.returncode == 0:
+            target_xyz = target_xyz_for_step(step.key)
+            if target_xyz is not None:
+                reached, verify_output = wait_for_xyz_target(env["SERVICE_PREFIX"], target_xyz)
+                output = f"{output}\n--- post-motion verification ---\n{verify_output}\n"
+                if not reached:
+                    return {
+                        "key": step.key,
+                        "status": "failed",
+                        "returncode": 1,
+                        "output": output,
+                    }
+        return {
+            "key": step.key,
+            "status": "passed" if completed.returncode == 0 else "failed",
+            "returncode": completed.returncode,
+            "output": output,
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {"key": step.key, "status": "timeout", "output": exc.stdout or ""}
+
+
+def stop_all() -> dict[str, Any]:
+    stopped: list[dict[str, Any]] = []
+    for key, proc in list(processes.items()):
+        if proc.poll() is None:
+            events = terminate_process_tree(proc, label=key, grace_sec=5.0)
+            stopped.append({"key": key, "pid": proc.pid, "events": events})
+    return {"stopped": stopped}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def send_json(self, data: Any, status: int = 200) -> None:
+        body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        path = urlparse(self.path).path
+        if path in {"/", "/index.html"}:
+            body = HTML_PATH.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/steps":
+            preview_payload = {
+                "robot_host": os.environ.get("ROBOT_HOST", DEFAULT_ROBOT_HOST),
+                "robot_name": os.environ.get("ROBOT_NAME", "dsr01"),
+                "service_prefix": os.environ.get("SERVICE_PREFIX", "dsr01"),
+                "rg2_ip": os.environ.get("RG2_IP", "192.168.1.1"),
+                "selected_dispenser_id": os.environ.get("SELECTED_DISPENSER_ID", "2"),
+            }
+            data = []
+            for step in STEPS:
+                item = asdict(step)
+                item["resolved_command"] = command_for(step, preview_payload) if step.implemented else ""
+                data.append(item)
+            self.send_json(data)
+            return
+        self.send_json({"error": "not found"}, 404)
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        path = urlparse(self.path).path
+        if path == "/api/run":
+            selected = set(payload.get("selected") or [])
+            results = [run_step(step, payload) for step in STEPS if step.key in selected]
+            self.send_json({"results": results})
+            return
+        if path == "/api/stop":
+            self.send_json(stop_all())
+            return
+        self.send_json({"error": "not found"}, 404)
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(f"[panel] {self.address_string()} {fmt % args}")
+
+
+def main() -> int:
+    host = os.environ.get("AZAS_PANEL_HOST", "127.0.0.1")
+    port = int(os.environ.get("AZAS_PANEL_PORT", "8765"))
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"[Azas] Robot pipeline panel: http://{host}:{port}")
+    print("[Azas] Press Ctrl+C to stop the panel server.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_all()
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

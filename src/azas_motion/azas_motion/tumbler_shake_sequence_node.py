@@ -31,6 +31,10 @@ class SequenceStep:
     label: str
     xyz: XYZ
     hold_seconds: float = 0.0
+    rx_offset_deg: float = 0.0
+    ry_offset_deg: float = 0.0
+    rz_offset_deg: float = 0.0
+    phase: str = "shake"
 
 
 def service_name(prefix: str, name: str) -> str:
@@ -94,6 +98,8 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("shake_amplitude_y", 0.040)
         self.declare_parameter("shake_amplitude_z", 0.055)
         self.declare_parameter("shake_cycles", 4)
+        self.declare_parameter("shake_twist_rx_deg", 6.0)
+        self.declare_parameter("shake_twist_rz_deg", 22.0)
         self.declare_parameter("shake_hold_seconds", 0.0)
 
         self.declare_parameter("workspace_min_x", 0.0)
@@ -111,6 +117,12 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("line_velocity", 45.0)
         self.declare_parameter("line_acceleration", 80.0)
         self.declare_parameter("line_time", 0.0)
+        self.declare_parameter("approach_line_velocity", 20.0)
+        self.declare_parameter("approach_line_acceleration", 25.0)
+        self.declare_parameter("approach_line_time", 3.5)
+        self.declare_parameter("shake_line_velocity", 85.0)
+        self.declare_parameter("shake_line_acceleration", 130.0)
+        self.declare_parameter("shake_line_time", 0.40)
         self.declare_parameter("service_wait_timeout_sec", 5.0)
         self.declare_parameter("motion_response_timeout_sec", 10.0)
 
@@ -177,31 +189,82 @@ class TumblerShakeSequenceNode(Node):
         amp_y = abs(float(self.get_parameter("shake_amplitude_y").value))
         amp_z = abs(float(self.get_parameter("shake_amplitude_z").value))
         cycles = max(int(self.get_parameter("shake_cycles").value), 1)
+        twist_rx = self._clamped_abs_parameter("shake_twist_rx_deg", 20.0)
+        twist_rz = self._clamped_abs_parameter("shake_twist_rz_deg", 45.0)
         hold = max(float(self.get_parameter("shake_hold_seconds").value), 0.0)
 
         steps = [
-            SequenceStep("shake_safe_approach", (center_x, center_y, center_z + approach_height)),
-            SequenceStep("shake_center_start", (center_x, center_y, center_z)),
+            SequenceStep(
+                "shake_safe_approach",
+                (center_x, center_y, center_z + approach_height),
+                phase="approach",
+            ),
+            SequenceStep("shake_center_start", (center_x, center_y, center_z), phase="approach"),
         ]
         for cycle in range(1, cycles + 1):
             steps.extend(
                 [
-                    SequenceStep(f"shake_cycle_{cycle}_x_plus", (center_x + amp_x, center_y, center_z), hold),
-                    SequenceStep(f"shake_cycle_{cycle}_x_minus", (center_x - amp_x, center_y, center_z), hold),
-                    SequenceStep(f"shake_cycle_{cycle}_y_plus", (center_x, center_y + amp_y, center_z), hold),
-                    SequenceStep(f"shake_cycle_{cycle}_y_minus", (center_x, center_y - amp_y, center_z), hold),
-                    SequenceStep(f"shake_cycle_{cycle}_z_plus", (center_x, center_y, center_z + amp_z), hold),
-                    SequenceStep(f"shake_cycle_{cycle}_z_minus", (center_x, center_y, center_z - amp_z), hold),
+                    SequenceStep(
+                        f"shake_cycle_{cycle}_x_plus",
+                        (center_x + amp_x, center_y, center_z),
+                        hold,
+                        rz_offset_deg=twist_rz,
+                    ),
+                    SequenceStep(
+                        f"shake_cycle_{cycle}_x_minus",
+                        (center_x - amp_x, center_y, center_z),
+                        hold,
+                        rz_offset_deg=-twist_rz,
+                    ),
+                    SequenceStep(
+                        f"shake_cycle_{cycle}_y_plus",
+                        (center_x, center_y + amp_y, center_z),
+                        hold,
+                        rx_offset_deg=twist_rx,
+                        rz_offset_deg=-0.6 * twist_rz,
+                    ),
+                    SequenceStep(
+                        f"shake_cycle_{cycle}_y_minus",
+                        (center_x, center_y - amp_y, center_z),
+                        hold,
+                        rx_offset_deg=-twist_rx,
+                        rz_offset_deg=0.6 * twist_rz,
+                    ),
+                    SequenceStep(
+                        f"shake_cycle_{cycle}_z_plus",
+                        (center_x, center_y, center_z + amp_z),
+                        hold,
+                        rx_offset_deg=twist_rx,
+                    ),
+                    SequenceStep(
+                        f"shake_cycle_{cycle}_z_minus",
+                        (center_x, center_y, center_z - amp_z),
+                        hold,
+                        rx_offset_deg=-twist_rx,
+                    ),
                     SequenceStep(f"shake_cycle_{cycle}_center", (center_x, center_y, center_z), hold),
                 ]
             )
         steps.extend(
             [
                 SequenceStep("shake_center_end", (center_x, center_y, center_z)),
-                SequenceStep("shake_safe_retreat", (center_x, center_y, center_z + approach_height)),
+                SequenceStep(
+                    "shake_safe_retreat",
+                    (center_x, center_y, center_z + approach_height),
+                    phase="approach",
+                ),
             ]
         )
         return self.limit_steps_for_stage(steps)
+
+    def _clamped_abs_parameter(self, name: str, max_abs: float) -> float:
+        value = abs(float(self.get_parameter(name).value))
+        if value > max_abs:
+            self.get_logger().warning(
+                f"{name}={value:.1f} is too large; clamping to {max_abs:.1f}"
+            )
+            return max_abs
+        return value
 
     def limit_steps_for_stage(self, steps: Sequence[SequenceStep]) -> List[SequenceStep]:
         stage = str(self.get_parameter("execution_stage").value).strip().lower()
@@ -268,21 +331,25 @@ class TumblerShakeSequenceNode(Node):
         self.path_pub.publish(path)
 
     def call_movel(self, step: SequenceStep) -> bool:
+        base_rx = float(self.get_parameter("rx").value)
+        base_ry = float(self.get_parameter("ry").value)
+        base_rz = float(self.get_parameter("rz").value)
         req = MoveLine.Request()
         req.pos = [
             step.xyz[0] * 1000.0,
             step.xyz[1] * 1000.0,
             step.xyz[2] * 1000.0,
-            float(self.get_parameter("rx").value),
-            float(self.get_parameter("ry").value),
-            float(self.get_parameter("rz").value),
+            base_rx + step.rx_offset_deg,
+            base_ry + step.ry_offset_deg,
+            base_rz + step.rz_offset_deg,
         ]
-        line_time = max(float(self.get_parameter("line_time").value), 0.0)
+        line_time = self._line_time_for_step(step)
         if line_time > 0.0:
             req.time = line_time
         else:
-            req.vel = [float(self.get_parameter("line_velocity").value)] * 2
-            req.acc = [float(self.get_parameter("line_acceleration").value)] * 2
+            velocity, acceleration = self._velocity_acceleration_for_step(step)
+            req.vel = [velocity] * 2
+            req.acc = [acceleration] * 2
             req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -319,6 +386,30 @@ class TumblerShakeSequenceNode(Node):
             )
             return False
         return True
+
+    def _line_time_for_step(self, step: SequenceStep) -> float:
+        global_time = max(float(self.get_parameter("line_time").value), 0.0)
+        if global_time > 0.0:
+            return global_time
+        if step.phase == "approach":
+            return max(float(self.get_parameter("approach_line_time").value), 0.0)
+        return max(float(self.get_parameter("shake_line_time").value), 0.0)
+
+    def _velocity_acceleration_for_step(self, step: SequenceStep) -> tuple[float, float]:
+        if step.phase == "approach":
+            return (
+                float(self.get_parameter("approach_line_velocity").value),
+                float(self.get_parameter("approach_line_acceleration").value),
+            )
+        if self.has_parameter("shake_line_velocity"):
+            return (
+                float(self.get_parameter("shake_line_velocity").value),
+                float(self.get_parameter("shake_line_acceleration").value),
+            )
+        return (
+            float(self.get_parameter("line_velocity").value),
+            float(self.get_parameter("line_acceleration").value),
+        )
 
     def execute_hardware(self, steps: Sequence[SequenceStep]) -> bool:
         if not self.hardware_armed:
@@ -361,7 +452,10 @@ class TumblerShakeSequenceNode(Node):
         for step in steps:
             self.get_logger().info(
                 f"plan {step.label}: x={step.xyz[0]:.3f} y={step.xyz[1]:.3f} "
-                f"z={step.xyz[2]:.3f} hold={step.hold_seconds:.2f}"
+                f"z={step.xyz[2]:.3f} "
+                f"rpy_offset=({step.rx_offset_deg:.1f}, {step.ry_offset_deg:.1f}, {step.rz_offset_deg:.1f}) "
+                f"phase={step.phase} time={self._line_time_for_step(step):.2f} "
+                f"hold={step.hold_seconds:.2f}"
             )
         return self.execute_hardware(steps)
 

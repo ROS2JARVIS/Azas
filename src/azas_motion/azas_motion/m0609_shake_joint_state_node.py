@@ -14,7 +14,7 @@ class M0609ShakeJointStateNode(Node):
     def __init__(self) -> None:
         super().__init__("m0609_shake_joint_state_node")
         self.declare_parameter("publish_rate", 30.0)
-        self.declare_parameter("shake_cycles_per_second", 2.4)
+        self.declare_parameter("shake_cycles_per_second", 3.2)
         self.declare_parameter("preview_mode", "shake")
         self.declare_parameter("home_joints_rad", [0.0, 0.0, 1.57, 0.0, 1.57, 1.57])
 
@@ -53,6 +53,7 @@ class M0609ShakeJointStateNode(Node):
         sway = math.sin(phase)
         counter = math.sin(phase + math.pi * 0.5)
         lift_pulse = math.sin(phase * 0.5)
+        wrist_snap = math.sin(phase * 1.7 + math.pi * 0.25)
 
         return [
             home[0] + 0.30 * sway,
@@ -60,7 +61,7 @@ class M0609ShakeJointStateNode(Node):
             home[2] - 0.20 * lift_pulse,
             home[3] + 0.42 * counter,
             home[4] + 0.28 * sway,
-            home[5] + 0.85 * counter,
+            home[5] + 1.20 * counter + 0.28 * wrist_snap,
         ]
 
     def side_grasp_move_then_shake_joints(self, elapsed: float, home: list[float]) -> list[float]:
@@ -68,12 +69,12 @@ class M0609ShakeJointStateNode(Node):
             (0.0, home),
             (2.0, [0.18, -0.76, 1.48, -0.22, 1.18, 0.20]),  # side pre-grasp
             (4.0, [0.25, -0.82, 1.56, -0.10, 1.12, 0.12]),  # side grasp
-            (6.0, [0.30, -0.55, 1.22, 0.05, 1.05, 0.10]),  # lift with cup
-            (8.0, [-0.12, -0.48, 1.10, 0.18, 1.05, -0.10]),  # carry to dispenser
-            (10.0, [-0.20, -0.60, 1.30, 0.10, 1.18, 0.00]),  # outlet front
-            (12.0, [-0.05, -0.42, 1.05, 0.00, 1.02, 0.00]),  # retreat before shake
+            (7.5, [0.30, -0.55, 1.22, 0.05, 1.05, 0.10]),  # slower lift with cup
+            (9.5, [-0.12, -0.48, 1.10, 0.18, 1.05, -0.10]),  # carry to dispenser
+            (11.0, [-0.20, -0.60, 1.30, 0.10, 1.18, 0.00]),  # outlet front
+            (13.0, [-0.05, -0.42, 1.05, 0.00, 1.02, 0.00]),  # retreat before shake
         ]
-        cycle_seconds = 18.0
+        cycle_seconds = 19.0
         t = elapsed % cycle_seconds
         if t >= keyframes[-1][0]:
             shake_elapsed = t - keyframes[-1][0]

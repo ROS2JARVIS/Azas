@@ -25,6 +25,7 @@ from .dispenser_targets import dispenser_front_targets
 from .dispenser_targets import hold_position
 from .dispenser_targets import nearest_dispenser_order
 from .dispenser_targets import parse_outlet_positions
+from .dispenser_targets import safe_dispenser_transfer_targets
 from .dispenser_targets import selected_outlet
 from .rviz_target_markers import RvizTargetMarkers
 from .side_grasp_ik_preview_node import moveit_config_dict
@@ -75,6 +76,11 @@ class DoosanMoveItGraspedTumblerToDispenserNode(Node):
         self.declare_parameter("front_approach_offset_x", 0.12)
         self.declare_parameter("outlet_front_offset_x", 0.02)
         self.declare_parameter("transfer_z_override", 0.20)
+        self.declare_parameter("enable_safe_lift_transfer", True)
+        self.declare_parameter("safe_lift_min_z", 0.40)
+        self.declare_parameter("safe_lift_delta_z", 0.15)
+        self.declare_parameter("safe_lift_max_z", 0.55)
+        self.declare_parameter("dispenser_above_z", 0.40)
         self.declare_parameter("enable_demo_obstacle", True)
         self.declare_parameter("enable_obstacle_detour", True)
         self.declare_parameter("obstacle_size_xyz", [0.10, 0.14, 0.08])
@@ -138,7 +144,7 @@ class DoosanMoveItGraspedTumblerToDispenserNode(Node):
 
     def run_sequence(self) -> None:
         try:
-            from moveit.planning import MoveItPy, PlanRequestParameters
+            from moveit.planning import MoveItPy
 
             robot_model = str(self.get_parameter("robot_model").value)
             moveit_config_package = str(self.get_parameter("moveit_config_package").value)
@@ -327,6 +333,10 @@ class DoosanMoveItGraspedTumblerToDispenserNode(Node):
             enable_obstacle_detour=bool(self.get_parameter("enable_obstacle_detour").value),
             prefix=prefix,
         )
+        if bool(self.get_parameter("enable_safe_lift_transfer").value):
+            targets = self.safe_dispenser_transfer_targets(
+                dispenser_id, outlet, current_pose, prefix, include_initial_lift=True
+            )
         hold = hold_position(
             outlet,
             outlet_front_offset_x=float(self.get_parameter("outlet_front_offset_x").value),
@@ -344,6 +354,38 @@ class DoosanMoveItGraspedTumblerToDispenserNode(Node):
             (target.label, self.pose(target.position.x, target.position.y, target.position.z, current_pose))
             for target in targets
         ]
+
+    def safe_dispenser_transfer_targets(
+        self,
+        dispenser_id: int,
+        outlet: Position,
+        current_pose,
+        prefix: str,
+        *,
+        include_initial_lift: bool,
+    ):
+        current_position = Position(
+            current_pose.position.x, current_pose.position.y, current_pose.position.z
+        )
+        targets = safe_dispenser_transfer_targets(
+            dispenser_id,
+            outlet,
+            current_position,
+            outlet_front_offset_x=float(self.get_parameter("outlet_front_offset_x").value),
+            transfer_z_override=float(self.get_parameter("transfer_z_override").value),
+            safe_lift_min_z=float(self.get_parameter("safe_lift_min_z").value),
+            safe_lift_delta_z=float(self.get_parameter("safe_lift_delta_z").value),
+            safe_lift_max_z=float(self.get_parameter("safe_lift_max_z").value),
+            dispenser_above_z=float(self.get_parameter("dispenser_above_z").value),
+            include_initial_lift=include_initial_lift,
+            prefix=prefix,
+        )
+        self.get_logger().info(
+            "Using safe-lift dispenser transfer "
+            f"(safe_lift_min_z={float(self.get_parameter('safe_lift_min_z').value):.3f}, "
+            f"dispenser_above_z={float(self.get_parameter('dispenser_above_z').value):.3f})"
+        )
+        return targets
 
     def target_poses(self, task_mode: str, current_pose) -> list[tuple[str, PoseStamped]]:
         if task_mode in {"", "dispenser", "dispenser_front"}:
@@ -386,14 +428,45 @@ class DoosanMoveItGraspedTumblerToDispenserNode(Node):
                     f"but valid range is 1..{len(outlets)}"
                 )
             outlet = outlets[dispenser_id - 1]
-            poses.extend(
-                self.dispenser_front_poses_for_outlet(
+            if bool(self.get_parameter("enable_safe_lift_transfer").value):
+                targets = self.safe_dispenser_transfer_targets(
                     dispenser_id,
                     outlet,
                     current_pose,
                     prefix=f"seq_{sequence_index}_",
+                    include_initial_lift=sequence_index == 1,
                 )
-            )
+                hold = hold_position(
+                    outlet,
+                    outlet_front_offset_x=float(self.get_parameter("outlet_front_offset_x").value),
+                    transfer_z_override=float(self.get_parameter("transfer_z_override").value),
+                )
+                self.target_markers.publish_dispenser_target(
+                    self.outlet_positions(), hold, dispenser_id
+                )
+                poses.extend(
+                    [
+                        (
+                            target.label,
+                            self.pose(
+                                target.position.x,
+                                target.position.y,
+                                target.position.z,
+                                current_pose,
+                            ),
+                        )
+                        for target in targets
+                    ]
+                )
+            else:
+                poses.extend(
+                    self.dispenser_front_poses_for_outlet(
+                        dispenser_id,
+                        outlet,
+                        current_pose,
+                        prefix=f"seq_{sequence_index}_",
+                    )
+                )
         self.target_markers.publish_dispenser_sequence_path(poses)
         self.get_logger().info(
             "Using dispenser sequence while keeping assumed side grip: "

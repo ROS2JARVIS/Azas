@@ -263,8 +263,7 @@ sample_topic() {
 
 set +u
 source /opt/ros/humble/setup.bash
-source /home/ssu/Azas/install/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 set -u
 
 echo "[Azas] Live hardware gate check. No motion commands will be sent."

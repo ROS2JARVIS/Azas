@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Azas Robot Pipeline Control</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --text: #18202a;
+      --muted: #627084;
+      --line: #d9dee7;
+      --blue: #1f6feb;
+      --green: #1a7f37;
+      --red: #c92a2a;
+      --yellow: #8a5a00;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 18px 22px;
+      background: #202733;
+      color: #fff;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+      gap: 16px;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .control-panel {
+      min-width: 0;
+    }
+    .log-panel {
+      position: sticky;
+      top: 12px;
+      align-self: start;
+      max-height: calc(100vh - 24px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 17px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    label.field {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    input[type="text"] {
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .arm {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid #efc2c2;
+      border-radius: 6px;
+      background: #fff5f5;
+      color: var(--red);
+      font-weight: 650;
+      margin: 10px 0;
+    }
+    .steps {
+      display: grid;
+      gap: 8px;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px;
+      min-height: 64px;
+    }
+    .step code {
+      display: block;
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 6px;
+      background: #f0f3f8;
+      color: #243043;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .step input { width: 18px; height: 18px; }
+    .step-title {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+    .step-note {
+      margin-top: 3px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .badge {
+      font-size: 12px;
+      padding: 4px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .ok { color: var(--green); background: #effaf2; border-color: #b7dfc2; }
+    .blocked { color: var(--yellow); background: #fff8e6; border-color: #efd38b; }
+    .motion { color: var(--red); background: #fff1f1; border-color: #efc2c2; }
+    .actions {
+      position: sticky;
+      top: 12px;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 10px;
+      border: 1px solid #c8d7f0;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 8px 18px rgba(18, 32, 50, 0.10);
+      backdrop-filter: blur(6px);
+    }
+    button {
+      height: 38px;
+      border: 0;
+      border-radius: 6px;
+      padding: 0 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #run { background: var(--blue); color: #fff; }
+    #stop { background: #343b46; color: #fff; }
+    #selectCore { background: #e9eef7; color: #1f2a3d; }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 520px;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+      background: #101720;
+      color: #dbe7ff;
+      border-radius: 7px;
+      padding: 14px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .actions,
+      .log-panel {
+        position: static;
+      }
+      pre {
+        max-height: 70vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Azas Robot Pipeline Control</h1>
+  </header>
+  <main>
+    <section class="control-panel">
+      <h2>실행 설정</h2>
+      <div class="grid">
+        <label class="field">ROBOT_HOST
+          <input id="robotHost" type="text" value="192.168.1.100" placeholder="예: 192.168.1.100">
+        </label>
+        <label class="field">ROBOT_NAME
+          <input id="robotName" type="text" value="dsr01">
+        </label>
+        <label class="field">SERVICE_PREFIX
+          <input id="servicePrefix" type="text" value="dsr01">
+        </label>
+        <label class="field">RT_HOST
+          <input id="rtHost" type="text" placeholder="자동: ROBOT_HOST로 가는 PC IP">
+        </label>
+        <label class="field">RG2_IP
+          <input id="rg2Ip" type="text" value="192.168.1.1">
+        </label>
+      </div>
+      <label class="arm">
+        <input id="armed" type="checkbox">
+        실제 로봇 모션 실행 허용
+      </label>
+      <div class="actions" aria-label="sticky execution controls">
+        <button id="selectCore">핵심 단계 선택</button>
+        <button id="run">선택 실행</button>
+        <button id="stop">실행 중지</button>
+      </div>
+      <h2>파이프라인 단계</h2>
+      <div id="steps" class="steps"></div>
+    </section>
+    <section class="log-panel">
+      <h2>실행 로그</h2>
+      <pre id="log">서버 연결 대기...</pre>
+    </section>
+  </main>
+  <script>
+    const core = new Set([
+      "connect_robot",
+      "status_check"
+    ]);
+    const log = document.getElementById("log");
+    const stepsEl = document.getElementById("steps");
+
+    function payload() {
+      return {
+        robot_host: document.getElementById("robotHost").value.trim(),
+        robot_name: document.getElementById("robotName").value.trim(),
+        service_prefix: document.getElementById("servicePrefix").value.trim(),
+        rt_host: document.getElementById("rtHost").value.trim(),
+        rg2_ip: document.getElementById("rg2Ip").value.trim(),
+        armed: document.getElementById("armed").checked,
+        selected: Array.from(document.querySelectorAll(".step-check:checked")).map((item) => item.value)
+      };
+    }
+
+    function renderSteps(steps) {
+      stepsEl.innerHTML = "";
+      for (const step of steps) {
+        const row = document.createElement("label");
+        row.className = "step";
+        row.innerHTML = `
+          <input class="step-check" type="checkbox" value="${step.key}">
+          <div>
+            <div class="step-title">${step.label}</div>
+            <div class="step-note">${step.note}</div>
+            <code>${step.resolved_command || step.command || "실행 명령 없음"}</code>
+          </div>
+          <div>
+            <span class="badge ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
+            ${step.real_motion ? `<span class="badge motion">실제모션</span>` : ""}
+          </div>
+        `;
+        stepsEl.appendChild(row);
+      }
+      log.textContent = "단계 목록 로드 완료";
+    }
+
+    async function loadSteps() {
+      const res = await fetch("/api/steps");
+      renderSteps(await res.json());
+    }
+
+    document.getElementById("selectCore").addEventListener("click", () => {
+      for (const input of document.querySelectorAll(".step-check")) {
+        input.checked = core.has(input.value);
+      }
+    });
+
+    document.getElementById("run").addEventListener("click", async () => {
+      log.textContent = "실행 중...";
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload())
+      });
+      log.textContent = JSON.stringify(await res.json(), null, 2);
+    });
+
+    document.getElementById("stop").addEventListener("click", async () => {
+      const res = await fetch("/api/stop", {method: "POST"});
+      log.textContent = JSON.stringify(await res.json(), null, 2);
+    });
+
+    loadSteps().catch((err) => {
+      log.textContent = String(err);
+    });
+  </script>
+</body>
+</html>

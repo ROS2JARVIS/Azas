@@ -116,13 +116,47 @@ estimated_collision_objects:
   dispenser_head_box:
     type: box
     frame_id: base_link
-    # Head/nozzle box is separated from the bottle body so the empty space under
-    # the pump is not blocked by one oversized collision box.
+    # Legacy broad head estimate. It over-blocks the real nozzle geometry:
+    # the measured head protrusion is about 0.05 m forward and 0.01 m wide.
+    # Keep this only as a disabled comparison marker.
     center_xyz_m: [0.7470, -0.0995, 0.3520]
     size_xyz_m: [0.1680, 0.3710, 0.2400]
     bounds_xyz_m:
       min: [0.6630, -0.2850, 0.2320]
       max: [0.8310, 0.0860, 0.4720]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    publish_to_planning_scene: false
+    enabled_for_real_motion: false
+  dispenser_1_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    # Per-nozzle estimate: 5 cm protrusion, 1 cm row width.
+    center_xyz_m: [0.5640, -0.1025, 0.4320]
+    size_xyz_m: [0.0500, 0.0100, 0.0400]
+    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+  dispenser_2_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m: [0.5580, -0.1525, 0.4320]
+    size_xyz_m: [0.0500, 0.0100, 0.0400]
+    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+  dispenser_3_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m: [0.5360, -0.2065, 0.4320]
+    size_xyz_m: [0.0500, 0.0100, 0.0400]
+    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+  dispenser_4_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m: [0.5260, -0.2375, 0.4320]
+    size_xyz_m: [0.0500, 0.0100, 0.0400]
+    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
     publish_to_planning_scene: true
     enabled_for_real_motion: false

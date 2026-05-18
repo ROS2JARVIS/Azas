@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from dataclasses import dataclass
+from typing import Any
 
 import rclpy
-from dsr_msgs2.srv import MoveLine
+from dsr_msgs2.srv import GetCurrentPosx, GetLastAlarm, Ikin, MoveLine
 
 
 DR_BASE = 0
@@ -47,6 +49,105 @@ def service_name(prefix: str) -> str:
     return f"/{clean}/motion/move_line" if clean else "/motion/move_line"
 
 
+def prefixed_service(prefix: str, suffix: str) -> str:
+    clean = prefix.strip("/")
+    return f"/{clean}/{suffix}" if clean else f"/{suffix}"
+
+
+def call_service(
+    node: Any,
+    srv_type: Any,
+    name: str,
+    request: Any,
+    *,
+    timeout_sec: float,
+    label: str,
+) -> Any:
+    client = node.create_client(srv_type, name)
+    timeout_sec = max(timeout_sec, 0.1)
+    if not client.wait_for_service(timeout_sec=timeout_sec):
+        raise RuntimeError(f"{label} service not available: {name}")
+    future = client.call_async(request)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_sec)
+    if not future.done():
+        raise RuntimeError(f"{label} response timeout after {timeout_sec:.1f}s")
+    if future.exception() is not None:
+        raise RuntimeError(f"{label} exception: {future.exception()}")
+    response = future.result()
+    if response is None:
+        raise RuntimeError(f"{label} returned no response")
+    return response
+
+
+def current_posx(node: Any, prefix: str, timeout_sec: float) -> list[float]:
+    req = GetCurrentPosx.Request()
+    req.ref = DR_BASE
+    response = call_service(
+        node,
+        GetCurrentPosx,
+        prefixed_service(prefix, "aux_control/get_current_posx"),
+        req,
+        timeout_sec=timeout_sec,
+        label="GetCurrentPosx",
+    )
+    if not response.success or not response.task_pos_info:
+        raise RuntimeError("GetCurrentPosx returned success=false or empty task_pos_info")
+    values = list(response.task_pos_info[0].data)
+    if len(values) < 6:
+        raise RuntimeError(f"GetCurrentPosx returned too few values: {values}")
+    return [float(value) for value in values[:6]]
+
+
+def last_alarm_text(node: Any, prefix: str, timeout_sec: float) -> str:
+    req = GetLastAlarm.Request()
+    try:
+        response = call_service(
+            node,
+            GetLastAlarm,
+            prefixed_service(prefix, "system/get_last_alarm"),
+            req,
+            timeout_sec=timeout_sec,
+            label="GetLastAlarm",
+        )
+    except RuntimeError as exc:
+        return f"[Azas] GetLastAlarm failed: {exc}"
+    return str(response)
+
+
+def xyz_distance_mm(actual: list[float], target: list[float]) -> float:
+    return sum((actual[index] - target[index]) ** 2 for index in range(3)) ** 0.5
+
+
+def wait_for_target(
+    node: Any,
+    prefix: str,
+    target_pos_mm_deg: list[float],
+    *,
+    tolerance_mm: float,
+    timeout_sec: float,
+) -> bool:
+    deadline = time.monotonic() + max(timeout_sec, 0.1)
+    last_line = ""
+    while time.monotonic() < deadline:
+        actual = current_posx(node, prefix, timeout_sec=5.0)
+        distance = xyz_distance_mm(actual, target_pos_mm_deg)
+        last_line = (
+            "[Azas] verify xyz="
+            f"[{actual[0]:.1f}, {actual[1]:.1f}, {actual[2]:.1f}] "
+            f"target=[{target_pos_mm_deg[0]:.1f}, {target_pos_mm_deg[1]:.1f}, {target_pos_mm_deg[2]:.1f}] "
+            f"distance={distance:.1f}mm tolerance={tolerance_mm:.1f}mm"
+        )
+        print(last_line)
+        if distance <= tolerance_mm:
+            return True
+        time.sleep(1.0)
+    print("[FAIL] target verification timeout")
+    if last_line:
+        print(last_line)
+    print(last_alarm_text(node, prefix, timeout_sec=5.0))
+    return False
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Move directly to one supplied XYZ/RPY target via Doosan MoveLine."
@@ -57,6 +158,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rx", type=float, default=180.0, help="Doosan rx in degrees")
     parser.add_argument("--ry", type=float, default=0.0, help="Doosan ry in degrees")
     parser.add_argument("--rz", type=float, default=180.0, help="Doosan rz in degrees")
+    parser.add_argument(
+        "--use-current-rpy",
+        action="store_true",
+        help="read current TCP rx/ry/rz and preserve it while moving XYZ",
+    )
+    parser.add_argument(
+        "--precheck-ikin",
+        action="store_true",
+        help="call /motion/ikin before MoveLine and fail closed if the pose is not solvable",
+    )
+    parser.add_argument("--ikin-sol-space", type=int, default=2, help="solution space used by --precheck-ikin")
     parser.add_argument("--service-prefix", default="", help="optional namespace before /motion/move_line")
     parser.add_argument("--velocity", type=float, default=20.0, help="line velocity")
     parser.add_argument("--acceleration", type=float, default=20.0, help="line acceleration")
@@ -68,6 +180,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--y-max", type=float, default=0.45)
     parser.add_argument("--z-min", type=float, default=0.05)
     parser.add_argument("--z-max", type=float, default=0.80)
+    parser.add_argument(
+        "--verify-target",
+        action="store_true",
+        help="after MoveLine accepts, poll current TCP XYZ until it reaches the target",
+    )
+    parser.add_argument("--verify-timeout-sec", type=float, default=70.0)
+    parser.add_argument("--target-tolerance-mm", type=float, default=15.0)
     parser.add_argument(
         "--execute",
         action="store_true",
@@ -91,35 +210,68 @@ def main() -> int:
             print(f"  - {failure}")
         return 2
 
-    move_service = service_name(args.service_prefix)
-    pos_mm_deg = [
-        args.x * 1000.0,
-        args.y * 1000.0,
-        args.z * 1000.0,
-        args.rx,
-        args.ry,
-        args.rz,
-    ]
-    print("[Azas] Direct MoveLine target")
-    print(f"[Azas] service={move_service}")
-    print(
-        "[Azas] pos_mm_deg="
-        f"[{pos_mm_deg[0]:.1f}, {pos_mm_deg[1]:.1f}, {pos_mm_deg[2]:.1f}, "
-        f"{pos_mm_deg[3]:.1f}, {pos_mm_deg[4]:.1f}, {pos_mm_deg[5]:.1f}]"
-    )
-    print(f"[Azas] vel=[{args.velocity:.1f}, {args.velocity:.1f}] acc=[{args.acceleration:.1f}, {args.acceleration:.1f}]")
+    needs_ros = args.execute or args.use_current_rpy or args.precheck_ikin or args.verify_target
+    node = None
+    if needs_ros:
+        rclpy.init(args=None)
+        node = rclpy.create_node("azas_direct_movel_xyz")
 
-    if not args.execute:
-        print("[DRY-RUN] --execute not set; no robot command sent.")
-        return 0
-
-    if args.confirm != CONFIRM_PHRASE:
-        print(f"[BLOCKED] --confirm must be exactly {CONFIRM_PHRASE}")
-        return 2
-
-    rclpy.init(args=None)
-    node = rclpy.create_node("azas_direct_movel_xyz")
     try:
+        rx = args.rx
+        ry = args.ry
+        rz = args.rz
+        if args.use_current_rpy:
+            assert node is not None
+            pose = current_posx(node, args.service_prefix, timeout_sec=max(args.wait_service_sec, 0.1))
+            rx, ry, rz = pose[3], pose[4], pose[5]
+            print(f"[Azas] preserving current TCP RPY rx={rx:.3f} ry={ry:.3f} rz={rz:.3f}")
+
+        move_service = service_name(args.service_prefix)
+        pos_mm_deg = [
+            args.x * 1000.0,
+            args.y * 1000.0,
+            args.z * 1000.0,
+            rx,
+            ry,
+            rz,
+        ]
+        print("[Azas] Direct MoveLine target")
+        print(f"[Azas] service={move_service}")
+        print(
+            "[Azas] pos_mm_deg="
+            f"[{pos_mm_deg[0]:.1f}, {pos_mm_deg[1]:.1f}, {pos_mm_deg[2]:.1f}, "
+            f"{pos_mm_deg[3]:.1f}, {pos_mm_deg[4]:.1f}, {pos_mm_deg[5]:.1f}]"
+        )
+        print(f"[Azas] vel=[{args.velocity:.1f}, {args.velocity:.1f}] acc=[{args.acceleration:.1f}, {args.acceleration:.1f}]")
+
+        if not args.execute:
+            print("[DRY-RUN] --execute not set; no robot command sent.")
+            return 0
+
+        if args.confirm != CONFIRM_PHRASE:
+            print(f"[BLOCKED] --confirm must be exactly {CONFIRM_PHRASE}")
+            return 2
+
+        assert node is not None
+
+        if args.precheck_ikin:
+            req = Ikin.Request()
+            req.pos = pos_mm_deg
+            req.sol_space = int(args.ikin_sol_space)
+            req.ref = DR_BASE
+            response = call_service(
+                node,
+                Ikin,
+                prefixed_service(args.service_prefix, "motion/ikin"),
+                req,
+                timeout_sec=max(args.wait_service_sec, 0.1),
+                label="Ikin",
+            )
+            if not response.success:
+                print("[FAIL] Ikin returned success=false")
+                return 1
+            print("[Azas] Ikin precheck success: joints_deg=[" + ", ".join(f"{value:.1f}" for value in response.conv_posj) + "]")
+
         client = node.create_client(MoveLine, move_service)
         if not client.wait_for_service(timeout_sec=max(args.wait_service_sec, 0.1)):
             print(f"[FAIL] service not available: {move_service}")
@@ -149,10 +301,22 @@ def main() -> int:
             print("[FAIL] MoveLine returned success=false")
             return 1
         print("[PASS] MoveLine accepted by service")
+        if args.verify_target and not wait_for_target(
+            node,
+            args.service_prefix,
+            pos_mm_deg,
+            tolerance_mm=max(args.target_tolerance_mm, 0.1),
+            timeout_sec=max(args.verify_timeout_sec, 0.1),
+        ):
+            return 1
         return 0
+    except RuntimeError as exc:
+        print(f"[FAIL] {exc}")
+        return 1
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        if node is not None:
+            node.destroy_node()
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

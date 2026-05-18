@@ -77,6 +77,66 @@ def dispenser_front_targets(
     ]
 
 
+def safe_dispenser_transfer_targets(
+    dispenser_id: int,
+    outlet: Position,
+    current_position: Position,
+    *,
+    outlet_front_offset_x: float,
+    transfer_z_override: float,
+    safe_lift_min_z: float,
+    safe_lift_delta_z: float,
+    safe_lift_max_z: float,
+    dispenser_above_z: float,
+    include_initial_lift: bool,
+    prefix: str = "",
+) -> list[DispenserTarget]:
+    hold = hold_position(
+        outlet,
+        outlet_front_offset_x=outlet_front_offset_x,
+        transfer_z_override=transfer_z_override,
+    )
+    safe_z_candidate = max(
+        current_position.z + safe_lift_delta_z,
+        safe_lift_min_z,
+    )
+    if safe_lift_max_z > 0.0:
+        safe_z_candidate = min(safe_z_candidate, safe_lift_max_z)
+    safe_z = max(current_position.z, hold.z, safe_z_candidate)
+    above_z = max(safe_z, dispenser_above_z, hold.z)
+    label_prefix = f"{prefix}dispenser_{dispenser_id}_"
+
+    targets: list[DispenserTarget] = []
+    if include_initial_lift:
+        targets.append(
+            DispenserTarget(
+                dispenser_id,
+                f"{label_prefix}safe_lift",
+                Position(current_position.x, current_position.y, safe_z),
+            )
+        )
+    targets.extend(
+        [
+            DispenserTarget(
+                dispenser_id,
+                f"{label_prefix}above",
+                Position(hold.x, hold.y, above_z),
+            ),
+            DispenserTarget(
+                dispenser_id,
+                f"{label_prefix}outlet_front_hold",
+                hold,
+            ),
+            DispenserTarget(
+                dispenser_id,
+                f"{label_prefix}retreat_above",
+                Position(hold.x, hold.y, above_z),
+            ),
+        ]
+    )
+    return targets
+
+
 def nearest_dispenser_order(
     sequence_ids: list[int],
     outlets: list[Position],
