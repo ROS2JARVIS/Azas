@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import List, Sequence, Tuple
 
 import rclpy
-from dsr_msgs2.srv import MoveLine
+from dsr_msgs2.srv import Ikin, MoveLine
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from rclpy.node import Node
@@ -64,6 +64,7 @@ class TumblerShakeSequenceNode(Node):
         super().__init__("tumbler_shake_sequence_node")
 
         self.declare_parameter("auto_start", True)
+        self.declare_parameter("shutdown_after_run", True)
         self.declare_parameter("enable_hardware", False)
         self.declare_parameter("hardware_confirm", "")
         self.declare_parameter("allow_service_control_without_moveit", False)
@@ -99,6 +100,7 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("shake_amplitude_z", 0.055)
         self.declare_parameter("shake_cycles", 4)
         self.declare_parameter("shake_twist_rx_deg", 6.0)
+        self.declare_parameter("shake_twist_ry_deg", 3.0)
         self.declare_parameter("shake_twist_rz_deg", 22.0)
         self.declare_parameter("shake_hold_seconds", 0.0)
 
@@ -125,6 +127,13 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("shake_line_time", 0.40)
         self.declare_parameter("service_wait_timeout_sec", 5.0)
         self.declare_parameter("motion_response_timeout_sec", 10.0)
+        self.declare_parameter("precheck_ikin_joint5", True)
+        self.declare_parameter("enforce_wrist_joint_limits", True)
+        self.declare_parameter("ikin_sol_space", 2)
+        self.declare_parameter("joint5_min_deg", -135.0)
+        self.declare_parameter("joint5_max_deg", 135.0)
+        self.declare_parameter("wrist_min_deg", -135.0)
+        self.declare_parameter("wrist_max_deg", 135.0)
 
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.service_prefix = str(self.get_parameter("service_prefix").value)
@@ -142,15 +151,21 @@ class TumblerShakeSequenceNode(Node):
         )
 
         self.move_line = None
+        self.ikin = None
         if self.hardware_armed:
             self.move_line = self.create_client(
                 MoveLine,
                 service_name(self.service_prefix, "motion/move_line"),
             )
+            self.ikin = self.create_client(
+                Ikin,
+                service_name(self.service_prefix, "motion/ikin"),
+            )
 
         self.path_pub = self.create_publisher(Path, "/jarvis/tumbler_shake_sequence/plan", 10)
         self.status_pub = self.create_publisher(String, "/jarvis/tumbler_shake_sequence/status", 10)
         self.started = False
+        self.done = False
         self.timer = self.create_timer(0.5, self.on_timer)
         self.get_logger().info(
             "tumbler_shake_sequence_node ready. "
@@ -166,6 +181,9 @@ class TumblerShakeSequenceNode(Node):
     def _run_once_and_publish(self) -> None:
         ok = self.run_once()
         self.publish_status("DONE" if ok else "FAILED")
+        if bool(self.get_parameter("shutdown_after_run").value):
+            self.get_logger().info("shutdown_after_run=true; exiting tumbler shake node.")
+            self.done = True
 
     def publish_status(self, text: str) -> None:
         msg = String()
@@ -190,6 +208,7 @@ class TumblerShakeSequenceNode(Node):
         amp_z = abs(float(self.get_parameter("shake_amplitude_z").value))
         cycles = max(int(self.get_parameter("shake_cycles").value), 1)
         twist_rx = self._clamped_abs_parameter("shake_twist_rx_deg", 20.0)
+        twist_ry = self._clamped_abs_parameter("shake_twist_ry_deg", 10.0)
         twist_rz = self._clamped_abs_parameter("shake_twist_rz_deg", 45.0)
         hold = max(float(self.get_parameter("shake_hold_seconds").value), 0.0)
 
@@ -208,12 +227,14 @@ class TumblerShakeSequenceNode(Node):
                         f"shake_cycle_{cycle}_x_plus",
                         (center_x + amp_x, center_y, center_z),
                         hold,
+                        ry_offset_deg=twist_ry,
                         rz_offset_deg=twist_rz,
                     ),
                     SequenceStep(
                         f"shake_cycle_{cycle}_x_minus",
                         (center_x - amp_x, center_y, center_z),
                         hold,
+                        ry_offset_deg=-twist_ry,
                         rz_offset_deg=-twist_rz,
                     ),
                     SequenceStep(
@@ -221,6 +242,7 @@ class TumblerShakeSequenceNode(Node):
                         (center_x, center_y + amp_y, center_z),
                         hold,
                         rx_offset_deg=twist_rx,
+                        ry_offset_deg=-0.5 * twist_ry,
                         rz_offset_deg=-0.6 * twist_rz,
                     ),
                     SequenceStep(
@@ -228,6 +250,7 @@ class TumblerShakeSequenceNode(Node):
                         (center_x, center_y - amp_y, center_z),
                         hold,
                         rx_offset_deg=-twist_rx,
+                        ry_offset_deg=0.5 * twist_ry,
                         rz_offset_deg=0.6 * twist_rz,
                     ),
                     SequenceStep(
@@ -235,12 +258,14 @@ class TumblerShakeSequenceNode(Node):
                         (center_x, center_y, center_z + amp_z),
                         hold,
                         rx_offset_deg=twist_rx,
+                        ry_offset_deg=twist_ry,
                     ),
                     SequenceStep(
                         f"shake_cycle_{cycle}_z_minus",
                         (center_x, center_y, center_z - amp_z),
                         hold,
                         rx_offset_deg=-twist_rx,
+                        ry_offset_deg=-twist_ry,
                     ),
                     SequenceStep(f"shake_cycle_{cycle}_center", (center_x, center_y, center_z), hold),
                 ]
@@ -330,12 +355,11 @@ class TumblerShakeSequenceNode(Node):
             path.poses.append(pose)
         self.path_pub.publish(path)
 
-    def call_movel(self, step: SequenceStep) -> bool:
+    def pos_mm_deg_for_step(self, step: SequenceStep) -> list[float]:
         base_rx = float(self.get_parameter("rx").value)
         base_ry = float(self.get_parameter("ry").value)
         base_rz = float(self.get_parameter("rz").value)
-        req = MoveLine.Request()
-        req.pos = [
+        return [
             step.xyz[0] * 1000.0,
             step.xyz[1] * 1000.0,
             step.xyz[2] * 1000.0,
@@ -343,13 +367,82 @@ class TumblerShakeSequenceNode(Node):
             base_ry + step.ry_offset_deg,
             base_rz + step.rz_offset_deg,
         ]
+
+    def precheck_ikin_joint5(self, step: SequenceStep) -> bool:
+        if not bool(self.get_parameter("precheck_ikin_joint5").value):
+            return True
+        if self.ikin is None:
+            self.get_logger().error("Ikin client is not initialized; refusing hardware shake.")
+            return False
+
+        joint5_lower = float(self.get_parameter("joint5_min_deg").value)
+        joint5_upper = float(self.get_parameter("joint5_max_deg").value)
+        wrist_lower = float(self.get_parameter("wrist_min_deg").value)
+        wrist_upper = float(self.get_parameter("wrist_max_deg").value)
+        enforce_wrist = bool(self.get_parameter("enforce_wrist_joint_limits").value)
+        req = Ikin.Request()
+        req.pos = self.pos_mm_deg_for_step(step)
+        req.sol_space = int(self.get_parameter("ikin_sol_space").value)
+        req.ref = DR_BASE
+
+        future = self.ikin.call_async(req)
+        timeout_sec = max(float(self.get_parameter("motion_response_timeout_sec").value), 0.1)
+        deadline = time.monotonic() + timeout_sec
+        while rclpy.ok() and not future.done():
+            if time.monotonic() > deadline:
+                self.get_logger().error(
+                    f"{step.label} Ikin timed out waiting {timeout_sec:.1f}s"
+                )
+                return False
+            time.sleep(0.01)
+        if future.exception() is not None:
+            self.get_logger().error(f"{step.label} Ikin raised: {future.exception()}")
+            return False
+
+        result = future.result()
+        if result is None or not result.success:
+            self.get_logger().error(
+                f"{step.label} Ikin returned success=false for "
+                f"pos_mm_deg={[round(value, 1) for value in req.pos]}"
+            )
+            return False
+
+        joints_deg = [float(value) for value in result.conv_posj]
+        if len(joints_deg) < 5:
+            self.get_logger().error(f"{step.label} Ikin returned too few joints: {joints_deg}")
+            return False
+        joint5 = joints_deg[4]
+        self.get_logger().info(
+            f"{step.label}: Ikin precheck sol_space={req.sol_space} "
+            f"joints_deg={[round(value, 1) for value in joints_deg]}"
+        )
+        if not joint5_lower <= joint5 <= joint5_upper:
+            self.get_logger().error(
+                f"{step.label}: refusing MoveLine because predicted joint_5={joint5:.3f} deg "
+                f"is outside [{joint5_lower:.3f}, {joint5_upper:.3f}] deg."
+            )
+            return False
+        if enforce_wrist:
+            for joint_index, value in ((4, joints_deg[3]), (5, joints_deg[4]), (6, joints_deg[5])):
+                if not wrist_lower <= value <= wrist_upper:
+                    self.get_logger().error(
+                        f"{step.label}: refusing MoveLine because predicted joint_{joint_index}="
+                        f"{value:.3f} deg is outside wrist limit "
+                        f"[{wrist_lower:.3f}, {wrist_upper:.3f}] deg."
+                    )
+                    return False
+        return True
+
+    def call_movel(self, step: SequenceStep) -> bool:
+        req = MoveLine.Request()
+        req.pos = self.pos_mm_deg_for_step(step)
         line_time = self._line_time_for_step(step)
+        velocity, acceleration = self._velocity_acceleration_for_step(step)
+        req.vel = [float(velocity)] * 2
+        req.acc = [float(acceleration)] * 2
         if line_time > 0.0:
-            req.time = line_time
+            req.time = float(line_time)
         else:
-            velocity, acceleration = self._velocity_acceleration_for_step(step)
-            req.vel = [velocity] * 2
-            req.acc = [acceleration] * 2
             req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -429,6 +522,21 @@ class TumblerShakeSequenceNode(Node):
                 )
                 return False
             self.get_logger().info("Waiting for motion/move_line")
+        if bool(self.get_parameter("precheck_ikin_joint5").value):
+            ikin_deadline = time.monotonic() + service_timeout_sec
+            while rclpy.ok() and self.ikin is not None and not self.ikin.wait_for_service(timeout_sec=1.0):
+                if time.monotonic() > ikin_deadline:
+                    self.get_logger().error(
+                        f"motion/ikin service was not available within {service_timeout_sec:.1f}s"
+                    )
+                    return False
+                self.get_logger().info("Waiting for motion/ikin")
+            self.get_logger().info(
+                "Running Ikin joint_5 precheck for all shake waypoints before MoveLine."
+            )
+            for step in steps:
+                if not self.precheck_ikin_joint5(step):
+                    return False
         for step in steps:
             if not self.call_movel(step):
                 return False
@@ -464,7 +572,8 @@ def main() -> None:
     rclpy.init()
     node = TumblerShakeSequenceNode()
     try:
-        rclpy.spin(node)
+        while rclpy.ok() and not node.done:
+            rclpy.spin_once(node, timeout_sec=0.1)
     finally:
         node.destroy_node()
         rclpy.shutdown()

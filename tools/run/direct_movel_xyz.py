@@ -169,6 +169,8 @@ def parse_args() -> argparse.Namespace:
         help="call /motion/ikin before MoveLine and fail closed if the pose is not solvable",
     )
     parser.add_argument("--ikin-sol-space", type=int, default=2, help="solution space used by --precheck-ikin")
+    parser.add_argument("--j5-min-deg", type=float, default=-135.0, help="safe lower limit for joint 5")
+    parser.add_argument("--j5-max-deg", type=float, default=135.0, help="safe upper limit for joint 5")
     parser.add_argument("--service-prefix", default="", help="optional namespace before /motion/move_line")
     parser.add_argument("--velocity", type=float, default=20.0, help="line velocity")
     parser.add_argument("--acceleration", type=float, default=20.0, help="line acceleration")
@@ -271,6 +273,15 @@ def main() -> int:
                 print("[FAIL] Ikin returned success=false")
                 return 1
             print("[Azas] Ikin precheck success: joints_deg=[" + ", ".join(f"{value:.1f}" for value in response.conv_posj) + "]")
+            if len(response.conv_posj) >= 5:
+                joint5 = float(response.conv_posj[4])
+                if not float(args.j5_min_deg) <= joint5 <= float(args.j5_max_deg):
+                    print(
+                        f"[BLOCKED] Ikin predicted joint_5={joint5:.3f} deg outside "
+                        f"[{float(args.j5_min_deg):.3f}, {float(args.j5_max_deg):.3f}] deg; "
+                        "refusing MoveLine."
+                    )
+                    return 2
 
         client = node.create_client(MoveLine, move_service)
         if not client.wait_for_service(timeout_sec=max(args.wait_service_sec, 0.1)):

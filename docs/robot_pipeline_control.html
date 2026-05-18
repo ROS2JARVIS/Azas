@@ -168,6 +168,7 @@
       cursor: pointer;
     }
     #run { background: var(--blue); color: #fff; }
+    #cleanup { background: var(--red); color: #fff; }
     #stop { background: #343b46; color: #fff; }
     #selectCore { background: #e9eef7; color: #1f2a3d; }
     pre {
@@ -228,6 +229,7 @@
       <div class="actions" aria-label="sticky execution controls">
         <button id="selectCore">핵심 단계 선택</button>
         <button id="run">선택 실행</button>
+        <button id="cleanup">프로세스 정리</button>
         <button id="stop">실행 중지</button>
       </div>
       <h2>파이프라인 단계</h2>
@@ -303,6 +305,12 @@
 
     document.getElementById("stop").addEventListener("click", async () => {
       const res = await fetch("/api/stop", {method: "POST"});
+      log.textContent = JSON.stringify(await res.json(), null, 2);
+    });
+
+    document.getElementById("cleanup").addEventListener("click", async () => {
+      log.textContent = "프로세스 정리 중...";
+      const res = await fetch("/api/cleanup", {method: "POST"});
       log.textContent = JSON.stringify(await res.json(), null, 2);
     });
 

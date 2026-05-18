@@ -76,7 +76,7 @@ STEPS = [
         "준비됨/시작중이면 유지하고, stale 상태일 때만 정리 후 시작",
     ),
     Step("status_check", "연결 확인", "run", "ros2 service list | grep /dsr01/motion", True, False, "명령 후보만 있음: /dsr01/motion 서비스가 보여야 통과"),
-    Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch jarvis rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close) 시작"),
+    Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch jarvis rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
     Step("home_robot", "로봇 원위치 / HOME", "run", "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 90 --j4 0 --j5 90 --j6 0", True, True, "실제모션 후보: HOME 관절값 [0, 0, 90, 0, 90, 0]"),
     Step(
         "lift_robot",
@@ -100,7 +100,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 1",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_1 좌표 사용",
+        "실제모션 후보: front_hold_poses.dispenser_1 좌표 사용; 이동/검증 성공 후 RG2 open",
     ),
     Step(
         "move_to_dispenser_2",
@@ -109,7 +109,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 2",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_2 좌표 사용",
+        "실제모션 후보: front_hold_poses.dispenser_2 좌표 사용; 이동/검증 성공 후 RG2 open",
     ),
     Step(
         "move_to_dispenser_3",
@@ -118,7 +118,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 3",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_3 좌표 사용",
+        "실제모션 후보: front_hold_poses.dispenser_3 좌표 사용; 이동/검증 성공 후 RG2 open",
     ),
     Step(
         "move_to_dispenser_4",
@@ -127,7 +127,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 4",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용",
+        "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용; 이동/검증 성공 후 RG2 open",
     ),
     Step("press_dispenser", "디스펜서를 누르기", "blocked", "", False, True, "프레스 좌표/힘 제한 확정 후 연결"),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
@@ -153,6 +153,8 @@ process_logs: dict[str, Path] = {}
 
 DOOSAN_STACK_PATTERNS = (
     "run_doosan_real_no_motion_m0609.sh",
+    "run_emulator",
+    "dsr_bringup2/lib/dsr_bringup2",
     "dsr_bringup2_moveit.launch.py",
     "dsr_controller2",
     "dsr_moveit_controller",
@@ -164,6 +166,19 @@ DOOSAN_STACK_PATTERNS = (
     "move_group",
     "moveit_simple_controller_manager",
     "dsr_moveit_config_m0609",
+)
+
+AUXILIARY_STACK_PATTERNS = (
+    "rg2_trigger",
+    "yolo_perception.launch.py",
+    "azas_voice.launch.py",
+    "run_rule_based_shake_real.sh",
+    "run_cup_target_then_shake_rviz.sh",
+    "cup_target_then_shake_rviz.launch.py",
+    "tumbler_shake_sequence.launch.py",
+    "tumbler_shake_sequence_node",
+    "shake_visualizer_node",
+    "m0609_shake_joint_state_node",
 )
 
 PANEL_PROTECTED_PATTERNS = (
@@ -282,6 +297,55 @@ def cleanup_doosan_stack(*, grace_sec: float = 3.0) -> list[str]:
     return events
 
 
+def cleanup_matching_processes(
+    patterns: tuple[str, ...],
+    *,
+    label: str,
+    grace_sec: float = 3.0,
+) -> list[str]:
+    """Terminate panel-related stale processes that are not tracked in this process."""
+    events: list[str] = []
+    if psutil is None:
+        events.append(f"{label}: psutil unavailable; only tracked panel processes can be stopped")
+        return events
+
+    current_pid = os.getpid()
+    candidates: list[Any] = []
+    seen: set[int] = set()
+    for proc in psutil.process_iter(["pid", "cmdline", "name"]):
+        if proc.pid == current_pid or proc.pid in seen:
+            continue
+        cmd = command_line(proc)
+        if not cmd:
+            continue
+        if any(protected in cmd for protected in PANEL_PROTECTED_PATTERNS):
+            continue
+        if any(pattern in cmd for pattern in patterns):
+            candidates.append(proc)
+            seen.add(proc.pid)
+
+    if not candidates:
+        events.append(f"{label}: no matching stale processes found")
+        return events
+
+    for proc in candidates:
+        try:
+            events.append(f"{label}: terminate pid={proc.pid} cmd={command_line(proc)[:160]}")
+            proc.terminate()
+        except psutil.Error as exc:
+            events.append(f"{label}: terminate failed pid={proc.pid}: {exc}")
+
+    _, alive = psutil.wait_procs(candidates, timeout=grace_sec)
+    for proc in alive:
+        try:
+            events.append(f"{label}: kill pid={proc.pid} cmd={command_line(proc)[:160]}")
+            proc.kill()
+        except psutil.Error as exc:
+            events.append(f"{label}: kill failed pid={proc.pid}: {exc}")
+
+    return events
+
+
 def find_existing_doosan_launch() -> tuple[int | None, str]:
     """Return one existing Doosan launch PID/cmd if a bringup is already starting/running."""
     if psutil is None:
@@ -390,26 +454,87 @@ def motion_services_ready(service_prefix: str) -> tuple[bool, str]:
     return True, "motion services are present"
 
 
+def wait_for_motion_services_ready(
+    service_prefix: str,
+    *,
+    timeout_sec: float = 35.0,
+    proc: subprocess.Popen[str] | None = None,
+) -> tuple[bool, str]:
+    deadline = time.monotonic() + max(timeout_sec, 0.1)
+    last_output = ""
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        ready, output = motion_services_ready(service_prefix)
+        last_output = output
+        if ready:
+            return True, f"motion services became ready after {attempt} check(s)\n{output}"
+        if proc is not None and proc.poll() is not None:
+            return False, f"connect process exited while waiting for motion services\n{output}"
+        time.sleep(1.0)
+    return False, f"motion services did not become ready within {timeout_sec:.1f}s\n{last_output}"
+
+
+def parse_robot_state_id(text: str) -> int | None:
+    match = re.search(r"(?:robot_state|state)[:=]\s*(\d+)", text)
+    return int(match.group(1)) if match else None
+
+
+def robot_state_name(state_id: int | None) -> str:
+    if state_id is None:
+        return "UNKNOWN"
+    return ROBOT_STATE_NAMES.get(state_id, f"UNKNOWN_STATE_{state_id}")
+
+
+def status_check_failure(output: str) -> str | None:
+    state_id = parse_robot_state_id(output)
+    if state_id is None:
+        return "[FAIL] could not parse robot_state; refusing to mark status_check as passed."
+    if state_id != 1:
+        return (
+            f"[FAIL] robot_state={state_id}({robot_state_name(state_id)}) is not "
+            "STATE_STANDBY(1). Robot is connected, but real motion is not ready."
+        )
+    return None
+
+
+def run_output_failure(step: Step, output: str) -> str | None:
+    if step.key == "shake_closed_cup":
+        failure_markers = (
+            "]: FAILED",
+            " returned success=false",
+            " Ikin returned success=false",
+            " refusing MoveLine ",
+            "Hardware gates are incomplete",
+            "enable_hardware was requested but hardware gates are incomplete",
+        )
+        if any(marker in output for marker in failure_markers):
+            return "[FAIL] shake node reported FAILED/success=false even though ros2 launch exited cleanly."
+    return None
+
+
 def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
     clean = service_prefix.strip("/") or "dsr01"
     if step.key == "gripper_open":
         return ["/jarvis/rg2/open"]
     if step.key == "gripper_soft_grasp":
         return ["/jarvis/rg2/set_width"]
-    if step.key in {"home_robot", "side_grip"}:
+    if step.key in {"home_robot", "lift_robot", "side_grip"}:
         return [
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/check_motion",
         ]
-    if step.key == "lift_robot" or step.key.startswith("move_to_dispenser_"):
+    if step.key.startswith("move_to_dispenser_"):
         return [
             f"/{clean}/motion/move_line",
             f"/{clean}/motion/ikin",
             f"/{clean}/motion/check_motion",
+            "/jarvis/rg2/open",
         ]
     if step.key == "shake_closed_cup":
         return [
             f"/{clean}/motion/move_line",
+            f"/{clean}/motion/ikin",
             f"/{clean}/motion/check_motion",
             f"/{clean}/aux_control/get_current_posx",
             f"/{clean}/aux_control/get_current_posj",
@@ -427,6 +552,97 @@ def missing_required_services(step: Step, service_prefix: str) -> tuple[list[str
     return missing, output
 
 
+def gripper_services_for_step(step: Step, service_prefix: str) -> list[str]:
+    return [
+        service
+        for service in required_services_for_step(step, service_prefix)
+        if service.startswith("/jarvis/rg2/")
+    ]
+
+
+def wait_for_required_services(
+    required: list[str],
+    *,
+    timeout_sec: float = 20.0,
+    proc: subprocess.Popen[str] | None = None,
+) -> tuple[bool, str]:
+    deadline = time.monotonic() + max(timeout_sec, 0.1)
+    last_output = ""
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        services, output = ros_service_names(timeout_sec=2.0)
+        missing = [service for service in required if service not in services]
+        last_output = output
+        if not missing:
+            return True, f"required services became ready after {attempt} check(s): {', '.join(required)}"
+        if proc is not None and proc.poll() is not None:
+            return (
+                False,
+                "service provider process exited while waiting\n"
+                f"missing: {', '.join(missing)}\n--- services ---\n{output}",
+            )
+        time.sleep(0.5)
+    missing_text = ", ".join(required)
+    return (
+        False,
+        f"required services did not become ready within {timeout_sec:.1f}s: {missing_text}\n"
+        f"--- services ---\n{last_output}",
+    )
+
+
+def ensure_gripper_services(step: Step, payload: dict[str, Any], service_prefix: str) -> tuple[bool, str]:
+    required = gripper_services_for_step(step, service_prefix)
+    if not required:
+        return True, ""
+
+    services, service_output = ros_service_names(timeout_sec=2.0)
+    missing = [service for service in required if service not in services]
+    if not missing:
+        return True, "gripper services are present: " + ", ".join(required)
+
+    connect_step = next(item for item in STEPS if item.key == "connect_gripper")
+    old = processes.get("connect_gripper")
+    events = [
+        "그리퍼 서비스가 없어 자동으로 그리퍼 연결을 먼저 시도합니다.",
+        f"missing: {', '.join(missing)}",
+    ]
+
+    if old is None or old.poll() is not None:
+        cmd = command_for(connect_step, payload)
+        env = shell_env(payload)
+        log_path = background_log_path("connect_gripper")
+        log_handle = log_path.open("w", encoding="utf-8", buffering=1)
+        log_handle.write(f"[Azas panel] auto command: {cmd}\n\n")
+        proc = subprocess.Popen(
+            ["bash", "-lc", cmd],
+            cwd=str(ROOT),
+            env=env,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+        log_handle.close()
+        processes["connect_gripper"] = proc
+        process_logs["connect_gripper"] = log_path
+        events.append(f"auto-started connect_gripper pid={proc.pid} log={log_path}")
+    else:
+        proc = old
+        events.append(f"connect_gripper already running pid={proc.pid}")
+
+    ready, wait_output = wait_for_required_services(required, timeout_sec=20.0, proc=proc)
+    events.append(wait_output)
+    if ready:
+        return True, "\n".join(events)
+
+    events.append("--- connect_gripper log tail ---")
+    events.append(tail_file(process_logs.get("connect_gripper")))
+    events.append("--- services before auto-connect ---")
+    events.append(service_output)
+    return False, "\n".join(events)
+
+
 def requires_doosan_motion(step: Step) -> bool:
     return step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"} or step.key.startswith(
         "move_to_dispenser_"
@@ -442,15 +658,21 @@ def doosan_robot_ready(service_prefix: str) -> tuple[bool, str]:
     if state_rc != 0:
         return False, "--- get_robot_state failed ---\n" + state_output
 
-    state_match = re.search(r"(?:robot_state|state)[:=]\s*(\d+)", state_output)
-    if state_match and state_match.group(1) != "1":
-        state_id = int(state_match.group(1))
-        state_name = ROBOT_STATE_NAMES.get(state_id, f"UNKNOWN_STATE_{state_id}")
+    state_id = parse_robot_state_id(state_output)
+    if state_id is None:
         return (
             False,
             "--- get_robot_state ---\n"
             + state_output
-            + f"\n[Azas] robot_state={state_id}({state_name}) is not STATE_STANDBY(1); refusing motion.",
+            + "\n[Azas] could not parse robot_state; refusing motion.",
+        )
+    if state_id != 1:
+        return (
+            False,
+            "--- get_robot_state ---\n"
+            + state_output
+            + f"\n[Azas] robot_state={state_id}({robot_state_name(state_id)}) is not "
+            "STATE_STANDBY(1); refusing motion.",
         )
 
     motion_rc, motion_output = ros2_call(
@@ -653,7 +875,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "SHAKE_CENTER_Z=0.620 "
             "SHAKE_AMPLITUDE_X=0.100 SHAKE_AMPLITUDE_Y=0.040 "
             "SHAKE_AMPLITUDE_Z=0.055 SHAKE_CYCLES=4 "
-            "SHAKE_TWIST_RX_DEG=6.0 SHAKE_TWIST_RZ_DEG=22.0 "
+            "SHAKE_TWIST_RX_DEG=6.0 SHAKE_TWIST_RY_DEG=3.0 SHAKE_TWIST_RZ_DEG=22.0 "
             "APPROACH_LINE_TIME=3.5 SHAKE_LINE_TIME=0.40 MIN_SHAKE_Z=0.550 "
             "tools/run/run_cup_target_then_shake_rviz.sh"
         )
@@ -665,6 +887,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"--velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} --timeout-sec 180 "
             "--verify-target --verify-timeout-sec 70 --target-tolerance-mm 15"
             " --execute --confirm ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
+            " && timeout 12s ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'"
         )
     if step.key == "shake_closed_cup":
         return (
@@ -672,7 +895,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "REQUIRE_ROBOT_STANDBY=false SHAKE_CENTER_X=0.280 SHAKE_CENTER_Y=-0.300 "
             "SHAKE_CENTER_Z=0.620 MIN_SHAKE_Z=0.550 SHAKE_AMPLITUDE_X=0.060 "
             "SHAKE_AMPLITUDE_Y=0.030 SHAKE_AMPLITUDE_Z=0.035 SHAKE_CYCLES=2 "
-            "SHAKE_TWIST_RX_DEG=5.0 SHAKE_TWIST_RZ_DEG=18.0 "
+            "SHAKE_TWIST_RX_DEG=5.0 SHAKE_TWIST_RY_DEG=3.0 SHAKE_TWIST_RZ_DEG=18.0 "
+            "ENFORCE_WRIST_JOINT_LIMITS=true WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
             "LINE_TIME=0.0 APPROACH_LINE_TIME=3.5 SHAKE_LINE_TIME=0.45 "
             "tools/run/run_rule_based_shake_real.sh"
         )
@@ -686,6 +910,17 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         return {"key": step.key, "status": "blocked", "output": "실제 모션 허용 체크가 꺼져 있습니다."}
     if step.real_motion:
         service_prefix = str(payload.get("service_prefix") or "dsr01")
+        gripper_ready, gripper_output = ensure_gripper_services(step, payload, service_prefix)
+        if not gripper_ready:
+            return {
+                "key": step.key,
+                "status": "blocked",
+                "output": (
+                    "필수 그리퍼 ROS 서비스가 없어 실제 동작을 막았습니다.\n"
+                    "자동 그리퍼 연결도 준비 상태까지 가지 못했습니다.\n"
+                    f"{gripper_output}"
+                ),
+            }
         missing, service_output = missing_required_services(step, service_prefix)
         if missing:
             return {
@@ -694,6 +929,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                 "output": (
                     "필수 ROS 서비스가 없어 실제 동작을 막았습니다.\n"
                     f"missing: {', '.join(missing)}\n"
+                    f"--- gripper auto-check ---\n{gripper_output}\n"
                     "--- current services ---\n"
                     f"{service_output}"
                 ),
@@ -722,13 +958,58 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         if step.key == "connect_robot":
             ready, ready_output = motion_services_ready(env["SERVICE_PREFIX"])
             if ready:
+                robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
+                if not robot_ready:
+                    return {
+                        "key": step.key,
+                        "status": "blocked",
+                        "output": (
+                            "Doosan motion 서비스는 보이지만 로봇이 motion-ready 상태가 아닙니다. "
+                            "재시작하지 않습니다.\n"
+                            f"{ready_output}\n"
+                            "티치펜던트/컨트롤러에서 빨간 상태(SAFE_OFF/보호정지/서보 상태)를 해제해 "
+                            "STATE_STANDBY(1)로 만든 뒤 다시 확인하세요.\n"
+                            f"{robot_ready_output}"
+                        ),
+                    }
                 return {
                     "key": step.key,
                     "status": "running",
-                    "output": "이미 Doosan motion 서비스가 보입니다. 재시작하지 않습니다.\n" + ready_output,
+                    "output": (
+                        "이미 Doosan motion 서비스가 보이고 로봇이 STATE_STANDBY(1)입니다. "
+                        "재시작하지 않습니다.\n"
+                        f"{ready_output}\n{robot_ready_output}"
+                    ),
                 }
             old = processes.get(step.key)
             if old and old.poll() is None:
+                ready, waited_output = wait_for_motion_services_ready(
+                    env["SERVICE_PREFIX"],
+                    timeout_sec=20.0,
+                    proc=old,
+                )
+                if ready:
+                    robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
+                    if robot_ready:
+                        return {
+                            "key": step.key,
+                            "status": "running",
+                            "output": (
+                                "기존 로봇 연결 프로세스가 계속 실행 중이고 motion 서비스가 준비됐습니다.\n"
+                                f"{waited_output}\n{robot_ready_output}"
+                            ),
+                            "pid": old.pid,
+                        }
+                    return {
+                        "key": step.key,
+                        "status": "blocked",
+                        "output": (
+                            "기존 로봇 연결 프로세스가 motion 서비스를 띄웠지만 로봇이 "
+                            "STATE_STANDBY(1)가 아닙니다.\n"
+                            f"{waited_output}\n{robot_ready_output}"
+                        ),
+                        "pid": old.pid,
+                    }
                 log_tail = tail_file(process_logs.get(step.key))
                 return {
                     "key": step.key,
@@ -738,7 +1019,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                         "motion 서비스가 아직 없으면 티치펜던트/컨트롤러 상태, 네트워크, RT_HOST를 확인하세요.\n"
                         "정말 죽였다가 다시 시작하려면 '실행 중지' 후 '로봇 연결 / 스마트 재연결'을 다시 누르세요.\n"
                         f"pid={old.pid}\n"
-                        f"--- readiness ---\n{ready_output}\n"
+                        f"--- readiness ---\n{waited_output}\n"
                         f"--- log tail ---\n{log_tail}"
                     ),
                     "pid": old.pid,
@@ -785,7 +1066,49 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         log_handle.close()
         processes[step.key] = proc
         process_logs[step.key] = log_path
-        time.sleep(2.0)
+        if step.key == "connect_robot":
+            ready, waited_output = wait_for_motion_services_ready(
+                env["SERVICE_PREFIX"],
+                timeout_sec=35.0,
+                proc=proc,
+            )
+            if ready:
+                robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
+                output = f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}\n{robot_ready_output}"
+                if restart_output:
+                    output = f"{restart_output}\n--- start command ---\n{output}"
+                if robot_ready:
+                    return {
+                        "key": step.key,
+                        "status": "started",
+                        "pid": proc.pid,
+                        "output": output,
+                    }
+                return {
+                    "key": step.key,
+                    "status": "blocked",
+                    "pid": proc.pid,
+                    "output": (
+                        "로봇 연결 프로세스는 시작됐고 motion 서비스도 보이지만 "
+                        "로봇이 STATE_STANDBY(1)가 아닙니다.\n"
+                        + output
+                    ),
+                }
+            if proc.poll() is None:
+                output = (
+                    f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}\n"
+                    "아직 시작 중입니다. 몇 초 뒤 '연결 확인'만 다시 눌러주세요."
+                )
+                if restart_output:
+                    output = f"{restart_output}\n--- start command ---\n{output}"
+                return {
+                    "key": step.key,
+                    "status": "starting",
+                    "pid": proc.pid,
+                    "output": output,
+                }
+        else:
+            time.sleep(2.0)
         if proc.poll() is not None:
             output = tail_file(log_path)
             if restart_output:
@@ -816,6 +1139,25 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         )
         output = completed.stdout
         if completed.returncode == 0:
+            failure = run_output_failure(step, output)
+            if failure is not None:
+                output = f"{output}\n{failure}\n"
+                return {
+                    "key": step.key,
+                    "status": "failed",
+                    "returncode": 1,
+                    "output": output,
+                }
+            if step.key == "status_check":
+                failure = status_check_failure(output)
+                if failure is not None:
+                    output = f"{output}\n{failure}\n"
+                    return {
+                        "key": step.key,
+                        "status": "failed",
+                        "returncode": 1,
+                        "output": output,
+                    }
             target_xyz = target_xyz_for_step(step.key)
             if target_xyz is not None:
                 reached, verify_output = wait_for_xyz_target(env["SERVICE_PREFIX"], target_xyz)
@@ -844,6 +1186,21 @@ def stop_all() -> dict[str, Any]:
             events = terminate_process_tree(proc, label=key, grace_sec=5.0)
             stopped.append({"key": key, "pid": proc.pid, "events": events})
     return {"stopped": stopped}
+
+
+def cleanup_all_processes() -> dict[str, Any]:
+    """Explicit operator cleanup button: stop tracked jobs plus stale robot/panel helpers."""
+    stopped = stop_all()
+    events: list[str] = []
+    events.extend(cleanup_doosan_stack(grace_sec=3.0))
+    events.extend(
+        cleanup_matching_processes(
+            AUXILIARY_STACK_PATTERNS,
+            label="aux cleanup",
+            grace_sec=3.0,
+        )
+    )
+    return {"stopped": stopped.get("stopped", []), "cleanup": events}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -893,6 +1250,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/stop":
             self.send_json(stop_all())
+            return
+        if path == "/api/cleanup":
+            self.send_json(cleanup_all_processes())
             return
         self.send_json({"error": "not found"}, 404)
 

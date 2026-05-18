@@ -23,6 +23,7 @@ def generate_launch_description():
     shake_amplitude_z = LaunchConfiguration("shake_amplitude_z")
     shake_cycles = LaunchConfiguration("shake_cycles")
     shake_twist_rx_deg = LaunchConfiguration("shake_twist_rx_deg")
+    shake_twist_ry_deg = LaunchConfiguration("shake_twist_ry_deg")
     shake_twist_rz_deg = LaunchConfiguration("shake_twist_rz_deg")
     line_time = LaunchConfiguration("line_time")
     approach_line_time = LaunchConfiguration("approach_line_time")
@@ -33,6 +34,13 @@ def generate_launch_description():
     shake_line_acceleration = LaunchConfiguration("shake_line_acceleration")
     service_wait_timeout_sec = LaunchConfiguration("service_wait_timeout_sec")
     motion_response_timeout_sec = LaunchConfiguration("motion_response_timeout_sec")
+    precheck_ikin_joint5 = LaunchConfiguration("precheck_ikin_joint5")
+    enforce_wrist_joint_limits = LaunchConfiguration("enforce_wrist_joint_limits")
+    ikin_sol_space = LaunchConfiguration("ikin_sol_space")
+    joint5_min_deg = LaunchConfiguration("joint5_min_deg")
+    joint5_max_deg = LaunchConfiguration("joint5_max_deg")
+    wrist_min_deg = LaunchConfiguration("wrist_min_deg")
+    wrist_max_deg = LaunchConfiguration("wrist_max_deg")
     min_shake_z = LaunchConfiguration("min_shake_z")
     dispenser_keepout_radius = LaunchConfiguration("dispenser_keepout_radius")
     rx = LaunchConfiguration("rx")
@@ -74,6 +82,7 @@ def generate_launch_description():
         "shake_amplitude_z": ParameterValue(shake_amplitude_z, value_type=float),
         "shake_cycles": ParameterValue(shake_cycles, value_type=int),
         "shake_twist_rx_deg": ParameterValue(shake_twist_rx_deg, value_type=float),
+        "shake_twist_ry_deg": ParameterValue(shake_twist_ry_deg, value_type=float),
         "shake_twist_rz_deg": ParameterValue(shake_twist_rz_deg, value_type=float),
         "shake_hold_seconds": 0.0,
         "workspace_min_x": 0.0,
@@ -104,6 +113,13 @@ def generate_launch_description():
             motion_response_timeout_sec,
             value_type=float,
         ),
+        "precheck_ikin_joint5": ParameterValue(precheck_ikin_joint5, value_type=bool),
+        "enforce_wrist_joint_limits": ParameterValue(enforce_wrist_joint_limits, value_type=bool),
+        "ikin_sol_space": ParameterValue(ikin_sol_space, value_type=int),
+        "joint5_min_deg": ParameterValue(joint5_min_deg, value_type=float),
+        "joint5_max_deg": ParameterValue(joint5_max_deg, value_type=float),
+        "wrist_min_deg": ParameterValue(wrist_min_deg, value_type=float),
+        "wrist_max_deg": ParameterValue(wrist_max_deg, value_type=float),
     }
 
     return LaunchDescription(
@@ -125,6 +141,7 @@ def generate_launch_description():
             DeclareLaunchArgument("shake_amplitude_z", default_value="0.055"),
             DeclareLaunchArgument("shake_cycles", default_value="4"),
             DeclareLaunchArgument("shake_twist_rx_deg", default_value="6.0"),
+            DeclareLaunchArgument("shake_twist_ry_deg", default_value="3.0"),
             DeclareLaunchArgument("shake_twist_rz_deg", default_value="22.0"),
             DeclareLaunchArgument("line_time", default_value="0.0"),
             DeclareLaunchArgument("approach_line_velocity", default_value="20.0"),
@@ -135,6 +152,13 @@ def generate_launch_description():
             DeclareLaunchArgument("shake_line_time", default_value="0.40"),
             DeclareLaunchArgument("service_wait_timeout_sec", default_value="5.0"),
             DeclareLaunchArgument("motion_response_timeout_sec", default_value="10.0"),
+            DeclareLaunchArgument("precheck_ikin_joint5", default_value="true"),
+            DeclareLaunchArgument("enforce_wrist_joint_limits", default_value="true"),
+            DeclareLaunchArgument("ikin_sol_space", default_value="2"),
+            DeclareLaunchArgument("joint5_min_deg", default_value="-135.0"),
+            DeclareLaunchArgument("joint5_max_deg", default_value="135.0"),
+            DeclareLaunchArgument("wrist_min_deg", default_value="-135.0"),
+            DeclareLaunchArgument("wrist_max_deg", default_value="135.0"),
             DeclareLaunchArgument("min_shake_z", default_value="0.55"),
             DeclareLaunchArgument("dispenser_keepout_radius", default_value="0.20"),
             DeclareLaunchArgument("rx", default_value="180.0"),

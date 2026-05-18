@@ -41,6 +41,8 @@ class M0609ShakeJointStateNode(Node):
         else:
             positions = self.high_shake_joints(elapsed, home)
 
+        positions[4] = max(min(positions[4], math.radians(135.0)), math.radians(-135.0))
+
         msg = JointState()
         msg.header.stamp = now.to_msg()
         msg.name = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
@@ -94,13 +96,14 @@ class M0609ShakeJointStateNode(Node):
         return home
 
     def cup_target_move_joints(self, elapsed: float, home: list[float]) -> list[float]:
+        safe_j5 = math.radians(120.0)
         keyframes = [
             (0.0, home),
-            (2.0, [-0.55, 0.90, 1.35, 0.0, 2.50, 1.57]),  # low side pre-grasp
-            (4.0, [-0.50, 0.95, 1.35, 0.0, 2.50, 1.57]),  # low side grasp
-            (6.0, [-0.15, 0.95, 1.35, 0.0, 2.50, 1.57]),  # move while staying low
-            (8.0, [0.20, 0.95, 1.35, 0.0, 2.50, 1.57]),  # low target hold
-            (10.0, [0.20, 0.95, 1.35, 0.0, 2.50, 1.57]),  # hold target
+            (2.0, [-0.55, 0.90, 1.35, 0.0, safe_j5, 1.57]),  # low side pre-grasp
+            (4.0, [-0.50, 0.95, 1.35, 0.0, safe_j5, 1.57]),  # low side grasp
+            (6.0, [-0.15, 0.95, 1.35, 0.0, safe_j5, 1.57]),  # move while staying low
+            (8.0, [0.20, 0.95, 1.35, 0.0, safe_j5, 1.57]),  # low target hold
+            (10.0, [0.20, 0.95, 1.35, 0.0, safe_j5, 1.57]),  # hold target
         ]
         cycle_seconds = 12.0
         t = elapsed % cycle_seconds

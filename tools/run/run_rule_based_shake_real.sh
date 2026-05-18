@@ -17,6 +17,9 @@ REQUIRE_JOINT_LIMITS="${REQUIRE_JOINT_LIMITS:-true}"
 REQUIRE_ROBOT_STANDBY="${REQUIRE_ROBOT_STANDBY:-true}"
 JOINT5_MIN_DEG="${JOINT5_MIN_DEG:--135.0}"
 JOINT5_MAX_DEG="${JOINT5_MAX_DEG:-135.0}"
+ENFORCE_WRIST_JOINT_LIMITS="${ENFORCE_WRIST_JOINT_LIMITS:-true}"
+WRIST_MIN_DEG="${WRIST_MIN_DEG:--135.0}"
+WRIST_MAX_DEG="${WRIST_MAX_DEG:-135.0}"
 CURRENT_SHAKE_CENTER_Z_OFFSET_M="${CURRENT_SHAKE_CENTER_Z_OFFSET_M:-0.0}"
 SHAKE_CENTER_X="${SHAKE_CENTER_X:-0.28}"
 SHAKE_CENTER_Y="${SHAKE_CENTER_Y:--0.30}"
@@ -26,6 +29,7 @@ SHAKE_AMPLITUDE_Y="${SHAKE_AMPLITUDE_Y:-0.040}"
 SHAKE_AMPLITUDE_Z="${SHAKE_AMPLITUDE_Z:-0.055}"
 SHAKE_CYCLES="${SHAKE_CYCLES:-4}"
 SHAKE_TWIST_RX_DEG="${SHAKE_TWIST_RX_DEG:-6.0}"
+SHAKE_TWIST_RY_DEG="${SHAKE_TWIST_RY_DEG:-3.0}"
 SHAKE_TWIST_RZ_DEG="${SHAKE_TWIST_RZ_DEG:-22.0}"
 SHAKE_APPROACH_HEIGHT="${SHAKE_APPROACH_HEIGHT:-0.10}"
 MIN_SHAKE_Z="${MIN_SHAKE_Z:-0.55}"
@@ -96,10 +100,21 @@ print(next(group for group in match.groups() if group is not None))
 '
 }
 
+prefixed_service() {
+  local suffix="${1#/}"
+  local prefix="${SERVICE_PREFIX#/}"
+  if [[ -n "${prefix}" ]]; then
+    printf '/%s/%s' "${prefix}" "${suffix}"
+  else
+    printf '/%s' "${suffix}"
+  fi
+}
+
 if [[ "${REQUIRE_ROBOT_STANDBY}" == "true" ]]; then
   echo "[Azas] Checking Doosan robot state before real motion."
-  if ! robot_state_output="$(timeout 5s ros2 service call /system/get_robot_state dsr_msgs2/srv/GetRobotState "{}")"; then
-    echo "[Azas] Refusing real robot shake: /system/get_robot_state did not respond."
+  robot_state_service="$(prefixed_service system/get_robot_state)"
+  if ! robot_state_output="$(timeout 5s ros2 service call "${robot_state_service}" dsr_msgs2/srv/GetRobotState "{}")"; then
+    echo "[Azas] Refusing real robot shake: ${robot_state_service} did not respond."
     echo "[Azas] Start Doosan real bringup and confirm the robot network is connected."
     exit 1
   fi
@@ -144,13 +159,15 @@ print(" ".join(values[:7]))
 
 if [[ "${USE_CURRENT_TCP_AS_SHAKE_CENTER}" == "true" ]]; then
   echo "[Azas] Reading current robot TCP/joints for grasped-cup shake."
-  if ! current_posx_output="$(timeout 5s ros2 service call /aux_control/get_current_posx dsr_msgs2/srv/GetCurrentPosx "{ref: 0}")"; then
-    echo "[Azas] Refusing grasped-cup shake: /aux_control/get_current_posx did not respond."
+  current_posx_service="$(prefixed_service aux_control/get_current_posx)"
+  current_posj_service="$(prefixed_service aux_control/get_current_posj)"
+  if ! current_posx_output="$(timeout 5s ros2 service call "${current_posx_service}" dsr_msgs2/srv/GetCurrentPosx "{ref: 0}")"; then
+    echo "[Azas] Refusing grasped-cup shake: ${current_posx_service} did not respond."
     echo "[Azas] Check that the Doosan real bringup is connected and the robot is still on the network."
     exit 1
   fi
-  if ! current_posj_output="$(timeout 5s ros2 service call /aux_control/get_current_posj dsr_msgs2/srv/GetCurrentPosj "{}")"; then
-    echo "[Azas] Refusing grasped-cup shake: /aux_control/get_current_posj did not respond."
+  if ! current_posj_output="$(timeout 5s ros2 service call "${current_posj_service}" dsr_msgs2/srv/GetCurrentPosj "{}")"; then
+    echo "[Azas] Refusing grasped-cup shake: ${current_posj_service} did not respond."
     echo "[Azas] Check that the Doosan real bringup is connected and the robot is still on the network."
     exit 1
   fi
@@ -214,6 +231,7 @@ exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   shake_amplitude_z:="${SHAKE_AMPLITUDE_Z}" \
   shake_cycles:="${SHAKE_CYCLES}" \
   shake_twist_rx_deg:="${SHAKE_TWIST_RX_DEG}" \
+  shake_twist_ry_deg:="${SHAKE_TWIST_RY_DEG}" \
   shake_twist_rz_deg:="${SHAKE_TWIST_RZ_DEG}" \
   min_shake_z:="${MIN_SHAKE_Z}" \
   dispenser_keepout_radius:="${DISPENSER_KEEPOUT_RADIUS}" \
@@ -224,4 +242,11 @@ exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   approach_line_time:="${APPROACH_LINE_TIME}" \
   shake_line_time:="${SHAKE_LINE_TIME}" \
   service_wait_timeout_sec:="${SERVICE_WAIT_TIMEOUT_SEC}" \
-  motion_response_timeout_sec:="${MOTION_RESPONSE_TIMEOUT_SEC}"
+  motion_response_timeout_sec:="${MOTION_RESPONSE_TIMEOUT_SEC}" \
+  precheck_ikin_joint5:=true \
+  enforce_wrist_joint_limits:="${ENFORCE_WRIST_JOINT_LIMITS}" \
+  ikin_sol_space:=2 \
+  joint5_min_deg:="${JOINT5_MIN_DEG}" \
+  joint5_max_deg:="${JOINT5_MAX_DEG}" \
+  wrist_min_deg:="${WRIST_MIN_DEG}" \
+  wrist_max_deg:="${WRIST_MAX_DEG}"

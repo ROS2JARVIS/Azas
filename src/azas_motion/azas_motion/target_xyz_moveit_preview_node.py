@@ -21,7 +21,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from .side_grasp_ik_preview_node import moveit_config_dict
 
 
-DEFAULT_SIDE_GRASP_JOINTS = [-0.50, 0.95, 1.35, 0.0, 2.50, 1.57]
+DEFAULT_SIDE_GRASP_JOINTS = [-0.50, 0.95, 1.35, 0.0, math.radians(120.0), 1.57]
 JOINT_NAMES = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
 
 
@@ -102,6 +102,13 @@ class TargetXyzMoveItPreviewNode(Node):
                 self.preview_index = len(self.preview_points) - 1
 
     def publish_joint_state(self, names: List[str], positions: List[float]) -> None:
+        positions = list(positions)
+        if "joint_5" in names:
+            j5_index = names.index("joint_5")
+            positions[j5_index] = max(
+                min(positions[j5_index], math.radians(135.0)),
+                math.radians(-135.0),
+            )
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = names
