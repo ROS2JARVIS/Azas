@@ -115,6 +115,7 @@
     .step.status-failed,
     .step.status-timeout { border-color: #efb0b0; background: #fff5f5; }
     .step.status-blocked { border-color: #e6c872; background: #fffaf0; }
+    .step.status-starting,
     .step.status-started,
     .step.status-restarted { border-color: #9fc4ff; background: #f4f8ff; }
     .step code {
@@ -162,6 +163,7 @@
     .result-failed,
     .result-timeout { color: var(--red); background: #fff1f1; border-color: #efb0b0; }
     .result-blocked { color: var(--yellow); background: #fff8e6; border-color: #e6c872; }
+    .result-starting,
     .result-started,
     .result-restarted { color: var(--blue); background: #eef5ff; border-color: #a8c8ff; }
     .actions {
@@ -272,6 +274,7 @@
     const stepsEl = document.getElementById("steps");
     const statusLabels = {
       running: "실행 중",
+      starting: "시작 중",
       started: "시작됨",
       restarted: "재시작",
       passed: "성공",
@@ -321,6 +324,7 @@
       for (const row of document.querySelectorAll(".step")) {
         row.classList.remove(
           "status-running",
+          "status-starting",
           "status-started",
           "status-restarted",
           "status-passed",
@@ -342,6 +346,7 @@
       const safeStatus = statusLabels[status] ? status : "failed";
       row.classList.remove(
         "status-running",
+        "status-starting",
         "status-started",
         "status-restarted",
         "status-passed",
