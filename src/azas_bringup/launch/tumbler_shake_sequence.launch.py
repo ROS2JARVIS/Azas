@@ -153,7 +153,7 @@ def generate_launch_description():
             DeclareLaunchArgument("service_wait_timeout_sec", default_value="5.0"),
             DeclareLaunchArgument("motion_response_timeout_sec", default_value="10.0"),
             DeclareLaunchArgument("precheck_ikin_joint5", default_value="true"),
-            DeclareLaunchArgument("enforce_wrist_joint_limits", default_value="true"),
+            DeclareLaunchArgument("enforce_wrist_joint_limits", default_value="false"),
             DeclareLaunchArgument("ikin_sol_space", default_value="2"),
             DeclareLaunchArgument("joint5_min_deg", default_value="-135.0"),
             DeclareLaunchArgument("joint5_max_deg", default_value="135.0"),

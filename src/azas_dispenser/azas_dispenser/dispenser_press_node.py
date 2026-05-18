@@ -70,6 +70,9 @@ class DispenserPressNode:
         self.gripper_wait_timeout_sec = float(
             get_param(self.node, "gripper_wait_timeout", 2.0)
         )
+        self.service_wait_timeout_sec = float(
+            get_param(self.node, "service_wait_timeout_sec", 10.0)
+        )
         self.taught_posx_by_name = {
             "red": [
                 float(v)
@@ -178,6 +181,7 @@ class DispenserPressNode:
         self.node.destroy_node()
 
     def wait_for_services(self):
+        deadline = time.monotonic() + max(self.service_wait_timeout_sec, 0.1)
         for client, label in (
             (self.move_joint, "motion/move_joint"),
             (self.move_line, "motion/move_line"),
@@ -185,7 +189,13 @@ class DispenserPressNode:
             (self.get_current_posx, "aux_control/get_current_posx"),
         ):
             while rclpy.ok() and not client.wait_for_service(timeout_sec=1.0):
+                if time.monotonic() > deadline:
+                    self.logger.error(
+                        f"서비스 {label} 를 {self.service_wait_timeout_sec:.1f}초 안에 찾지 못했습니다"
+                    )
+                    return False
                 self.logger.info(f"서비스 {label} 를 기다리는 중")
+        return True
 
     def call_service(self, client, request, label):
         future = client.call_async(request)
@@ -454,7 +464,8 @@ class DispenserPressNode:
             self.logger.error("press_depth must be greater than 0.0 m.")
             return False
 
-        self.wait_for_services()
+        if not self.wait_for_services():
+            return False
 
         if self.move_home_first:
             if not self.movej(self.home_joints_deg, "move to HOME"):
@@ -511,11 +522,12 @@ def main(args=None):
     rclpy.init(args=args)
     node = DispenserPressNode()
     try:
-        node.run()
+        ok = node.run()
     finally:
         node.destroy()
         rclpy.shutdown()
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -128,7 +128,7 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("service_wait_timeout_sec", 5.0)
         self.declare_parameter("motion_response_timeout_sec", 10.0)
         self.declare_parameter("precheck_ikin_joint5", True)
-        self.declare_parameter("enforce_wrist_joint_limits", True)
+        self.declare_parameter("enforce_wrist_joint_limits", False)
         self.declare_parameter("ikin_sol_space", 2)
         self.declare_parameter("joint5_min_deg", -135.0)
         self.declare_parameter("joint5_max_deg", 135.0)
@@ -532,7 +532,7 @@ class TumblerShakeSequenceNode(Node):
                     return False
                 self.get_logger().info("Waiting for motion/ikin")
             self.get_logger().info(
-                "Running Ikin joint_5 precheck for all shake waypoints before MoveLine."
+                "Running Ikin joint_5 precheck for all shake waypoints before MoveLine. Optional joint_4/6 wrist limit is disabled unless requested."
             )
             for step in steps:
                 if not self.precheck_ikin_joint5(step):

@@ -46,11 +46,17 @@ ROBOT_STATE_NAMES = {
 }
 CAMERA_TABLE_VIEW_JOINTS = {
     "j1": "0",
-    "j2": "0",
-    "j3": "110",
+    "j2": "25",
+    "j3": "65",
     "j4": "0",
     "j5": "120",
     "j6": "0",
+}
+DISPENSER_PRESS_TARGETS = {
+    "1": "red",
+    "2": "green",
+    "3": "yellow",
+    "4": "blue",
 }
 
 
@@ -82,10 +88,10 @@ STEPS = [
         "lift_robot",
         "카메라 테이블 보기 자세 / J5 안전",
         "run",
-        "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 110 --j4 0 --j5 120 --j6 0",
+        "tools/run/direct_movej_joints.py --j1 0 --j2 25 --j3 65 --j4 0 --j5 120 --j6 0",
         True,
         True,
-        "MoveLine IK 대신 관절 자세 사용: joint_3를 올리고 joint_5는 120°로 두어 135° 초과를 방지",
+        "MoveLine IK 대신 검증된 observe 계열 관절 자세 사용: joint_3=65°, joint_5=120°로 135° 초과 방지",
     ),
     Step("detect_cup_lid", "컵/텀블러와 뚜껑 인식", "run", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "카메라가 있을 때만 의미 있음"),
     Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT/레시피 노드"),
@@ -129,7 +135,42 @@ STEPS = [
         True,
         "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용; 이동/검증 성공 후 RG2 open",
     ),
-    Step("press_dispenser", "디스펜서를 누르기", "blocked", "", False, True, "프레스 좌표/힘 제한 확정 후 연결"),
+    Step(
+        "press_dispenser_1",
+        "디스펜서 1 누르기 / red",
+        "run",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=red",
+        True,
+        True,
+        "feature/dispenser의 taught posx red 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+    ),
+    Step(
+        "press_dispenser_2",
+        "디스펜서 2 누르기 / green",
+        "run",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=green",
+        True,
+        True,
+        "feature/dispenser의 taught posx green 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+    ),
+    Step(
+        "press_dispenser_3",
+        "디스펜서 3 누르기 / yellow",
+        "run",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=yellow",
+        True,
+        True,
+        "feature/dispenser의 taught posx yellow 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+    ),
+    Step(
+        "press_dispenser_4",
+        "디스펜서 4 누르기 / blue",
+        "run",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=blue",
+        True,
+        True,
+        "feature/dispenser의 taught posx blue 사용: 현재 위치에서 transit→press→retreat, HOME 복귀 없음",
+    ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
     Step("place_cup_holder", "컵을 컵홀더에 놓기", "blocked", "", False, True, "컵홀더 좌표 필요"),
@@ -531,6 +572,14 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/motion/check_motion",
             "/jarvis/rg2/open",
         ]
+    if step.key.startswith("press_dispenser_"):
+        return [
+            f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/move_wait",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/aux_control/get_current_posx",
+        ]
     if step.key == "shake_closed_cup":
         return [
             f"/{clean}/motion/move_line",
@@ -644,8 +693,10 @@ def ensure_gripper_services(step: Step, payload: dict[str, Any], service_prefix:
 
 
 def requires_doosan_motion(step: Step) -> bool:
-    return step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"} or step.key.startswith(
-        "move_to_dispenser_"
+    return (
+        step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}
+        or step.key.startswith("move_to_dispenser_")
+        or step.key.startswith("press_dispenser_")
     )
 
 
@@ -889,6 +940,23 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             " --execute --confirm ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
             " && timeout 12s ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'"
         )
+    if step.key.startswith("press_dispenser_"):
+        dispenser_id = step.key.rsplit("_", 1)[-1]
+        target = DISPENSER_PRESS_TARGETS.get(dispenser_id, "red")
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && ros2 run azas_dispenser dispenser_press_node --ros-args "
+            f"-p service_prefix:={shlex.quote(service_prefix)} "
+            "-p use_taught_posx:=true "
+            f"-p target_dispenser:={shlex.quote(target)} "
+            "-p move_home_first:=false "
+            "-p return_home:=false "
+            "-p close_gripper_at_home:=false "
+            "-p service_wait_timeout_sec:=10.0 "
+            "-p line_velocity:=10.0 "
+            "-p line_acceleration:=15.0 "
+            "-p joint_velocity:=20.0 "
+            "-p joint_acceleration:=20.0"
+        )
     if step.key == "shake_closed_cup":
         return (
             f"cd {ROOT} && SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
@@ -896,7 +964,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "SHAKE_CENTER_Z=0.620 MIN_SHAKE_Z=0.550 SHAKE_AMPLITUDE_X=0.060 "
             "SHAKE_AMPLITUDE_Y=0.030 SHAKE_AMPLITUDE_Z=0.035 SHAKE_CYCLES=2 "
             "SHAKE_TWIST_RX_DEG=5.0 SHAKE_TWIST_RY_DEG=3.0 SHAKE_TWIST_RZ_DEG=18.0 "
-            "ENFORCE_WRIST_JOINT_LIMITS=true WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
+            "ENFORCE_WRIST_JOINT_LIMITS=false WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
             "LINE_TIME=0.0 APPROACH_LINE_TIME=3.5 SHAKE_LINE_TIME=0.45 "
             "tools/run/run_rule_based_shake_real.sh"
         )
