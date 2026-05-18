@@ -1,0 +1,39 @@
+name: Implementation Task
+description: Track a scoped robotics implementation task
+title: "[Area] "
+labels: ["task"]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: What this task is intended to achieve.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Implementation Scope
+      description: Files, nodes, packages, or behavior in scope.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Completion Criteria
+      description: Observable conditions that make this task complete.
+    validations:
+      required: true
+  - type: textarea
+    id: deps
+    attributes:
+      label: Dependencies
+      description: Other issues, hardware, calibration, or configs needed.
+  - type: textarea
+    id: test
+    attributes:
+      label: Test Method
+      description: Commands, dry-run checks, hardware checks, or acceptance metrics.
+    validations:
+      required: true
+

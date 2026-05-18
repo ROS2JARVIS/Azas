@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>azas_bringup</name>
+  <version>0.0.1</version>
+  <description>Launch and configuration package for Azas.</description>
+  <maintainer email="team@example.com">Azas Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>azas_calibration</depend>
+  <depend>azas_task_manager</depend>
+  <depend>azas_gripper</depend>
+  <depend>azas_motion</depend>
+  <depend>azas_perception</depend>
+  <exec_depend>dsr_description2</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

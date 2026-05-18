@@ -1,0 +1,21 @@
+repositories:
+  external/doosan-robot2:
+    type: git
+    url: https://github.com/DoosanRobotics/doosan-robot2.git
+    version: humble
+  external/realsense-ros:
+    type: git
+    url: https://github.com/realsenseai/realsense-ros.git
+    version: ros2-master
+  external/moveit2:
+    type: git
+    url: https://github.com/moveit/moveit2.git
+    version: humble
+  external/apriltag_ros:
+    type: git
+    url: https://github.com/christianrauch/apriltag_ros.git
+    version: master
+  external/easy_handeye2:
+    type: git
+    url: https://github.com/marcoesposito1988/easy_handeye2.git
+    version: master

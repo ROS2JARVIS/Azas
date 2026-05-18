@@ -1,0 +1,11 @@
+# MVP-1 action: detect random tumbler, pick with RG2, align cup_mouth_center below fixed dispenser_outlet.
+string outlet_id
+string cup_type
+bool execute_motion
+---
+bool success
+string error_code
+string message
+---
+string state
+string detail

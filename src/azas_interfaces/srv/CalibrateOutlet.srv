@@ -1,0 +1,6 @@
+string outlet_id
+geometry_msgs/Pose outlet_pose
+bool save
+---
+bool success
+string message

@@ -1,0 +1,9 @@
+camera:
+  color_topic: null       # 확인 필요
+  depth_topic: null       # 확인 필요
+  camera_info_topic: null # 확인 필요
+  camera_frame: null      # 확인 필요
+  depth_scale: 0.001      # PDF 기준: Z = depth_raw / 1000.0
+projection:
+  invalid_depth_policy: patch_median
+  patch_radius_px: 2

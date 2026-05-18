@@ -1,0 +1,14 @@
+# System packages commonly needed for Azas ROS 2 + camera + STT review.
+#
+# Install explicitly on the robot PC after reviewing the target Ubuntu/ROS image.
+
+python3-pip
+python3-vcstool
+python3-rosdep
+python3-colcon-common-extensions
+ros-humble-moveit
+ros-humble-realsense2-camera
+ros-humble-cv-bridge
+ros-humble-tf-transformations
+portaudio19-dev
+

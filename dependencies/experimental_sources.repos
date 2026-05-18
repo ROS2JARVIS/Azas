@@ -1,0 +1,10 @@
+repositories:
+  experimental/onrobot_ros2_driver:
+    type: git
+    url: https://github.com/tonydle/OnRobot_ROS2_Driver.git
+    version: main
+
+  experimental/anygrasp_ros:
+    type: git
+    url: https://github.com/CollaborativeRoboticsLab/anygrasp_ros.git
+    version: main

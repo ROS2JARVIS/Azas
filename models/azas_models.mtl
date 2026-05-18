@@ -1,0 +1,66 @@
+# Azas model materials. Transparency is advisory and importer-dependent.
+newmtl tumbler_clear_body
+Kd 0.85 0.95 1.00
+Ka 0.10 0.10 0.12
+d 0.35
+illum 2
+
+newmtl tumbler_lid_band
+Kd 0.08 0.08 0.08
+Ka 0.02 0.02 0.02
+d 1.0
+illum 2
+
+newmtl tumbler_lid_dome
+Kd 0.95 0.95 0.92
+Ka 0.08 0.08 0.08
+d 0.92
+illum 2
+
+newmtl tumbler_rim
+Kd 1.00 1.00 1.00
+Ka 0.10 0.10 0.10
+d 0.75
+illum 2
+
+newmtl tumbler_lid_tab
+Kd 0.08 0.08 0.08
+Ka 0.02 0.02 0.02
+d 1.0
+illum 2
+
+newmtl dispenser_clear_bottle
+Kd 0.90 0.98 1.00
+Ka 0.08 0.08 0.10
+d 0.28
+illum 2
+
+newmtl dispenser_mouth_outer
+Kd 0.88 0.88 0.88
+Ka 0.10 0.10 0.10
+d 1.0
+illum 2
+
+newmtl dispenser_mouth_inner_dark
+Kd 0.02 0.02 0.02
+Ka 0.00 0.00 0.00
+d 1.0
+illum 2
+
+newmtl dispenser_black_plastic
+Kd 0.01 0.01 0.01
+Ka 0.00 0.00 0.00
+d 1.0
+illum 2
+
+newmtl dispenser_outlet_blue
+Kd 0.10 0.35 1.00
+Ka 0.02 0.03 0.08
+d 1.0
+illum 2
+
+newmtl axis_marker_blue
+Kd 0.10 0.35 1.00
+Ka 0.02 0.03 0.08
+d 1.0
+illum 2

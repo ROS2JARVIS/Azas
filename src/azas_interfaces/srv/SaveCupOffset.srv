@@ -1,0 +1,6 @@
+string cup_type
+geometry_msgs/Vector3 tcp_to_cup_mouth_m
+bool save
+---
+bool success
+string message

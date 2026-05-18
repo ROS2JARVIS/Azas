@@ -1,0 +1,66 @@
+# PDF/wiki-derived MVP-1 calibration placeholders.
+# Real robot calibration is represented only by the top-level fields below.
+# Null/확인 필요 values are intentional fail-closed markers; replace them only
+# with measured robot-cell, hand-eye, MoveIt, or tool/TCP evidence.
+frames:
+  base_frame: base_link
+  camera_frame: null        # 확인 필요: 실제 depth camera frame_id
+  ee_link: null             # 확인 필요: M0609 MoveIt EE_LINK
+  planning_group: null      # 확인 필요: M0609 MoveIt GROUP_NAME
+  gripper_tcp: gripper_tcp  # 확인 필요: 실제 TCP frame 구성 후 확정
+  cup_mouth_center: cup_mouth_center
+hand_eye:
+  parent_frame: base_link
+  child_frame: null         # 확인 필요: camera_frame
+  xyz_m: null               # 확인 필요: calibrated transform
+  rpy_rad: null             # 확인 필요: calibrated transform
+cup_offsets:
+  default:
+    tcp_to_cup_mouth_m: null  # 확인 필요: jig/dry-run으로 측정
+    status: 확인 필요
+outlet:
+  outlet_id: dispenser_outlet
+  parent_frame: base_link
+  pose_xyz_m: null          # 확인 필요: teaching/calibration으로 측정
+  pose_rpy_rad: null        # 확인 필요
+  clearance_m: null         # 확인 필요: rim/outlet 안전 간격
+
+# Fixed dispenser-number to measured-pose mapping.
+# STT/LLM may select only these IDs. Coordinates must be filled only from
+# measured teaching/calibration data in base_link; never from STT, LLM, or VLA.
+dispenser_outlets:
+  "1":
+    outlet_pose_xyz_m: null  # 확인 필요: base_link 기준 토출구 중심
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null   # 확인 필요: base_link 기준 누름/작동 위치
+    press_pose_rpy_rad: null
+    clearance_m: null
+  "2":
+    outlet_pose_xyz_m: null
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null
+    press_pose_rpy_rad: null
+    clearance_m: null
+  "3":
+    outlet_pose_xyz_m: null
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null
+    press_pose_rpy_rad: null
+    clearance_m: null
+  "4":
+    outlet_pose_xyz_m: null
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null
+    press_pose_rpy_rad: null
+    clearance_m: null
+
+# Dry-run-only example values.
+# These values document the shape of a temporary static TF for simulation or
+# TF debugging. They are not calibration data and must not be copied into the
+# real hand_eye/outlet fields or used on the real robot.
+example_static_tf_do_not_use_on_real_robot:
+  parent_frame: base_link
+  child_frame: camera_color_optical_frame
+  xyz_m: [0.35, 0.0, 0.65]
+  rpy_rad: [0.0, 0.0, 0.0]
+  example_command: "ros2 run tf2_ros static_transform_publisher --x 0.35 --y 0.0 --z 0.65 --roll 0.0 --pitch 0.0 --yaw 0.0 --frame-id base_link --child-frame-id camera_color_optical_frame"

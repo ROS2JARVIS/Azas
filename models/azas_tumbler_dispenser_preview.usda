@@ -1,0 +1,58 @@
+#usda 1.0
+(
+    defaultPrim = "AzasTumblerDispenserPreview"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "AzasTumblerDispenserPreview"
+{
+    def Scope "Materials"
+    {
+        def Material "clear_bottle"
+        {
+            token outputs:surface.connect = </AzasTumblerDispenserPreview/Materials/clear_bottle/PBRShader.outputs:surface>
+            def Shader "PBRShader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.85, 0.95, 1.0)
+                float inputs:opacity = 0.35
+                float inputs:roughness = 0.25
+            }
+        }
+        def Material "black_plastic"
+        {
+            token outputs:surface.connect = </AzasTumblerDispenserPreview/Materials/black_plastic/PBRShader.outputs:surface>
+            def Shader "PBRShader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.01, 0.01, 0.01)
+                float inputs:roughness = 0.55
+            }
+        }
+        def Material "blue_marker"
+        {
+            token outputs:surface.connect = </AzasTumblerDispenserPreview/Materials/blue_marker/PBRShader.outputs:surface>
+            def Shader "PBRShader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.10, 0.35, 1.0)
+                float inputs:roughness = 0.2
+            }
+        }
+    }
+
+    def Xform "FourDispenserRow"
+    {
+        def Xform "Dispenser_1" (prepend references = @./azas_dispenser_single.obj@) { double3 xformOp:translate = (0, -0.1275, 0) uniform token[] xformOpOrder = ["xformOp:translate"] }
+        def Xform "Dispenser_2" (prepend references = @./azas_dispenser_single.obj@) { double3 xformOp:translate = (0, -0.0425, 0) uniform token[] xformOpOrder = ["xformOp:translate"] }
+        def Xform "Dispenser_3" (prepend references = @./azas_dispenser_single.obj@) { double3 xformOp:translate = (0, 0.0425, 0) uniform token[] xformOpOrder = ["xformOp:translate"] }
+        def Xform "Dispenser_4" (prepend references = @./azas_dispenser_single.obj@) { double3 xformOp:translate = (0, 0.1275, 0) uniform token[] xformOpOrder = ["xformOp:translate"] }
+    }
+
+    def Xform "Tumbler" (prepend references = @./azas_tumbler_shaker.obj@)
+    {
+        double3 xformOp:translate = (0.12, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

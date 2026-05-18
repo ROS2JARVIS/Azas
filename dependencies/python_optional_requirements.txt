@@ -1,0 +1,17 @@
+# Azas 선택적 Python 의존성
+# ROS 2 Humble 환경과 동일한 Python에 설치하세요.
+# Ultralytics는 AGPL-3.0 라이선스입니다. 상업적 사용 시 라이선스를 확인하세요.
+
+# ── 비전 (필수) ────────────────────────────────────────────
+# YOLO 텀블러 탐지: azas_perception/yolo_tumbler_detector_node.py
+ultralytics
+
+# ── 음성 인식 (선택) ────────────────────────────────────────
+# STT 노드: azas_voice/stt_node.py
+SpeechRecognition
+PyAudio
+
+# 오프라인 STT 후보 (Google Web Speech 대체용, 미결정)
+# vosk
+# openai-whisper
+
