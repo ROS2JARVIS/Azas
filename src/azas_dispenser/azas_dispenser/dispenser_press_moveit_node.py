@@ -121,6 +121,15 @@ class DispenserPressMoveItNode:
             get_param(self.node, "dispenser_y_offset", 0.05)
         )
         self.dispenser_top_z = float(get_param(self.node, "dispenser_top_z", 0.38))
+        # Support taught PRESS poses (x, y, z, rx, ry, rz) in millimetres/degrees
+        self.use_taught_posx = bool(get_param(self.node, "use_taught_posx", False))
+        self.target_dispenser = str(get_param(self.node, "target_dispenser", "red"))
+        self.taught_posx_by_name = {
+            "red": [float(v) for v in get_param(self.node, "red_top_posx", [])],
+            "green": [float(v) for v in get_param(self.node, "green_top_posx", [])],
+            "yellow": [float(v) for v in get_param(self.node, "yellow_top_posx", [])],
+            "blue": [float(v) for v in get_param(self.node, "blue_top_posx", [])],
+        }
         self.approach_height = float(get_param(self.node, "approach_height", 0.05))
         self.home_lift_height = float(get_param(self.node, "home_lift_height", 0.05))
         self.press_depth = float(get_param(self.node, "press_depth", 0.03))
@@ -153,12 +162,12 @@ class DispenserPressMoveItNode:
         self.node.destroy_node()
 
     def wait_for_interfaces(self):
-        self.logger.info("Waiting for MoveIt /move_action")
+        self.logger.info("MoveIt /move_action 액션 서버를 기다리는 중")
         self.move_group.wait_for_server()
         while rclpy.ok() and not self.compute_ik.wait_for_service(timeout_sec=1.0):
-            self.logger.info("Waiting for MoveIt /compute_ik")
+            self.logger.info("MoveIt /compute_ik 서비스를 기다리는 중")
         while rclpy.ok() and not self.get_current_posx.wait_for_service(timeout_sec=1.0):
-            self.logger.info("Waiting for Doosan aux_control/get_current_posx")
+            self.logger.info("Doosan /aux_control/get_current_posx 서비스를 기다리는 중")
 
     def read_current_posx(self):
         request = GetCurrentPosx.Request()
@@ -168,20 +177,20 @@ class DispenserPressMoveItNode:
         rclpy.spin_until_future_complete(self.node, future)
         result = future.result()
         if result is None:
-            self.logger.error(f"get_current_posx failed: {future.exception()}")
+            self.logger.error(f"get_current_posx 호출 실패: {future.exception()}")
             return None
         if not result.success or not result.task_pos_info:
-            self.logger.error("get_current_posx returned no valid TCP pose")
+            self.logger.error("get_current_posx가 유효한 TCP 포즈를 반환하지 않았습니다")
             return None
 
         data = list(result.task_pos_info[0].data)
         if len(data) < 6:
-            self.logger.error(f"get_current_posx returned too few values: {data}")
+            self.logger.error(f"get_current_posx가 너무 적은 값을 반환했습니다: {data}")
             return None
 
         pose = data[:6]
         self.logger.info(
-            "Doosan TCP pose: "
+            "Doosan TCP 포즈: "
             f"x={pose[0]:.1f}mm, y={pose[1]:.1f}mm, z={pose[2]:.1f}mm, "
             f"rpy=({pose[3]:.1f}, {pose[4]:.1f}, {pose[5]:.1f})"
         )
@@ -194,15 +203,33 @@ class DispenserPressMoveItNode:
         self.home_tcp = [pose[0] / 1000.0, pose[1] / 1000.0, pose[2] / 1000.0]
         self.home_rpy_deg = [pose[3], pose[4], pose[5]]
         self.logger.info(
-            "Using Doosan TCP pose as MoveIt HOME reference: "
+            "Doosan TCP 포즈를 MoveIt HOME 참조로 사용합니다: "
             f"home_tcp={self.home_tcp}, home_rpy_deg={self.home_rpy_deg}"
         )
         return True
 
     def make_pose(self, x, y, z):
+        # Default orientation: home rpy. Callers may override by passing
+        # different rpy via the overloaded helper (see execute_pose_goal).
         qx, qy, qz, qw = quat_from_rpy_deg(*self.home_rpy_deg)
         offset_x, offset_y, offset_z = rotate_vector_by_rpy_deg(
             *self.home_rpy_deg, self.tool_offset_xyz
+        )
+        pose = PoseStamped()
+        pose.header.frame_id = self.base_frame
+        pose.pose.position.x = float(x) - offset_x
+        pose.pose.position.y = float(y) - offset_y
+        pose.pose.position.z = float(z) - offset_z
+        pose.pose.orientation.x = qx
+        pose.pose.orientation.y = qy
+        pose.pose.orientation.z = qz
+        pose.pose.orientation.w = qw
+        return pose
+
+    def make_pose_with_rpy(self, x, y, z, rpy_deg):
+        qx, qy, qz, qw = quat_from_rpy_deg(*rpy_deg)
+        offset_x, offset_y, offset_z = rotate_vector_by_rpy_deg(
+            *rpy_deg, self.tool_offset_xyz
         )
         pose = PoseStamped()
         pose.header.frame_id = self.base_frame
@@ -302,11 +329,17 @@ class DispenserPressMoveItNode:
         self.logger.info(f"{label}: MoveIt execution complete")
         return True
 
-    def execute_pose_goal(self, x, y, z, label):
-        pose = self.make_pose(x, y, z)
+    def execute_pose_goal(self, x, y, z, label, rpy_deg=None):
+        if rpy_deg is None:
+            pose = self.make_pose(x, y, z)
+            rpy_used = self.home_rpy_deg
+        else:
+            pose = self.make_pose_with_rpy(x, y, z, rpy_deg)
+            rpy_used = rpy_deg
+
         self.logger.info(
             f"{label}: pose target x={x:.3f}, y={y:.3f}, z={z:.3f}, "
-            f"rpy={self.home_rpy_deg}, ik_link={self.ik_link_name}, "
+            f"rpy={rpy_used}, ik_link={self.ik_link_name}, "
             f"contact_link={self.ee_link}"
         )
         joints = self.solve_ik(pose, label)
@@ -315,6 +348,39 @@ class DispenserPressMoveItNode:
         return self.execute_joint_goal(joints, label)
 
     def build_steps(self):
+        # If taught PRESS poses are provided, use them as the authoritative
+        # PRESS pose (x,y,z,rx,ry,rz) and compute APPROACH by adding
+        # `approach_height` to the Z value. Values in taught_posx are expected
+        # to be in millimetres for position and degrees for rpy (consistent
+        # with dispenser_press_node). Convert mm -> m for MoveIt.
+        steps = []
+        if self.use_taught_posx:
+            top_pose = self.taught_posx_by_name.get(self.target_dispenser, [])
+            if len(top_pose) >= 6:
+                x_m = top_pose[0] / 1000.0
+                y_m = top_pose[1] / 1000.0
+                top_z_m = top_pose[2] / 1000.0
+                rx_deg, ry_deg, rz_deg = top_pose[3:6]
+                approach_z = top_z_m + self.approach_height
+                pressed_z = top_z_m - self.press_depth
+
+                steps = [
+                    (self.home_tcp[0], self.home_tcp[1], self.home_tcp[2] + self.home_lift_height, "lift above HOME", None),
+                    (x_m, y_m, approach_z, "approach above dispenser", [rx_deg, ry_deg, rz_deg]),
+                    (x_m, y_m, top_z_m, "move to dispenser top", [rx_deg, ry_deg, rz_deg]),
+                    (x_m, y_m, pressed_z, "press dispenser pump", [rx_deg, ry_deg, rz_deg]),
+                    (x_m, y_m, approach_z, "retreat above dispenser", [rx_deg, ry_deg, rz_deg]),
+                ]
+                for x_value, y_value, z_value, label, _ in steps:
+                    self.logger.info(
+                        f"큐에 추가된 단계: {label} -> "
+                        f"x={x_value:.3f}, y={y_value:.3f}, z={z_value:.3f}"
+                    )
+                return steps
+            else:
+                self.logger.info("use_taught_posx=True but taught_posx not configured; falling back to defaults")
+
+        # Fallback: use the configured dispenser_x/dispenser_y values (meters)
         x = self.dispenser_x
         y = self.dispenser_y + self.dispenser_y_offset
         top_z = self.dispenser_top_z
@@ -322,16 +388,11 @@ class DispenserPressMoveItNode:
         pressed_z = top_z - self.press_depth
 
         steps = [
-            (
-                self.home_tcp[0],
-                self.home_tcp[1],
-                self.home_tcp[2] + self.home_lift_height,
-                "lift above HOME",
-            ),
-            (x, y, approach_z, "approach above dispenser"),
-            (x, y, top_z, "move to dispenser top"),
-            (x, y, pressed_z, "press dispenser pump"),
-            (x, y, approach_z, "retreat above dispenser"),
+            (self.home_tcp[0], self.home_tcp[1], self.home_tcp[2] + self.home_lift_height, "lift above HOME", None),
+            (x, y, approach_z, "approach above dispenser", None),
+            (x, y, top_z, "move to dispenser top", None),
+            (x, y, pressed_z, "press dispenser pump", None),
+            (x, y, approach_z, "retreat above dispenser", None),
         ]
         for x_value, y_value, z_value, label in steps:
             self.logger.info(
@@ -353,10 +414,22 @@ class DispenserPressMoveItNode:
                     self.logger.error("Sequence failed while reading HOME TCP pose")
                     return False
 
-        for x, y, z, label in self.build_steps():
-            if not self.execute_pose_goal(x, y, z, label):
-                self.logger.error(f"Sequence failed at step: {label}")
+        steps = self.build_steps()
+        for idx, step in enumerate(steps, start=1):
+            # support either (x,y,z,label) or (x,y,z,label,rpy)
+            if len(step) == 4:
+                x, y, z, label = step
+                rpy = None
+            else:
+                x, y, z, label, rpy = step
+
+            self.logger.info(f"단계 {idx}/{len(steps)}: 시작 '{label}' -> x={x:.3f}, y={y:.3f}, z={z:.3f}, rpy={rpy}")
+            success = self.execute_pose_goal(x, y, z, label, rpy_deg=rpy)
+            if not success:
+                self.logger.error(f"시퀀스가 단계에서 실패했습니다: {label}")
                 return False
+            self.logger.info(f"단계 {idx}/{len(steps)}: 완료 '{label}'")
+
             if label == "approach above dispenser" and self.approach_pause_seconds > 0:
                 time.sleep(self.approach_pause_seconds)
             if label == "press dispenser pump" and self.hold_seconds > 0:

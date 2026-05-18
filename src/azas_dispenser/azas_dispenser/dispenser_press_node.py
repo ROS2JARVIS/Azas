@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import time
 
+from azas_interfaces.srv import SetGripper
 import rclpy
 from dsr_msgs2.srv import GetCurrentPosx, MoveJoint, MoveLine, MoveWait
 
@@ -54,13 +55,28 @@ class DispenserPressNode:
         )
         self.use_taught_posx = bool(get_param(self.node, "use_taught_posx", False))
         self.target_dispenser = str(get_param(self.node, "target_dispenser", "red"))
+        self.close_gripper_at_home = bool(
+            get_param(self.node, "close_gripper_at_home", True)
+        )
+        self.gripper_service_name = str(
+            get_param(self.node, "gripper_service", "/azas/gripper/open_close")
+        )
+        self.gripper_close_width_m = float(
+            get_param(self.node, "gripper_close_width", 0.0)
+        )
+        self.gripper_close_force_n = float(
+            get_param(self.node, "gripper_close_force", 20.0)
+        )
+        self.gripper_wait_timeout_sec = float(
+            get_param(self.node, "gripper_wait_timeout", 2.0)
+        )
         self.taught_posx_by_name = {
             "red": [
                 float(v)
                 for v in get_param(
                     self.node,
                     "red_top_posx",
-                    [732.102, 64.331, 375.813, 174.047, -118.164, -149.737],
+                    [732.102, 64.331, 379.151, 174.047, -118.164, -149.737],
                 )
             ],
             "green": [
@@ -68,7 +84,7 @@ class DispenserPressNode:
                 for v in get_param(
                     self.node,
                     "green_top_posx",
-                    [733.471, 3.988, 379.210, 168.569, -117.133, -149.816],
+                    [733.471, 3.988, 379.151, 168.569, -117.133, -149.816],
                 )
             ],
             "yellow": [
@@ -76,7 +92,7 @@ class DispenserPressNode:
                 for v in get_param(
                     self.node,
                     "yellow_top_posx",
-                    [736.923, -54.696, 398.958, 164.238, -114.838, -150.599],
+                    [736.923, -54.696, 379.151, 164.238, -114.838, -150.599],
                 )
             ],
             "blue": [
@@ -105,7 +121,7 @@ class DispenserPressNode:
         self.home_lift_height_mm = (
             float(get_param(self.node, "home_lift_height", 0.05)) * 1000.0
         )
-        self.press_depth_mm = float(get_param(self.node, "press_depth", 0.025)) * 1000.0
+        self.press_depth_mm = float(get_param(self.node, "press_depth", 0.04)) * 1000.0
         self.hold_seconds = float(get_param(self.node, "hold_seconds", 0.5))
         self.approach_pause_seconds = float(
             get_param(self.node, "approach_pause_seconds", 0.5)
@@ -153,6 +169,10 @@ class DispenserPressNode:
             GetCurrentPosx,
             service_name(self.service_prefix, "aux_control/get_current_posx"),
         )
+        self.gripper_client = self.node.create_client(
+            SetGripper,
+            self.gripper_service_name,
+        )
 
     def destroy(self):
         self.node.destroy_node()
@@ -165,17 +185,49 @@ class DispenserPressNode:
             (self.get_current_posx, "aux_control/get_current_posx"),
         ):
             while rclpy.ok() and not client.wait_for_service(timeout_sec=1.0):
-                self.logger.info(f"Waiting for {label} service")
+                self.logger.info(f"서비스 {label} 를 기다리는 중")
 
     def call_service(self, client, request, label):
         future = client.call_async(request)
         rclpy.spin_until_future_complete(self.node, future)
         if future.result() is None:
-            self.logger.error(f"{label} failed: {future.exception()}")
+            self.logger.error(f"{label} 호출 실패: {future.exception()}")
             return False
         if not future.result().success:
-            self.logger.error(f"{label} returned success=false")
+            self.logger.error(f"{label} 가 success=false를 반환했습니다")
             return False
+        return True
+
+    def close_gripper(self):
+        if not self.close_gripper_at_home:
+            return True
+
+        self.logger.info(f"그리퍼 close 서비스 확인 중: {self.gripper_service_name}")
+        if not self.gripper_client.wait_for_service(
+            timeout_sec=self.gripper_wait_timeout_sec
+        ):
+            self.logger.warning(
+                f"그리퍼 서비스 {self.gripper_service_name} 를 찾지 못했습니다. "
+                "그리퍼 닫기 없이 디스펜서 동작을 계속합니다."
+            )
+            return True
+
+        req = SetGripper.Request()
+        req.command = "close"
+        req.width_m = self.gripper_close_width_m
+        req.force_n = self.gripper_close_force_n
+
+        future = self.gripper_client.call_async(req)
+        rclpy.spin_until_future_complete(self.node, future)
+        result = future.result()
+        if result is None:
+            self.logger.error(f"그리퍼 close 호출 실패: {future.exception()}")
+            return False
+        if not result.success:
+            self.logger.error(f"그리퍼 close 실패: {result.message}")
+            return False
+
+        self.logger.info(f"그리퍼 close 완료: {result.message}")
         return True
 
     def movej(self, joints_deg, label):
@@ -199,9 +251,9 @@ class DispenserPressNode:
 
         if (safe_x, safe_y, safe_z) != (x_mm, y_mm, z_mm):
             self.logger.warning(
-                "Requested pose was outside workspace. "
-                f"Clamped from ({x_mm:.1f}, {y_mm:.1f}, {z_mm:.1f}) mm to "
-                f"({safe_x:.1f}, {safe_y:.1f}, {safe_z:.1f}) mm."
+                "요청한 포즈가 작업 공간을 벗어났습니다. "
+                f"({x_mm:.1f}, {y_mm:.1f}, {z_mm:.1f}) mm 에서 "
+                f"({safe_x:.1f}, {safe_y:.1f}, {safe_z:.1f}) mm 로 클램프했습니다."
             )
 
         req = MoveLine.Request()
@@ -220,7 +272,7 @@ class DispenserPressNode:
 
     def wait_for_motion_done(self, label):
         req = MoveWait.Request()
-        self.logger.info(f"{label}: waiting for motion completion")
+        self.logger.info(f"{label}: 모션 완료 대기 중")
         return self.call_service(self.move_wait, req, f"{label} wait")
 
     def read_current_posx(self):
@@ -232,27 +284,53 @@ class DispenserPressNode:
         result = future.result()
 
         if result is None:
-            self.logger.error(f"get_current_posx failed: {future.exception()}")
+            self.logger.error(f"get_current_posx 호출 실패: {future.exception()}")
             return None
         if not result.success:
-            self.logger.error("get_current_posx returned success=false")
+            self.logger.error("get_current_posx가 success=false를 반환했습니다")
             return None
         if not result.task_pos_info:
-            self.logger.error("get_current_posx returned empty task_pos_info")
+            self.logger.error("get_current_posx가 빈 task_pos_info를 반환했습니다")
             return None
 
         data = list(result.task_pos_info[0].data)
         if len(data) < 6:
-            self.logger.error(f"get_current_posx returned too few values: {data}")
+            self.logger.error(f"get_current_posx가 너무 적은 값을 반환했습니다: {data}")
             return None
 
         pose = data[:6]
         self.logger.info(
-            "Current TCP pose from controller: "
+            "현재 Doosan TCP 포즈: "
             f"[{pose[0]:.1f}, {pose[1]:.1f}, {pose[2]:.1f}, "
             f"{pose[3]:.1f}, {pose[4]:.1f}, {pose[5]:.1f}]"
         )
         return pose
+
+    def shortest_angle_delta_deg(self, target_deg, actual_deg):
+        return (actual_deg - target_deg + 180.0) % 360.0 - 180.0
+
+    def verify_reached_pose(self, target_pose, label):
+        actual_pose = self.read_current_posx()
+        if actual_pose is None:
+            return False
+
+        dx = actual_pose[0] - target_pose[0]
+        dy = actual_pose[1] - target_pose[1]
+        dz = actual_pose[2] - target_pose[2]
+        position_error = (dx * dx + dy * dy + dz * dz) ** 0.5
+        drx = self.shortest_angle_delta_deg(target_pose[3], actual_pose[3])
+        dry = self.shortest_angle_delta_deg(target_pose[4], actual_pose[4])
+        drz = self.shortest_angle_delta_deg(target_pose[5], actual_pose[5])
+        max_rpy_error = max(abs(drx), abs(dry), abs(drz))
+
+        self.logger.info(
+            f"{label}: 목표 도달 오차 "
+            f"position={position_error:.2f} mm "
+            f"(dx={dx:.2f}, dy={dy:.2f}, dz={dz:.2f}), "
+            f"rpy_max={max_rpy_error:.2f} deg "
+            f"(drx={drx:.2f}, dry={dry:.2f}, drz={drz:.2f})"
+        )
+        return True
 
     def build_press_steps(self):
         home_lift_step = None
@@ -281,7 +359,7 @@ class DispenserPressNode:
             transit_z = max(current_pose[2], approach_z) + self.transit_height_mm
 
             self.logger.info(
-                f"Using taught {self.target_dispenser} dispenser top pose. "
+                f"학습된 {self.target_dispenser} 디스펜서 top 포즈를 사용합니다. "
                 f"top=({x_mm:.1f}, {y_mm:.1f}, {top_z:.1f}), "
                 f"transit_z={transit_z:.1f} mm, approach_z={approach_z:.1f} mm, "
                 f"pressed_z={pressed_z:.1f} mm, "
@@ -300,6 +378,7 @@ class DispenserPressNode:
                 (x_mm, y_mm, top_z, "move to dispenser top"),
                 (x_mm, y_mm, pressed_z, "press dispenser pump"),
                 (x_mm, y_mm, approach_z, "retreat above dispenser"),
+                (x_mm, y_mm, transit_z, "lift to return transit height"),
             ]
             return steps
         elif self.use_press_ready_pose:
@@ -310,7 +389,7 @@ class DispenserPressNode:
             pressed_z = top_z - self.press_depth_mm
 
             self.logger.info(
-                "Using saved press-ready joint pose. "
+                "저장된 press-ready 관절 포즈를 사용합니다. "
                 f"target=({x_mm:.1f}, {y_mm:.1f}), "
                 f"rpy=({self.rx:.1f}, {self.ry:.1f}, {self.rz:.1f})"
             )
@@ -327,7 +406,7 @@ class DispenserPressNode:
             pressed_z = top_z - self.press_depth_mm
 
             self.logger.info(
-                "Using HOME/current TCP pose as dispenser approach pose. "
+                "HOME/현재 TCP 포즈를 디스펜서 접근 포즈로 사용합니다. "
                 f"top_z={top_z:.1f} mm, pressed_z={pressed_z:.1f} mm"
             )
         else:
@@ -353,7 +432,7 @@ class DispenserPressNode:
             pressed_z = top_z - self.press_depth_mm
 
             self.logger.info(
-                "Using fixed dispenser position with HOME TCP orientation. "
+                "고정된 디스펜서 위치를 HOME TCP 방향과 함께 사용합니다. "
                 f"target=({x_mm:.1f}, {y_mm:.1f}), "
                 f"rpy=({self.rx:.1f}, {self.ry:.1f}, {self.rz:.1f})"
             )
@@ -382,6 +461,8 @@ class DispenserPressNode:
                 return False
             if not self.wait_for_motion_done("move to HOME"):
                 return False
+            if not self.close_gripper():
+                return False
 
         if self.use_press_ready_pose:
             if not self.movej(self.press_ready_joints_deg, "move to press-ready pose"):
@@ -393,24 +474,35 @@ class DispenserPressNode:
         if steps is None:
             return False
 
-        for x_mm, y_mm, z_mm, label in steps:
+        for idx, (x_mm, y_mm, z_mm, label) in enumerate(steps, start=1):
+            self.logger.info(f"단계 {idx}/{len(steps)}: 시작 '{label}' -> x={x_mm:.1f} y={y_mm:.1f} z={z_mm:.1f} mm")
             if not self.movel(x_mm, y_mm, z_mm, label):
+                self.logger.error(f"{label} 단계에서 movel 실패")
                 return False
             if not self.wait_for_motion_done(label):
+                self.logger.error(f"{label} 단계의 모션이 완료되지 않았습니다")
                 return False
+            self.verify_reached_pose([x_mm, y_mm, z_mm, self.rx, self.ry, self.rz], label)
+            self.logger.info(f"단계 {idx}/{len(steps)}: 완료 '{label}'")
             if label == "approach above dispenser" and self.approach_pause_seconds > 0.0:
                 self.logger.info(
-                    f"Pausing at approach for {self.approach_pause_seconds:.2f} seconds"
+                    f"접근 위치에서 {self.approach_pause_seconds:.2f}초간 대기합니다"
                 )
                 time.sleep(self.approach_pause_seconds)
             if label == "press dispenser pump" and self.hold_seconds > 0.0:
-                self.logger.info(f"Holding press for {self.hold_seconds:.2f} seconds")
+                self.logger.info(f"누르는 동작을 {self.hold_seconds:.2f}초간 유지합니다")
                 time.sleep(self.hold_seconds)
 
         if self.return_home:
+            self.logger.info(
+                "복귀용 transit 높이 도달 후 HOME으로 복귀합니다."
+            )
             if not self.movej(self.home_joints_deg, "return to HOME"):
                 return False
-            return self.wait_for_motion_done("return to HOME")
+            if not self.wait_for_motion_done("return to HOME"):
+                return False
+            self.logger.info("HOME 복귀 완료")
+            return True
 
         return True
 

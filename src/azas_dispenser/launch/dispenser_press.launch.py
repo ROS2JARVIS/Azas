@@ -8,13 +8,18 @@ def generate_launch_description():
     dispenser_press_params = {
         # Use "/" when Doosan services are not namespaced.
         "service_prefix": LaunchConfiguration("service_prefix"),
+        "close_gripper_at_home": LaunchConfiguration("close_gripper_at_home"),
+        "gripper_service": LaunchConfiguration("gripper_service"),
+        "gripper_close_width": LaunchConfiguration("gripper_close_width"),
+        "gripper_close_force": LaunchConfiguration("gripper_close_force"),
+        "gripper_wait_timeout": LaunchConfiguration("gripper_wait_timeout"),
         # True이면 실제로 찍어둔 색상별 펌프 상단 TCP 좌표를 사용합니다.
         "use_taught_posx": True,
         "target_dispenser": LaunchConfiguration("target_dispenser"),
         "red_top_posx": [
             732.1023559570312,
             64.33094787597656,
-            375.81304931640625,
+            379.1507568359375,
             174.0473175048828,
             -118.16372680664062,
             -149.73670959472656,
@@ -22,7 +27,7 @@ def generate_launch_description():
         "green_top_posx": [
             733.4710083007812,
             3.988441228866577,
-            379.2102966308594,
+            379.1507568359375,
             168.5689239501953,
             -117.13253784179688,
             -149.81581115722656,
@@ -30,7 +35,7 @@ def generate_launch_description():
         "yellow_top_posx": [
             736.9231567382812,
             -54.69612121582031,
-            398.9580078125,
+            379.1507568359375,
             164.23757934570312,
             -114.83785247802734,
             -150.598876953125,
@@ -60,7 +65,7 @@ def generate_launch_description():
         "transit_height": 0.10,
         # 홈에서 얼마나 올릴 것인지
         "home_lift_height": 0.05,
-        "press_depth": 0.015,
+        "press_depth": 0.04,
         "hold_seconds": 0.5,
         "approach_pause_seconds": 0.5,
         "move_home_first": True,
@@ -71,10 +76,10 @@ def generate_launch_description():
         "rz": 90.0,
         "home_joints_deg": [0.0, 0.0, 90.0, 0.0, 90.0, 0.0],
         "press_ready_joints_deg": [6.58, 6.94, 57.71, -15.02, 26.12, -76.44],
-        "joint_velocity": 20.0,
-        "joint_acceleration": 20.0,
-        "line_velocity": 10.0,
-        "line_acceleration": 15.0,
+        "joint_velocity": LaunchConfiguration("joint_velocity"),
+        "joint_acceleration": LaunchConfiguration("joint_acceleration"),
+        "line_velocity": LaunchConfiguration("line_velocity"),
+        "line_acceleration": LaunchConfiguration("line_acceleration"),
     }
 
     return LaunchDescription(
@@ -88,6 +93,51 @@ def generate_launch_description():
                 "target_dispenser",
                 default_value="red",
                 description="Dispenser color to press: red, green, yellow, or blue.",
+            ),
+            DeclareLaunchArgument(
+                "close_gripper_at_home",
+                default_value="true",
+                description="Close the gripper after HOME motion before dispenser press.",
+            ),
+            DeclareLaunchArgument(
+                "gripper_service",
+                default_value="/azas/gripper/open_close",
+                description="SetGripper service name used for gripper close.",
+            ),
+            DeclareLaunchArgument(
+                "gripper_close_width",
+                default_value="0.0",
+                description="Target close width in meters for SetGripper.",
+            ),
+            DeclareLaunchArgument(
+                "gripper_close_force",
+                default_value="20.0",
+                description="Target close force in newtons for SetGripper.",
+            ),
+            DeclareLaunchArgument(
+                "gripper_wait_timeout",
+                default_value="2.0",
+                description="Seconds to wait for the gripper service before continuing.",
+            ),
+            DeclareLaunchArgument(
+                "joint_velocity",
+                default_value="20.0",
+                description="Doosan movej velocity.",
+            ),
+            DeclareLaunchArgument(
+                "joint_acceleration",
+                default_value="20.0",
+                description="Doosan movej acceleration.",
+            ),
+            DeclareLaunchArgument(
+                "line_velocity",
+                default_value="10.0",
+                description="Doosan movel translational/rotational velocity.",
+            ),
+            DeclareLaunchArgument(
+                "line_acceleration",
+                default_value="15.0",
+                description="Doosan movel translational/rotational acceleration.",
             ),
             Node(
                 package="azas_dispenser",
