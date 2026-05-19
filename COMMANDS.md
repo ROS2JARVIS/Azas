@@ -59,6 +59,31 @@ colcon test --packages-select azas_voice
 
 ---
 
+## 제어 패널
+
+```bash
+cd /home/ssu/Azas
+
+# 패널 서버가 없으면 시작하고, 브라우저에서 http://127.0.0.1:8765/ 를 엽니다.
+# 첫 실행 때 ~/.local/bin/azas-panel symlink도 자동으로 준비합니다.
+bash tools/run/open_robot_pipeline_control_panel.sh
+```
+
+첫 실행 뒤에는 어느 디렉터리에서든 짧은 명령으로 열 수 있습니다.
+
+```bash
+azas-panel
+```
+
+패널 서버만 종료할 때:
+
+```bash
+pgrep -af "robot_pipeline_control_server.py"
+kill -TERM <PID>
+```
+
+---
+
 ## 3. 시뮬레이션 (가상 로봇)
 
 ```bash
