@@ -48,6 +48,9 @@ fi
 if [[ -f /home/ssu/ros2_ws/install/setup.bash ]]; then
   source /home/ssu/ros2_ws/install/setup.bash
 fi
+if [[ -f /home/ssu/ws_moveit/install/setup.bash ]]; then
+  source /home/ssu/ws_moveit/install/setup.bash
+fi
 set -u
 
 echo "[Azas] Checking ROS package availability"

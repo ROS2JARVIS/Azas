@@ -20,4 +20,9 @@ setup(
     maintainer_email="team@example.com",
     description="Launch and configuration package for Azas.",
     license="MIT",
+    entry_points={
+        "console_scripts": [
+            "joint_state_relay_legacy = azas_bringup.joint_state_relay_legacy:main",
+        ],
+    },
 )

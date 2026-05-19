@@ -9,9 +9,9 @@
   <buildtool_depend>ament_python</buildtool_depend>
   <depend>rclpy</depend>
   <depend>azas_interfaces</depend>
+  <exec_depend>python3-pymodbus</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
   </export>
 </package>
-

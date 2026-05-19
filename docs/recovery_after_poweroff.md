@@ -1,5 +1,8 @@
 # Recovery After Poweroff
 
+> 현재 기준: Azas 작업은 `/home/ssu/Azas` 안에서만 복구합니다.
+> 예전 외부 워크스페이스 재빌드 절차는 폐기했습니다.
+
 Use this page if the PC shuts down before the robot-control work is finished.
 
 ## Current State
@@ -22,15 +25,6 @@ From a new terminal:
 source /opt/ros/humble/setup.bash
 cd /home/ssu/Azas
 colcon build --symlink-install
-source install/setup.bash
-```
-
-If Jarvis/Doosan bridge packages are needed:
-
-```bash
-source /opt/ros/humble/setup.bash
-cd /home/ssu/ros2_ws
-colcon build --packages-select jarvis --symlink-install
 source install/setup.bash
 ```
 

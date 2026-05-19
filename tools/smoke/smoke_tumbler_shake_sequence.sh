@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Fake-hardware high-shake smoke test:
-# tumbler_shake_sequence_node with enable_hardware=true -> fake Doosan MoveLine.
+# tumbler_shake_sequence_node with enable_hardware=true -> fake Doosan MoveJoint.
 #
 # This verifies the hardware-armed code path without commanding real hardware.
 
@@ -23,9 +23,9 @@ set -u
 assert_no_preexisting_motion_target() {
   local prefix="${SERVICE_PREFIX#/}"
   prefix="${prefix%/}"
-  local motion_service="/motion/move_line"
+  local motion_service="/motion/move_joint"
   if [[ -n "${prefix}" ]]; then
-    motion_service="/${prefix}/motion/move_line"
+    motion_service="/${prefix}/motion/move_joint"
   fi
 
   for _ in {1..20}; do
@@ -94,7 +94,7 @@ FAKE_PID=$!
 timeout 12s bash -lc '
   while true; do
     ros2 service list --no-daemon >/tmp/azas_smoke_tumbler_shake_services.txt 2>/tmp/azas_smoke_tumbler_shake_services.err || true
-    if grep -q "/motion/move_line\\|/.*/motion/move_line" /tmp/azas_smoke_tumbler_shake_services.txt; then
+    if grep -q "/motion/move_joint\\|/.*/motion/move_joint" /tmp/azas_smoke_tumbler_shake_services.txt; then
       exit 0
     fi
     sleep 0.2
@@ -107,14 +107,28 @@ LAUNCH_ARGS=(
   hardware_confirm:=ENABLE_REAL_ROBOT_MOTION
   allow_service_control_without_moveit:=true
   use_visualizer:=false
-  shake_center_x:=0.28
-  shake_center_y:=-0.30
-  shake_center_z:=0.62
-  shake_amplitude_x:=0.100
-  shake_amplitude_y:=0.040
-  shake_amplitude_z:=0.055
-  min_shake_z:=0.55
-  dispenser_keepout_radius:=0.20
+  shake_control_mode:=joint
+  shake_cycles:=4
+  joint_shake_base_j1_deg:=0.0
+  joint_shake_base_j2_deg:=-35.0
+  joint_shake_base_j3_deg:=50.0
+  joint_shake_base_j4_deg:=0.0
+  joint_shake_base_j5_deg:=70.0
+  joint_shake_base_j6_deg:=0.0
+  joint_shake_j3_amplitude_deg:=0.0
+  joint_shake_j4_amplitude_deg:=18.0
+  joint_shake_j5_amplitude_deg:=30.0
+  joint_shake_j6_amplitude_deg:=36.0
+  joint_shake_j1_min_deg:=-20.0
+  joint_shake_j1_max_deg:=5.0
+  joint_shake_j2_min_deg:=-80.0
+  joint_shake_j2_max_deg:=5.0
+  joint_shake_j3_min_deg:=0.0
+  joint_shake_j3_max_deg:=135.0
+  joint_shake_max_single_delta_deg:=75.0
+  joint5_min_deg:=40.0
+  joint5_max_deg:=100.0
+  require_state_validity_for_joint_shake:=false
 )
 if [[ -n "${SERVICE_PREFIX}" ]]; then
   LAUNCH_ARGS+=(service_prefix:="${SERVICE_PREFIX}")
@@ -131,14 +145,13 @@ echo "[Azas] Waiting for high-shake DONE status"
 DONE_OK=false
 for _ in {1..50}; do
   if grep -q "DONE" "${STATUS_FILE}" 2>/dev/null || grep -q "tumbler_shake_sequence_node.*DONE" "${LOG_FILE}" 2>/dev/null; then
-    assert_log_contains "${LOG_FILE}" "Shake safety validated: min_z=0\\.550 keepout_radius=0\\.200 workspace=ok" "shake path passed min-height and dispenser keepout validation"
-    assert_log_contains "${LOG_FILE}" "plan shake_safe_approach: x=0\\.280 y=-0\\.300 z=0\\.720" "shake begins by lifting cup high above the origin"
-    assert_log_contains "${LOG_FILE}" "plan shake_cycle_1_x_plus: x=0\\.380 y=-0\\.300 z=0\\.620" "shake moves dynamically in X at high Z"
-    assert_log_contains "${LOG_FILE}" "plan shake_cycle_1_y_minus: x=0\\.280 y=-0\\.340 z=0\\.620" "shake stays inside Y workspace while lifted"
-    assert_log_contains "${LOG_FILE}" "plan shake_cycle_1_z_minus: x=0\\.280 y=-0\\.300 z=0\\.565" "lowest shake point remains above min_shake_z"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_line: pos=\\[(np\\.float64\\()?280\\.0\\)?, (np\\.float64\\()?-300\\.0\\)?, (np\\.float64\\()?720\\.0" "fake Doosan received high approach waypoint in mm"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_line: pos=\\[(np\\.float64\\()?380\\.0\\)?, (np\\.float64\\()?-300\\.0\\)?, (np\\.float64\\()?620\\.0" "fake Doosan received high X shake waypoint in mm"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_line: pos=\\[(np\\.float64\\()?280\\.0\\)?, (np\\.float64\\()?-300\\.0\\)?, (np\\.float64\\()?565\\.0" "fake Doosan received lowest allowed lifted shake waypoint in mm"
+    assert_log_contains "${LOG_FILE}" "Joint shake safety validated: .*joint_5 range=\\[40\\.0, 100\\.0\\]" "joint-space shake passed joint_5 safety validation"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_safe_ready: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 0\\.0, 70\\.0, 0\\.0\\]" "joint shake starts from J3-positive safe base"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_plus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, -18\\.0, 100\\.0, 36\\.0\\]" "joint shake drives J5/J6 positive dynamically without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_minus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 18\\.0, 40\\.0, -36\\.0\\]" "joint shake drives J5/J6 negative dynamically without moving J3 negative"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*0\\.0.*70\\.0.*0\\.0" "fake Doosan received J3-positive joint safe base"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*-18\\.0.*100\\.0.*36\\.0" "fake Doosan received dynamic J5/J6 plus waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*18\\.0.*40\\.0.*-36\\.0" "fake Doosan received dynamic J5/J6 minus waypoint"
     echo "[OK] high-shake fake hardware path reached DONE"
     DONE_OK=true
     break
@@ -175,9 +188,8 @@ rm -f "${BAD_LOG_FILE}" "${BAD_STATUS_FILE}"
 echo "[Azas] Checking that unsafe shake space fails closed"
 ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   use_visualizer:=false \
-  shake_center_x:=0.58 \
-  shake_center_y:=-0.12 \
-  shake_amplitude_x:=0.100 \
+  shake_control_mode:=joint \
+  joint_shake_base_j1_deg:=30.0 \
   >"${BAD_LOG_FILE}" 2>&1 &
 BAD_LAUNCH_PID=$!
 
@@ -186,7 +198,7 @@ BAD_STATUS_PID=$!
 
 for _ in {1..24}; do
   if grep -q "FAILED" "${BAD_STATUS_FILE}" 2>/dev/null || grep -q "tumbler_shake_sequence_node.*FAILED" "${BAD_LOG_FILE}" 2>/dev/null; then
-    assert_log_contains "${BAD_LOG_FILE}" "too close to dispenser" "unsafe dispenser-overlap shake plan fails closed"
+    assert_log_contains "${BAD_LOG_FILE}" "joint_1=.*outside safe shake range" "unsafe joint_1 shake plan fails closed"
     echo "[OK] unsafe shake space was rejected"
     exit 0
   fi

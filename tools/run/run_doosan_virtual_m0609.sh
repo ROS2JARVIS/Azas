@@ -16,6 +16,10 @@ RT_HOST="${RT_HOST:-192.168.137.50}"
 set +u
 source /opt/ros/humble/setup.bash
 source /home/ssu/ros2_ws/install/setup.bash
+if [[ -f /home/ssu/ws_moveit/install/setup.bash ]]; then
+  source /home/ssu/ws_moveit/install/setup.bash
+fi
+source /home/ssu/Azas/install/setup.bash 2>/dev/null || true
 set -u
 
 echo "[Azas] Starting Doosan ${MODEL} MoveIt stack"

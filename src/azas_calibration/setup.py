@@ -19,6 +19,10 @@ setup(
     entry_points={
         "console_scripts": [
             "calibration_loader_node = azas_calibration.calibration_loader_node:main",
+            "calibration_test_legacy = azas_calibration.calibration_test_legacy:main",
+            "data_recording_legacy = azas_calibration.data_recording_legacy:main",
+            "eye2hand_calibration_legacy = azas_calibration.eye2hand_calibration_legacy:main",
+            "handeye_calibration_legacy = azas_calibration.handeye_calibration_legacy:main",
         ],
     },
 )

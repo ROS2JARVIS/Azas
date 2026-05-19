@@ -1,12 +1,15 @@
 # Azas OSS Robot Control Stack
 
+> 폐기 안내: 이 문서의 예전 외부 워크스페이스 기준 설명은 더 이상 운용 기준이 아닙니다.
+> 실제 로봇 디스펜서 테스트는 [real_robot_dispenser_test_commands.md](real_robot_dispenser_test_commands.md)를 따르세요.
+
 This document turns the open-source shortlist into a robot-control integration path for the cocktail project.
 
 ## Success Criteria
 
 Azas is ready for open-source-assisted robot control when all of these are true:
 
-1. ROS 2 Humble, Azas packages, and the `jarvis` bridge packages build locally.
+1. ROS 2 Humble and Azas packages build locally under `/home/ssu/Azas`.
 2. Doosan `dsr_bringup2`, M0609 MoveIt config, and `moveit_py` are available.
 3. Doosan virtual MoveIt launch and `robot_connection_control.launch.py --show-args` resolve without missing package errors.
 4. RealSense topics are available or explicitly disabled for a non-camera dry-run.
@@ -30,7 +33,7 @@ Azas is ready for open-source-assisted robot control when all of these are true:
 
 ## Non-Hardware Readiness Check
 
-Run after building Azas and `ros2_ws`:
+Run after building Azas:
 
 ```bash
 /home/ssu/Azas/tools/checks/check_oss_stack.sh
@@ -116,11 +119,7 @@ Expected result with a live aligned depth camera:
 source /opt/ros/humble/setup.bash
 cd /home/ssu/Azas
 colcon build --symlink-install
-source install/setup.bash
-
-cd /home/ssu/ros2_ws
-colcon build --symlink-install
-source install/setup.bash
+source install/local_setup.bash
 ```
 
 Install optional Python runtime dependencies only into the robot PC environment after license review:

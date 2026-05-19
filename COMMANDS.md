@@ -2,6 +2,9 @@
 
 > Doosan M0609 + OnRobot RG2 + RealSense 칵테일 로봇  
 > 현장 투입 전 이 순서대로 진행하세요.
+>
+> 원칙: Azas 프로젝트 작업은 `/home/ssu/Azas`와 `/home/ssu/Azas/install`만 사용합니다.
+> 외부 ROS 워크스페이스를 소싱하는 예전 절차는 폐기했습니다.
 
 ---
 
@@ -28,10 +31,7 @@
 source /opt/ros/humble/setup.bash
 
 # Azas 워크스페이스 소싱 (빌드 후)
-source /home/ssu/Azas/install/setup.bash
-
-# ros2_ws 소싱 (Doosan 드라이버 필요 시)
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ```
 
 > **팁**: `~/.bashrc`에 `source /opt/ros/humble/setup.bash` 추가하면 편합니다.
@@ -66,7 +66,7 @@ colcon test --packages-select azas_voice
 bash tools/run/run_doosan_virtual_m0609.sh
 
 # MoveIt + RViz 수동 실행
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py \
   model:=m0609 mode:=virtual host:=127.0.0.1 port:=12345
 ```
@@ -175,16 +175,17 @@ ping 192.168.127.100
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 
 ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py \
-  mode:=real model:=m0609 host:=192.168.137.100 port:=12345
+  mode:=real model:=m0609 host:=192.168.1.100 port:=12345 rt_host:=192.168.1.101
 ```
 
 ### 7-3. RG2 그리퍼 서비스 시작
 
 ```bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /opt/ros/humble/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch jarvis rg2_trigger.launch.py ip:=192.168.1.1
 ```
 

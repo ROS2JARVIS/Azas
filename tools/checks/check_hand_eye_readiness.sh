@@ -92,11 +92,8 @@ set +u
 if [[ -f /opt/ros/humble/setup.bash ]]; then
   source /opt/ros/humble/setup.bash
 fi
-if [[ -f /home/ssu/Azas/install/setup.bash ]]; then
-  source /home/ssu/Azas/install/setup.bash
-fi
-if [[ -f /home/ssu/ros2_ws/install/setup.bash ]]; then
-  source /home/ssu/ros2_ws/install/setup.bash
+if [[ -f /home/ssu/Azas/install/local_setup.bash ]]; then
+  source /home/ssu/Azas/install/local_setup.bash
 fi
 set -u
 
