@@ -4,6 +4,7 @@ import time
 from azas_interfaces.srv import SetGripper
 import rclpy
 from dsr_msgs2.srv import (
+    GetCurrentPosj,
     GetCurrentPosx,
     GetCurrentTcp,
     MoveJoint,
@@ -213,6 +214,15 @@ class DispenserPressNode:
                 min(self.travel_line_acceleration, 30.0),
             )
         )
+        self.joint1_clearance_before_home = bool(
+            get_param(self.node, "joint1_clearance_before_home", True)
+        )
+        self.joint1_clearance_return_home = bool(
+            get_param(self.node, "joint1_clearance_return_home", True)
+        )
+        self.joint1_clearance_offset_deg = float(
+            get_param(self.node, "joint1_clearance_offset_deg", 12.0)
+        )
 
         self.move_joint = self.node.create_client(
             MoveJoint,
@@ -229,6 +239,10 @@ class DispenserPressNode:
         self.get_current_posx = self.node.create_client(
             GetCurrentPosx,
             service_name(self.service_prefix, "aux_control/get_current_posx"),
+        )
+        self.get_current_posj = self.node.create_client(
+            GetCurrentPosj,
+            service_name(self.service_prefix, "aux_control/get_current_posj"),
         )
         self.set_current_tcp = self.node.create_client(
             SetCurrentTcp,
@@ -252,6 +266,7 @@ class DispenserPressNode:
             (self.move_joint, "motion/move_joint"),
             (self.move_line, "motion/move_line"),
             (self.move_wait, "motion/move_wait"),
+            (self.get_current_posj, "aux_control/get_current_posj"),
             (self.get_current_posx, "aux_control/get_current_posx"),
         ]
         if self.tcp_name or (self.use_taught_posx and self.require_tcp_for_taught_posx):
@@ -301,6 +316,21 @@ class DispenserPressNode:
         req.name = str(name).strip()
         self.logger.info(f"{label}: Doosan current TCP 설정: {req.name if req.name else '<empty/default>'}")
         return self.call_service(self.set_current_tcp, req, label)
+
+    def current_joints_deg(self, label):
+        req = GetCurrentPosj.Request()
+        future = self.get_current_posj.call_async(req)
+        rclpy.spin_until_future_complete(self.node, future)
+        result = future.result()
+        if result is None:
+            self.logger.error(f"{label}: aux_control/get_current_posj 호출 실패: {future.exception()}")
+            return None
+        if not result.success or len(result.pos) < 6:
+            self.logger.error(
+                f"{label}: aux_control/get_current_posj 가 success=false 또는 6축 미만을 반환했습니다"
+            )
+            return None
+        return [float(value) for value in result.pos[:6]]
 
     def configure_tcp(self):
         if not self.tcp_name:
@@ -417,6 +447,24 @@ class DispenserPressNode:
 
         self.logger.info(f"{label}: movej {req.pos}")
         return self.call_service(self.move_joint, req, label)
+
+    def movej_joint1_clearance(self, label):
+        if self.joint1_clearance_offset_deg <= 0.0:
+            self.logger.info(f"{label}: joint_1 clearance disabled by non-positive offset")
+            return True
+        joints = self.current_joints_deg(label)
+        if joints is None:
+            return False
+        before_j1 = joints[0]
+        joints[0] += self.joint1_clearance_offset_deg
+        self.logger.info(
+            f"{label}: 컵 회피를 위해 현재 관절 자세를 유지한 채 joint_1만 "
+            f"+{self.joint1_clearance_offset_deg:.1f}deg 이동합니다 "
+            f"(j1 {before_j1:.1f}->{joints[0]:.1f}, j2~j6 유지={joints[1:]})"
+        )
+        if not self.movej(joints, label):
+            return False
+        return self.wait_for_motion_done(label)
 
     def movel(self, x_mm, y_mm, z_mm, label, rpy_deg=None, velocity=None, acceleration=None):
         safe_x = clamp(x_mm, SAFE_X_MIN_MM, SAFE_X_MAX_MM)
@@ -760,6 +808,8 @@ class DispenserPressNode:
         if self.move_home_first:
             if not self.retreat_before_home_if_needed():
                 return False
+            if self.joint1_clearance_before_home and not self.movej_joint1_clearance("pre-HOME joint_1 + clearance"):
+                return False
             if not self.movej(self.home_joints_deg, "move to HOME"):
                 return False
             if not self.wait_for_motion_done("move to HOME"):
@@ -820,6 +870,8 @@ class DispenserPressNode:
             self.logger.info(
                 "복귀용 transit 높이 도달 후 HOME으로 복귀합니다."
             )
+            if self.joint1_clearance_return_home and not self.movej_joint1_clearance("return pre-HOME joint_1 + clearance"):
+                return False
             if not self.movej(self.home_joints_deg, "return to HOME"):
                 return False
             if not self.wait_for_motion_done("return to HOME"):

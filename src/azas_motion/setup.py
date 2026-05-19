@@ -43,6 +43,7 @@ setup(
             "side_grasp_ik_preview_node = azas_motion.side_grasp_ik_preview_node:main",
             "syrup_pump_press_legacy = azas_motion.syrup_pump_press_legacy:main",
             "target_xyz_moveit_preview_node = azas_motion.target_xyz_moveit_preview_node:main",
+            "tumbler_collision_scene_node = azas_motion.tumbler_collision_scene_node:main",
             "tumbler_floor_place_node = azas_motion.tumbler_floor_place_node:main",
             "tumbler_shake_sequence_node = azas_motion.tumbler_shake_sequence_node:main",
         ],

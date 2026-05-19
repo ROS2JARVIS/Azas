@@ -16,7 +16,7 @@ from moveit.core.robot_state import RobotState
 from moveit.planning import MoveItPy, PlanRequestParameters
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, Image, JointState
 from ultralytics import YOLO
 
 from .onrobot import RG
@@ -171,6 +171,9 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_staging_offset", 0.24)
         self.declare_parameter("side_grasp_offset", 0.035)
         self.declare_parameter("side_grasp_z_offset", 0.05)
+        self.declare_parameter("side_grasp_stop_backoff_m", 0.02)
+        self.declare_parameter("gripper_open_settle_sec", 1.0)
+        self.declare_parameter("pre_pick_joint1_clearance_deg", 12.0)
         self.declare_parameter("side_orientation_mode", "approach")
         self.declare_parameter("side_tool_roll_deg", 0.0)
         self.declare_parameter("side_roll_deg", 0.0)
@@ -223,6 +226,15 @@ class YoloCupPickNode(Node):
         self.side_grasp_offset = float(self.get_parameter("side_grasp_offset").value)
         self.side_grasp_z_offset = float(
             self.get_parameter("side_grasp_z_offset").value
+        )
+        self.side_grasp_stop_backoff_m = max(
+            0.0, float(self.get_parameter("side_grasp_stop_backoff_m").value)
+        )
+        self.gripper_open_settle_sec = max(
+            0.0, float(self.get_parameter("gripper_open_settle_sec").value)
+        )
+        self.pre_pick_joint1_clearance_deg = max(
+            0.0, float(self.get_parameter("pre_pick_joint1_clearance_deg").value)
         )
         self.side_orientation_mode = str(
             self.get_parameter("side_orientation_mode").value
@@ -450,6 +462,49 @@ class YoloCupPickNode(Node):
             "z": float(qz),
             "w": float(qw),
         }
+
+    def read_joint_state_map(self, timeout_sec=3.0):
+        latest = None
+
+        def callback(msg):
+            nonlocal latest
+            if msg.name and len(msg.name) == len(msg.position):
+                latest = dict(zip(msg.name, msg.position))
+
+        subscription = self.create_subscription(JointState, "/joint_states", callback, 10)
+        deadline = time.monotonic() + max(timeout_sec, 0.1)
+        try:
+            while latest is None and rclpy.ok() and time.monotonic() < deadline:
+                rclpy.spin_once(self, timeout_sec=0.1)
+            return latest
+        finally:
+            self.destroy_subscription(subscription)
+
+    def move_joint1_clearance_before_side_grip(self):
+        log = self.get_logger()
+        delta = float(self.pre_pick_joint1_clearance_deg)
+        if delta <= 0.0:
+            log.info("pre-pick joint_1 clearance detour disabled")
+            return True
+        state = self.read_joint_state_map(timeout_sec=3.0)
+        if state is None or "joint_1" not in state:
+            log.error("cannot read /joint_states for pre-pick joint_1 clearance")
+            return False
+        joint_order = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
+        if any(name not in state for name in joint_order):
+            log.error("/joint_states missing one or more arm joints for joint_1 clearance")
+            return False
+        joint_positions = [float(state[name]) for name in joint_order]
+        before_deg = math.degrees(joint_positions[0])
+        joint_positions[0] = math.radians(before_deg + delta)
+        log.info(
+            "pre-pick joint_1 clearance detour before side grip: "
+            f"joint_1 {before_deg:.1f} -> {before_deg + delta:.1f} deg"
+        )
+        target_state = RobotState(self.robot_model)
+        target_state.set_joint_group_positions(GROUP_NAME, joint_positions)
+        target_state.update()
+        return self.plan_and_execute(state_goal=target_state, params=self.ompl_params)
 
     def move_camera_home(self):
         log = self.get_logger()
@@ -785,10 +840,19 @@ class YoloCupPickNode(Node):
             f"tool_roll={self.side_tool_roll_deg:.1f}deg, "
             f"stage=({stage_xy[0]:.3f}, {stage_xy[1]:.3f}, {pre_z:.3f}), "
             f"pre=({pre_xy[0]:.3f}, {pre_xy[1]:.3f}, {pre_z:.3f}), "
-            f"grasp=({grasp_xy[0]:.3f}, {grasp_xy[1]:.3f}, {grasp_z:.3f})"
+            f"grasp=({grasp_xy[0]:.3f}, {grasp_xy[1]:.3f}, {grasp_z:.3f}), "
+            f"stop_backoff={self.side_grasp_stop_backoff_m:.3f}m, "
+            f"pre_pick_joint1_clearance={self.pre_pick_joint1_clearance_deg:.1f}deg"
         )
 
         self.open_gripper_max(wait=False)
+        if self.gripper_open_settle_sec > 0.0:
+            log.info(
+                f"wait {self.gripper_open_settle_sec:.2f}s for RG2 full-open before low approach"
+            )
+            time.sleep(self.gripper_open_settle_sec)
+        if not self.move_joint1_clearance_before_side_grip():
+            return False
 
         steps = [
             (
@@ -822,7 +886,7 @@ class YoloCupPickNode(Node):
             lift_z = max(grasp_z + self.approach_offset, self.safe_z)
             log.info(
                 f"refined side grasp=({grasp_xy[0]:.3f}, {grasp_xy[1]:.3f}, "
-                f"{grasp_z:.3f})"
+                f"{grasp_z:.3f}), stop_backoff={self.side_grasp_stop_backoff_m:.3f}m"
             )
             if not self.plan_and_execute(
                 pose_goal=make_pose(pre_xy[0], pre_xy[1], pre_z, side_ori),
@@ -830,19 +894,24 @@ class YoloCupPickNode(Node):
             ):
                 return False
 
-        log.info("slide horizontally into cup side")
+        guarded_grasp_xy = grasp_xy + side_vec * self.side_grasp_stop_backoff_m
+        log.info(
+            "slide horizontally to guarded side-grasp stop "
+            f"({guarded_grasp_xy[0]:.3f}, {guarded_grasp_xy[1]:.3f}, {grasp_z:.3f}); "
+            "not driving the open gripper all the way into the cup center"
+        )
         if not self.plan_and_execute(
-            pose_goal=make_pose(grasp_xy[0], grasp_xy[1], grasp_z, side_ori),
+            pose_goal=make_pose(guarded_grasp_xy[0], guarded_grasp_xy[1], grasp_z, side_ori),
             params=self.pilz_params,
         ):
             return False
 
-        log.info("close gripper for side grasp")
+        log.info("close gripper for guarded side grasp")
         self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
         time.sleep(1.0)
 
         move_steps = [
-            ("lift cup", make_pose(grasp_xy[0], grasp_xy[1], lift_z, side_ori)),
+            ("lift cup", make_pose(guarded_grasp_xy[0], guarded_grasp_xy[1], lift_z, side_ori)),
             (
                 "move above syrup pump front",
                 make_pose(self.place_x, self.place_y, place_approach_z, side_ori),
