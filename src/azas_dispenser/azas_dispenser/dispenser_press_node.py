@@ -50,6 +50,8 @@ class DispenserPressNode:
 
         self.service_prefix = str(get_param(self.node, "service_prefix", ""))
         self.tcp_name = str(get_param(self.node, "tcp_name", "")).strip()
+        self.restore_tcp_after_run = bool(get_param(self.node, "restore_tcp_after_run", True))
+        self.previous_tcp_name = None
         self.require_tcp_for_taught_posx = bool(
             get_param(self.node, "require_tcp_for_taught_posx", True)
         )
@@ -242,6 +244,25 @@ class DispenserPressNode:
             return False
         return True
 
+    def current_tcp_name(self):
+        get_req = GetCurrentTcp.Request()
+        future = self.get_current_tcp.call_async(get_req)
+        rclpy.spin_until_future_complete(self.node, future)
+        result = future.result()
+        if result is None:
+            self.logger.error(f"tcp/get_current_tcp 호출 실패: {future.exception()}")
+            return None
+        if not result.success:
+            self.logger.error("tcp/get_current_tcp 가 success=false를 반환했습니다")
+            return None
+        return str(result.info).strip()
+
+    def set_tcp_name(self, name, label):
+        req = SetCurrentTcp.Request()
+        req.name = str(name).strip()
+        self.logger.info(f"{label}: Doosan current TCP 설정: {req.name if req.name else '<empty/default>'}")
+        return self.call_service(self.set_current_tcp, req, label)
+
     def configure_tcp(self):
         if not self.tcp_name:
             if self.use_taught_posx and self.require_tcp_for_taught_posx:
@@ -255,27 +276,31 @@ class DispenserPressNode:
             )
             return True
 
-        req = SetCurrentTcp.Request()
-        req.name = self.tcp_name
-        self.logger.info(f"Doosan current TCP 설정: {self.tcp_name}")
-        if not self.call_service(self.set_current_tcp, req, "tcp/set_current_tcp"):
+        self.previous_tcp_name = self.current_tcp_name()
+        if self.previous_tcp_name is None:
+            return False
+        self.logger.info(
+            "프레스 전 Doosan TCP: "
+            f"{self.previous_tcp_name if self.previous_tcp_name else '<empty/default>'}"
+        )
+
+        if self.previous_tcp_name == self.tcp_name:
+            self.logger.info(
+                f"요청 TCP '{self.tcp_name}' 가 이미 활성화되어 있어 "
+                "tcp/set_current_tcp 호출을 건너뜁니다."
+            )
+            return True
+
+        if not self.set_tcp_name(self.tcp_name, "tcp/set_current_tcp"):
             self.logger.error(
                 f"Doosan controller가 TCP '{self.tcp_name}' 설정을 거부했습니다. "
                 "티치펜던트/컨트롤러에 해당 TCP가 등록되어 있는지 확인하세요."
             )
             return False
 
-        get_req = GetCurrentTcp.Request()
-        future = self.get_current_tcp.call_async(get_req)
-        rclpy.spin_until_future_complete(self.node, future)
-        result = future.result()
-        if result is None:
-            self.logger.error(f"tcp/get_current_tcp 호출 실패: {future.exception()}")
+        current_name = self.current_tcp_name()
+        if current_name is None:
             return False
-        if not result.success:
-            self.logger.error("tcp/get_current_tcp 가 success=false를 반환했습니다")
-            return False
-        current_name = str(result.info).strip()
         self.logger.info(f"현재 Doosan TCP 확인: {current_name}")
         if current_name != self.tcp_name:
             self.logger.error(
@@ -284,6 +309,29 @@ class DispenserPressNode:
             )
             return False
         return True
+
+    def restore_tcp_if_needed(self):
+        if not self.restore_tcp_after_run:
+            return
+        if self.previous_tcp_name is None or self.previous_tcp_name == self.tcp_name:
+            return
+        previous = self.previous_tcp_name
+        self.logger.info(
+            "프레스 후 Doosan TCP를 이전 값으로 복원합니다: "
+            f"{previous if previous else '<empty/default>'}"
+        )
+        if not self.set_tcp_name(previous, "tcp/restore_previous_tcp"):
+            self.logger.error(
+                "프레스 후 TCP 복원 실패. 다음 link_6 기준 이동 전에 티치펜던트/컨트롤러 TCP를 확인하세요."
+            )
+            return
+        current_name = self.current_tcp_name()
+        if current_name != previous:
+            self.logger.error(
+                f"TCP 복원 확인 실패: current='{current_name}', expected='{previous}'"
+            )
+            return
+        self.logger.info("Doosan TCP 복원 확인 완료")
 
     def close_gripper(self):
         if not self.close_gripper_at_home:
@@ -614,11 +662,15 @@ class DispenserPressNode:
 def main(args=None):
     rclpy.init(args=args)
     node = DispenserPressNode()
+    ok = False
     try:
         ok = node.run()
     finally:
-        node.destroy()
-        rclpy.shutdown()
+        try:
+            node.restore_tcp_if_needed()
+        finally:
+            node.destroy()
+            rclpy.shutdown()
     return 0 if ok else 1
 
 

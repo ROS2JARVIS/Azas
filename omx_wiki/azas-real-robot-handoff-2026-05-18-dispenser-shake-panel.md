@@ -1,0 +1,190 @@
+---
+title: "Azas Real Robot Handoff 2026-05-18 Dispenser Shake Panel"
+tags: ["azas", "real-robot", "handoff", "dispenser", "shake", "panel", "safety"]
+created: 2026-05-18T10:06:59.396Z
+updated: 2026-05-18T10:06:59.396Z
+sources: []
+links: []
+category: session-log
+confidence: medium
+schemaVersion: 1
+---
+
+# Azas Real Robot Handoff 2026-05-18 Dispenser Shake Panel
+
+# Azas real robot handoff — dispenser / shake / panel (2026-05-18)
+
+## Current repo / runtime state
+
+- Workspace: `/home/ssu/Azas`
+- Branch: `integration/dispenser-feature-trial-20260518`
+- Purpose of branch: trial integration of GitHub `feature/dispenser` / PR #3 without merging into the user's main working branch.
+- Panel URL: `http://127.0.0.1:8765/`
+- Panel server process observed at handoff: PID `310448`, command `python3 tools/run/robot_pipeline_control_server.py`.
+- Doosan bringup process observed at handoff: PID `321933`, command includes `dsr_bringup2_moveit.launch.py name:=dsr01 host:=192.168.1.100 rt_host:=192.168.1.101 mode:=real model:=m0609`.
+- Latest commits on this branch:
+  - `1da2078 Require TCP selection for dispenser press`
+  - `b5314ba Use measured camera table view joints`
+  - `29b2f14 Show panel step outcomes inline`
+  - `6a18445 Keep live shake J5-gated while wiring dispenser trial`
+  - `ed603af Merge remote-tracking branch 'origin/feature/dispenser' into integration/dispenser-feature-trial-20260518`
+
+## Hard safety stop
+
+Do **not** run real robot motion automatically from an agent. The user is testing on a real Doosan M0609 + RG2 system. Only edit/build/check code unless explicitly asked for a command preview. The latest user feedback says the shake behavior was dangerous: base/link motion went downward/unsafe and could damage the robot.
+
+## User's latest explicit requirements
+
+1. **Shake must be redesigned in code, not only by changing shell/panel command arguments.**
+   - User specifically asked whether the shake code was changed or only commands were changed and said that command-only tuning is unacceptable.
+2. **Shake must not use the bad base-link/Cartesian behavior that sends the robot down.**
+   - User wants joint-space safe behavior.
+   - Joint 1 and joint 2 should stay almost `0` or on the negative side to secure safe workspace.
+   - After reaching a safe space, shake using the remaining joints.
+   - Cup mouth should face upward / toward the sky during shake.
+   - Joint 5 must never exceed the safe limit, especially `135°`.
+3. **Collision handling matters.**
+   - Collision should be treated seriously before allowing shake or dispenser-related motion.
+   - Previous collision-on planning had failed due to start-state collision; do not blindly re-enable collision planning without checking the current planning scene and start state.
+4. **Panel checkbox UX must be fixed.**
+   - After the user presses “선택 실행” and the selected commands finish, the UI should uncheck the checkboxes that were just executed.
+   - The user has asked for this repeatedly.
+5. **Dispenser press HOME return should exist.**
+   - The panel previously forced `return_home:=false`; it has since been changed to `return_home:=true` for `press_dispenser_*` commands.
+   - Keep `move_home_first:=false` unless the user changes their mind: press should start from current pose, then return HOME after pressing.
+
+## What was already fixed before this handoff
+
+### Dispenser press TCP / HOME
+
+Files changed in commit `1da2078`:
+
+- `src/azas_dispenser/azas_dispenser/dispenser_press_node.py`
+  - Added `tcp_name` parameter.
+  - Requires TCP for taught POSX mode by default.
+  - Calls `/{service_prefix}/tcp/set_current_tcp` then verifies with `/{service_prefix}/tcp/get_current_tcp`.
+  - If TCP is missing/wrong, it fails closed before motion.
+  - Added pose verification tolerance and now aborts when actual pose does not reach target.
+  - This directly addresses the log where the robot reported a 100 mm z error but the step still claimed completed.
+
+- `tools/run/robot_pipeline_control_server.py`
+  - `DEFAULT_DISPENSER_TCP_NAME = "rg2_tcp"`.
+  - `press_dispenser_1..4` commands now pass:
+    - `-p tcp_name:=rg2_tcp` (or UI/env override)
+    - `-p require_tcp_for_taught_posx:=true`
+    - `-p return_home:=true`
+    - pose tolerance params.
+  - Required services for dispenser press include TCP set/get services.
+
+- `docs/robot_pipeline_control.html`
+  - Added `DISPENSER_TCP_NAME` field defaulting to `rg2_tcp`.
+
+Validation already run for that patch:
+
+```bash
+python3 -m py_compile src/azas_dispenser/azas_dispenser/dispenser_press_node.py tools/run/robot_pipeline_control_server.py
+node --check /tmp/robot_panel_inline.js
+source /opt/ros/humble/setup.bash && colcon build --packages-select azas_dispenser --symlink-install
+```
+
+### Camera table view pose
+
+Panel `lift_robot` / camera table-view command was changed to the user's measured joint command:
+
+```bash
+python3 tools/run/direct_movej_joints.py \
+  --service-prefix dsr01 \
+  --j1 0 --j2 -5 --j3 50 --j4 0 --j5 135 --j6 0 \
+  --velocity 30 --acceleration 30 \
+  --j5-min-deg -135 --j5-max-deg 135 \
+  --timeout-sec 60 --execute --confirm ENABLE_DIRECT_MOVEJ
+```
+
+## Shake-specific diagnosis at handoff
+
+Current real shake path is still unsafe in concept:
+
+- Panel `shake_closed_cup` routes to `tools/run/run_rule_based_shake_real.sh`.
+- That script launches `azas_bringup tumbler_shake_sequence.launch.py`.
+- `tumbler_shake_sequence_node.py` currently builds Cartesian `MoveLine` waypoints around a base-frame center using `rx/ry/rz` plus offsets.
+- The panel command had been tuned with environment variables such as `SHAKE_CENTER_X`, `SHAKE_CENTER_Y`, `SHAKE_CENTER_Z`, `SHAKE_TWIST_*`, `APPROACH_LINE_TIME`, `SHAKE_LINE_TIME`, but that is not enough; the user explicitly wants code-level change.
+- The current node prechecks IK joint 5, but that does not guarantee a safe joint branch or cup-up posture. IK may choose a bad branch or a visually unsafe motion.
+
+Files to change next:
+
+- `src/azas_motion/azas_motion/tumbler_shake_sequence_node.py`
+- `src/azas_bringup/launch/tumbler_shake_sequence.launch.py`
+- `tools/run/run_rule_based_shake_real.sh`
+- `tools/run/robot_pipeline_control_server.py`
+- `tools/smoke/smoke_tumbler_shake_sequence.sh`
+- Possibly `src/azas_motion/azas_motion/m0609_shake_joint_state_node.py` for RViz preview so it matches the real joint-space logic.
+- `docs/robot_pipeline_control.html` for checkbox clearing.
+
+Recommended implementation direction:
+
+1. Add a **joint-space shake mode** to `tumbler_shake_sequence_node.py` using `MoveJoint`, not `MoveLine`.
+2. Default real shake to this joint-space mode.
+3. Use a named safe base joint pose with joint 1 and joint 2 near `0` or negative.
+   - Do **not** invent final joint values as “safe” without RViz/operator verification.
+   - Expose them as explicit parameters and mark them as field-tuned.
+4. Build shake offsets only from safe base pose:
+   - Keep joint 1 and joint 2 fixed or very small/negative-bounded.
+   - Use joint 3/4/5/6 for shake motion.
+   - Clamp joint 5 to `[-135, 135]` for every generated waypoint.
+   - Reject any generated waypoint outside limits before calling MoveJoint.
+5. Add current joint/state sanity gates before shake:
+   - Read `/dsr01/aux_control/get_current_posj`.
+   - If current pose is too far from the configured safe shake base, first move slowly to a safe approach joint pose, or fail closed if no verified transition exists.
+6. Add collision gate before real shake if using MoveIt state validity:
+   - Query `/check_state_validity` for every candidate joint waypoint when available.
+   - If unavailable or invalid, fail closed for real mode.
+   - Be careful because previous collision-on planning failed at start-state collision; report exact invalid state/contact instead of blindly commanding.
+7. Update RViz preview so the robot visualization uses the same joint-space keyframes, not a separate misleading path.
+8. Update smoke tests to assert fake hardware receives `move_joint` requests for shake, not only `move_line`.
+
+## Panel UX bug to fix next
+
+In `docs/robot_pipeline_control.html`, after `/api/run` returns, uncheck the selected checkboxes that were executed. Current JS already computes `selected` in the click handler:
+
+```js
+const selected = selectedStepKeys();
+```
+
+After processing `data.results`, add logic equivalent to:
+
+```js
+for (const key of selected) {
+  const input = document.querySelector(`.step-check[value="${CSS.escape(key)}"]`);
+  if (input) input.checked = false;
+}
+```
+
+Need to be careful with CSS escaping inside a value selector; an easier robust implementation is to loop all `.step-check` and uncheck those whose value is in a Set.
+
+## Do not forget project rules
+
+- Do not commit `build/`, `install/`, `log/`, `.omx/`, `.agents/`, `.codex/`.
+- Do not invent cup coordinates. Cup pose must come from `/jarvis/tumbler_dispenser/tumbler_pose` in production paths.
+- Calibration fields marked null/unknown must not be fabricated.
+- For hardware-impacting code changes, document safety assumptions, speed limits, failure behavior, and validation evidence.
+
+## Suggested immediate next commit scope
+
+One small safety/UX patch:
+
+1. Disable/replace current `shake_closed_cup` real command until joint-space shake mode is implemented, or make it fail closed unless `SHAKE_MODE=joint` is explicitly selected.
+2. Implement checkbox auto-uncheck after run in the HTML panel.
+3. Add/adjust fake-hardware smoke tests for the new behavior.
+4. Build and run static checks; do not execute real robot motion.
+
+## Stop condition for next agent
+
+Do not tell the user shake is safe until all are true:
+
+- Real shake code path uses joint-space or a verified collision-safe path, not the current Cartesian MoveLine path.
+- Joint 1/2 behavior matches user requirement: near zero or negative-side safe workspace, not swinging into bad base motion.
+- Cup-up / sky-facing posture is represented by verified joint pose or documented TCP orientation, not assumed.
+- Joint 5 is proven clamped/rejected at or below `135°` for all waypoints.
+- Collision/state validity gate is either passing with evidence or the step remains blocked.
+- RViz preview matches the actual real-motion command path.
+- Panel unchecks selected steps after execution.

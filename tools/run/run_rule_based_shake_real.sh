@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Real robot high-shake entrypoint. This intentionally uses the same gates as
-# run_robot_real.sh before allowing MoveLine service calls.
+# run_robot_real.sh before allowing Doosan motion service calls.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECKS_DIR="${ROOT_DIR}/tools/checks"
@@ -15,8 +15,9 @@ GRASPED_CUP_TEST_MODE="${GRASPED_CUP_TEST_MODE:-false}"
 USE_CURRENT_TCP_AS_SHAKE_CENTER="${USE_CURRENT_TCP_AS_SHAKE_CENTER:-false}"
 REQUIRE_JOINT_LIMITS="${REQUIRE_JOINT_LIMITS:-true}"
 REQUIRE_ROBOT_STANDBY="${REQUIRE_ROBOT_STANDBY:-true}"
-JOINT5_MIN_DEG="${JOINT5_MIN_DEG:--135.0}"
-JOINT5_MAX_DEG="${JOINT5_MAX_DEG:-135.0}"
+SHAKE_CONTROL_MODE="${SHAKE_CONTROL_MODE:-joint}"
+JOINT5_MIN_DEG="${JOINT5_MIN_DEG:-40.0}"
+JOINT5_MAX_DEG="${JOINT5_MAX_DEG:-100.0}"
 ENFORCE_WRIST_JOINT_LIMITS="${ENFORCE_WRIST_JOINT_LIMITS:-false}"
 WRIST_MIN_DEG="${WRIST_MIN_DEG:--135.0}"
 WRIST_MAX_DEG="${WRIST_MAX_DEG:-135.0}"
@@ -42,6 +43,30 @@ MOTION_RESPONSE_TIMEOUT_SEC="${MOTION_RESPONSE_TIMEOUT_SEC:-10.0}"
 RX="${RX:-180.0}"
 RY="${RY:-0.0}"
 RZ="${RZ:-180.0}"
+JOINT_SHAKE_BASE_J1_DEG="${JOINT_SHAKE_BASE_J1_DEG:-0.0}"
+JOINT_SHAKE_BASE_J2_DEG="${JOINT_SHAKE_BASE_J2_DEG:--35.0}"
+JOINT_SHAKE_BASE_J3_DEG="${JOINT_SHAKE_BASE_J3_DEG:--55.0}"
+JOINT_SHAKE_BASE_J4_DEG="${JOINT_SHAKE_BASE_J4_DEG:-0.0}"
+JOINT_SHAKE_BASE_J5_DEG="${JOINT_SHAKE_BASE_J5_DEG:-70.0}"
+JOINT_SHAKE_BASE_J6_DEG="${JOINT_SHAKE_BASE_J6_DEG:-0.0}"
+JOINT_SHAKE_J3_AMPLITUDE_DEG="${JOINT_SHAKE_J3_AMPLITUDE_DEG:-0.0}"
+JOINT_SHAKE_J4_AMPLITUDE_DEG="${JOINT_SHAKE_J4_AMPLITUDE_DEG:-24.0}"
+JOINT_SHAKE_J5_AMPLITUDE_DEG="${JOINT_SHAKE_J5_AMPLITUDE_DEG:-30.0}"
+JOINT_SHAKE_J6_AMPLITUDE_DEG="${JOINT_SHAKE_J6_AMPLITUDE_DEG:-36.0}"
+JOINT_SHAKE_J1_MIN_DEG="${JOINT_SHAKE_J1_MIN_DEG:--20.0}"
+JOINT_SHAKE_J1_MAX_DEG="${JOINT_SHAKE_J1_MAX_DEG:-5.0}"
+JOINT_SHAKE_J2_MIN_DEG="${JOINT_SHAKE_J2_MIN_DEG:--80.0}"
+JOINT_SHAKE_J2_MAX_DEG="${JOINT_SHAKE_J2_MAX_DEG:-5.0}"
+JOINT_SHAKE_MAX_SINGLE_DELTA_DEG="${JOINT_SHAKE_MAX_SINGLE_DELTA_DEG:-75.0}"
+APPROACH_JOINT_VELOCITY="${APPROACH_JOINT_VELOCITY:-18.0}"
+APPROACH_JOINT_ACCELERATION="${APPROACH_JOINT_ACCELERATION:-22.0}"
+APPROACH_JOINT_TIME="${APPROACH_JOINT_TIME:-2.6}"
+SHAKE_JOINT_VELOCITY="${SHAKE_JOINT_VELOCITY:-115.0}"
+SHAKE_JOINT_ACCELERATION="${SHAKE_JOINT_ACCELERATION:-180.0}"
+SHAKE_JOINT_TIME="${SHAKE_JOINT_TIME:-0.26}"
+REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE="${REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE:-true}"
+STATE_VALIDITY_SERVICE="${STATE_VALIDITY_SERVICE:-/check_state_validity}"
+PLANNING_GROUP="${PLANNING_GROUP:-manipulator}"
 
 if [[ -f "${MOTION_HOLD_FILE}" ]]; then
   echo "[Azas] Refusing real robot shake: motion hold is active."
@@ -208,7 +233,12 @@ echo "  - cup is already grasped securely"
 echo "  - e-stop is reachable"
 echo "  - no person is inside the robot workspace"
 echo "  - dispenser, tumbler, cable, table, and camera mount collision risks were checked"
-echo "  - lifted shake volume is clear around x=${SHAKE_CENTER_X}, y=${SHAKE_CENTER_Y}, z=${SHAKE_CENTER_Z}"
+if [[ "${SHAKE_CONTROL_MODE}" == "joint" || "${SHAKE_CONTROL_MODE}" == "joint_space" || "${SHAKE_CONTROL_MODE}" == "move_joint" ]]; then
+  echo "  - joint-space shake is clear around base joints [${JOINT_SHAKE_BASE_J1_DEG}, ${JOINT_SHAKE_BASE_J2_DEG}, ${JOINT_SHAKE_BASE_J3_DEG}, ${JOINT_SHAKE_BASE_J4_DEG}, ${JOINT_SHAKE_BASE_J5_DEG}, ${JOINT_SHAKE_BASE_J6_DEG}]"
+  echo "  - joint_1/joint_2 stay near safe space and joint_5 stays inside [${JOINT5_MIN_DEG}, ${JOINT5_MAX_DEG}]"
+else
+  echo "  - lifted shake volume is clear around x=${SHAKE_CENTER_X}, y=${SHAKE_CENTER_Y}, z=${SHAKE_CENTER_Z}"
+fi
 echo
 read -r -p "Type ENABLE_REAL_ROBOT_MOTION to continue: " CONFIRM
 if [[ "${CONFIRM}" != "ENABLE_REAL_ROBOT_MOTION" ]]; then
@@ -222,6 +252,7 @@ exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   allow_service_control_without_moveit:=true \
   service_prefix:="${SERVICE_PREFIX}" \
   use_visualizer:=false \
+  shake_control_mode:="${SHAKE_CONTROL_MODE}" \
   shake_approach_height:="${SHAKE_APPROACH_HEIGHT}" \
   shake_center_x:="${SHAKE_CENTER_X}" \
   shake_center_y:="${SHAKE_CENTER_Y}" \
@@ -249,4 +280,28 @@ exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   joint5_min_deg:="${JOINT5_MIN_DEG}" \
   joint5_max_deg:="${JOINT5_MAX_DEG}" \
   wrist_min_deg:="${WRIST_MIN_DEG}" \
-  wrist_max_deg:="${WRIST_MAX_DEG}"
+  wrist_max_deg:="${WRIST_MAX_DEG}" \
+  joint_shake_base_j1_deg:="${JOINT_SHAKE_BASE_J1_DEG}" \
+  joint_shake_base_j2_deg:="${JOINT_SHAKE_BASE_J2_DEG}" \
+  joint_shake_base_j3_deg:="${JOINT_SHAKE_BASE_J3_DEG}" \
+  joint_shake_base_j4_deg:="${JOINT_SHAKE_BASE_J4_DEG}" \
+  joint_shake_base_j5_deg:="${JOINT_SHAKE_BASE_J5_DEG}" \
+  joint_shake_base_j6_deg:="${JOINT_SHAKE_BASE_J6_DEG}" \
+  joint_shake_j3_amplitude_deg:="${JOINT_SHAKE_J3_AMPLITUDE_DEG}" \
+  joint_shake_j4_amplitude_deg:="${JOINT_SHAKE_J4_AMPLITUDE_DEG}" \
+  joint_shake_j5_amplitude_deg:="${JOINT_SHAKE_J5_AMPLITUDE_DEG}" \
+  joint_shake_j6_amplitude_deg:="${JOINT_SHAKE_J6_AMPLITUDE_DEG}" \
+  joint_shake_j1_min_deg:="${JOINT_SHAKE_J1_MIN_DEG}" \
+  joint_shake_j1_max_deg:="${JOINT_SHAKE_J1_MAX_DEG}" \
+  joint_shake_j2_min_deg:="${JOINT_SHAKE_J2_MIN_DEG}" \
+  joint_shake_j2_max_deg:="${JOINT_SHAKE_J2_MAX_DEG}" \
+  joint_shake_max_single_delta_deg:="${JOINT_SHAKE_MAX_SINGLE_DELTA_DEG}" \
+  approach_joint_velocity:="${APPROACH_JOINT_VELOCITY}" \
+  approach_joint_acceleration:="${APPROACH_JOINT_ACCELERATION}" \
+  approach_joint_time:="${APPROACH_JOINT_TIME}" \
+  shake_joint_velocity:="${SHAKE_JOINT_VELOCITY}" \
+  shake_joint_acceleration:="${SHAKE_JOINT_ACCELERATION}" \
+  shake_joint_time:="${SHAKE_JOINT_TIME}" \
+  require_state_validity_for_joint_shake:="${REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE}" \
+  state_validity_service:="${STATE_VALIDITY_SERVICE}" \
+  planning_group:="${PLANNING_GROUP}"

@@ -10,10 +10,12 @@ from dataclasses import dataclass
 from typing import List, Sequence, Tuple
 
 import rclpy
-from dsr_msgs2.srv import Ikin, MoveLine
+from dsr_msgs2.srv import Ikin, MoveJoint, MoveLine
 from geometry_msgs.msg import PoseStamped
+from moveit_msgs.srv import GetStateValidity
 from nav_msgs.msg import Path
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 
@@ -24,6 +26,7 @@ MOVE_MODE_ABSOLUTE = 0
 SYNC = 0
 BLENDING_SPEED_TYPE_DUPLICATE = 0
 HARDWARE_CONFIRM_PHRASE = "ENABLE_REAL_ROBOT_MOTION"
+JOINT_NAMES = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,17 @@ class SequenceStep:
     ry_offset_deg: float = 0.0
     rz_offset_deg: float = 0.0
     phase: str = "shake"
+
+
+@dataclass(frozen=True)
+class JointSequenceStep:
+    label: str
+    joints_deg: tuple[float, float, float, float, float, float]
+    hold_seconds: float = 0.0
+    phase: str = "shake"
+
+
+ShakeStep = SequenceStep | JointSequenceStep
 
 
 def service_name(prefix: str, name: str) -> str:
@@ -70,6 +84,7 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("allow_service_control_without_moveit", False)
         self.declare_parameter("service_prefix", "")
         self.declare_parameter("execution_stage", "full")
+        self.declare_parameter("shake_control_mode", "cartesian")
 
         self.declare_parameter("frame_id", "base_link")
         self.declare_parameter("dispenser_count", 4)
@@ -130,10 +145,34 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("precheck_ikin_joint5", True)
         self.declare_parameter("enforce_wrist_joint_limits", False)
         self.declare_parameter("ikin_sol_space", 2)
-        self.declare_parameter("joint5_min_deg", -135.0)
-        self.declare_parameter("joint5_max_deg", 135.0)
+        self.declare_parameter("joint5_min_deg", 40.0)
+        self.declare_parameter("joint5_max_deg", 100.0)
         self.declare_parameter("wrist_min_deg", -135.0)
         self.declare_parameter("wrist_max_deg", 135.0)
+        self.declare_parameter("joint_shake_base_j1_deg", 0.0)
+        self.declare_parameter("joint_shake_base_j2_deg", -35.0)
+        self.declare_parameter("joint_shake_base_j3_deg", -55.0)
+        self.declare_parameter("joint_shake_base_j4_deg", 0.0)
+        self.declare_parameter("joint_shake_base_j5_deg", 70.0)
+        self.declare_parameter("joint_shake_base_j6_deg", 0.0)
+        self.declare_parameter("joint_shake_j3_amplitude_deg", 0.0)
+        self.declare_parameter("joint_shake_j4_amplitude_deg", 24.0)
+        self.declare_parameter("joint_shake_j5_amplitude_deg", 30.0)
+        self.declare_parameter("joint_shake_j6_amplitude_deg", 36.0)
+        self.declare_parameter("joint_shake_j1_min_deg", -20.0)
+        self.declare_parameter("joint_shake_j1_max_deg", 5.0)
+        self.declare_parameter("joint_shake_j2_min_deg", -80.0)
+        self.declare_parameter("joint_shake_j2_max_deg", 5.0)
+        self.declare_parameter("joint_shake_max_single_delta_deg", 75.0)
+        self.declare_parameter("approach_joint_velocity", 18.0)
+        self.declare_parameter("approach_joint_acceleration", 22.0)
+        self.declare_parameter("approach_joint_time", 2.6)
+        self.declare_parameter("shake_joint_velocity", 115.0)
+        self.declare_parameter("shake_joint_acceleration", 180.0)
+        self.declare_parameter("shake_joint_time", 0.26)
+        self.declare_parameter("require_state_validity_for_joint_shake", False)
+        self.declare_parameter("state_validity_service", "/check_state_validity")
+        self.declare_parameter("planning_group", "manipulator")
 
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.service_prefix = str(self.get_parameter("service_prefix").value)
@@ -151,16 +190,29 @@ class TumblerShakeSequenceNode(Node):
         )
 
         self.move_line = None
+        self.move_joint = None
         self.ikin = None
+        self.state_validity = None
         if self.hardware_armed:
-            self.move_line = self.create_client(
-                MoveLine,
-                service_name(self.service_prefix, "motion/move_line"),
-            )
-            self.ikin = self.create_client(
-                Ikin,
-                service_name(self.service_prefix, "motion/ikin"),
-            )
+            if self.using_joint_control():
+                self.move_joint = self.create_client(
+                    MoveJoint,
+                    service_name(self.service_prefix, "motion/move_joint"),
+                )
+                if bool(self.get_parameter("require_state_validity_for_joint_shake").value):
+                    self.state_validity = self.create_client(
+                        GetStateValidity,
+                        str(self.get_parameter("state_validity_service").value),
+                    )
+            else:
+                self.move_line = self.create_client(
+                    MoveLine,
+                    service_name(self.service_prefix, "motion/move_line"),
+                )
+                self.ikin = self.create_client(
+                    Ikin,
+                    service_name(self.service_prefix, "motion/ikin"),
+                )
 
         self.path_pub = self.create_publisher(Path, "/jarvis/tumbler_shake_sequence/plan", 10)
         self.status_pub = self.create_publisher(String, "/jarvis/tumbler_shake_sequence/status", 10)
@@ -169,8 +221,15 @@ class TumblerShakeSequenceNode(Node):
         self.timer = self.create_timer(0.5, self.on_timer)
         self.get_logger().info(
             "tumbler_shake_sequence_node ready. "
-            f"hardware_armed={self.hardware_armed}; default is dry-run."
+            f"hardware_armed={self.hardware_armed}; "
+            f"shake_control_mode={self.shake_control_mode()}; default is dry-run."
         )
+
+    def shake_control_mode(self) -> str:
+        return str(self.get_parameter("shake_control_mode").value).strip().lower()
+
+    def using_joint_control(self) -> bool:
+        return self.shake_control_mode() in {"joint", "joint_space", "move_joint"}
 
     def on_timer(self) -> None:
         if self.started or not bool(self.get_parameter("auto_start").value):
@@ -282,6 +341,66 @@ class TumblerShakeSequenceNode(Node):
         )
         return self.limit_steps_for_stage(steps)
 
+    def build_joint_steps(self) -> List[JointSequenceStep]:
+        base = tuple(
+            float(self.get_parameter(f"joint_shake_base_j{index}_deg").value)
+            for index in range(1, 7)
+        )
+        j3_amp = self._clamped_abs_parameter("joint_shake_j3_amplitude_deg", 10.0)
+        j4_amp = self._clamped_abs_parameter("joint_shake_j4_amplitude_deg", 25.0)
+        j5_amp = self._clamped_abs_parameter("joint_shake_j5_amplitude_deg", 30.0)
+        j6_amp = self._clamped_abs_parameter("joint_shake_j6_amplitude_deg", 40.0)
+        j5_mid_amp = min(j5_amp * 0.40, 12.0)
+        cycles = max(int(self.get_parameter("shake_cycles").value), 1)
+        hold = max(float(self.get_parameter("shake_hold_seconds").value), 0.0)
+
+        def step(
+            label: str,
+            deltas: tuple[float, float, float, float, float, float],
+            *,
+            phase: str = "shake",
+        ) -> JointSequenceStep:
+            return JointSequenceStep(
+                label=label,
+                joints_deg=tuple(value + delta for value, delta in zip(base, deltas)),
+                hold_seconds=hold if phase == "shake" else 0.0,
+                phase=phase,
+            )
+
+        steps: list[JointSequenceStep] = [
+            JointSequenceStep("joint_shake_safe_ready", base, phase="approach"),
+            JointSequenceStep("joint_shake_center_start", base, phase="approach"),
+        ]
+        for cycle in range(1, cycles + 1):
+            steps.extend(
+                [
+                    step(
+                        f"joint_shake_cycle_{cycle}_cocktail_high_forward",
+                        (0.0, 0.0, j3_amp, -j4_amp, j5_amp, j6_amp),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_cocktail_high_cross",
+                        (0.0, 0.0, 0.0, j4_amp, j5_mid_amp, -j6_amp),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_cocktail_low_back",
+                        (0.0, 0.0, -j3_amp, j4_amp, -j5_amp, -j6_amp),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_cocktail_low_snap",
+                        (0.0, 0.0, 0.0, -j4_amp, -j5_mid_amp, j6_amp),
+                    ),
+                    step(f"joint_shake_cycle_{cycle}_center", (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
+                ]
+            )
+        steps.extend(
+            [
+                JointSequenceStep("joint_shake_center_end", base),
+                JointSequenceStep("joint_shake_safe_retreat", base, phase="approach"),
+            ]
+        )
+        return self.limit_steps_for_stage(steps)
+
     def _clamped_abs_parameter(self, name: str, max_abs: float) -> float:
         value = abs(float(self.get_parameter(name).value))
         if value > max_abs:
@@ -291,7 +410,7 @@ class TumblerShakeSequenceNode(Node):
             return max_abs
         return value
 
-    def limit_steps_for_stage(self, steps: Sequence[SequenceStep]) -> List[SequenceStep]:
+    def limit_steps_for_stage(self, steps: Sequence[ShakeStep]) -> List[ShakeStep]:
         stage = str(self.get_parameter("execution_stage").value).strip().lower()
         if stage in {"", "all", "full"}:
             return list(steps)
@@ -338,6 +457,120 @@ class TumblerShakeSequenceNode(Node):
             f"Shake safety validated: min_z={min_shake_z:.3f} "
             f"keepout_radius={keepout_radius:.3f} workspace=ok"
         )
+
+    def assert_joint_sequence_safe(self, steps: Sequence[JointSequenceStep]) -> None:
+        joint_lower = -180.0
+        joint_upper = 180.0
+        joint5_lower = float(self.get_parameter("joint5_min_deg").value)
+        joint5_upper = float(self.get_parameter("joint5_max_deg").value)
+        j1_lower = float(self.get_parameter("joint_shake_j1_min_deg").value)
+        j1_upper = float(self.get_parameter("joint_shake_j1_max_deg").value)
+        j2_lower = float(self.get_parameter("joint_shake_j2_min_deg").value)
+        j2_upper = float(self.get_parameter("joint_shake_j2_max_deg").value)
+        max_delta = float(self.get_parameter("joint_shake_max_single_delta_deg").value)
+
+        previous: JointSequenceStep | None = None
+        for step in steps:
+            if len(step.joints_deg) != 6:
+                raise RuntimeError(f"{step.label}: expected 6 joints, got {len(step.joints_deg)}")
+            for index, value in enumerate(step.joints_deg, start=1):
+                if not joint_lower <= value <= joint_upper:
+                    raise RuntimeError(
+                        f"{step.label}: joint_{index}={value:.3f} deg is outside "
+                        f"[{joint_lower:.1f}, {joint_upper:.1f}] deg"
+                    )
+            if not j1_lower <= step.joints_deg[0] <= j1_upper:
+                raise RuntimeError(
+                    f"{step.label}: joint_1={step.joints_deg[0]:.3f} deg is outside "
+                    f"safe shake range [{j1_lower:.1f}, {j1_upper:.1f}] deg"
+                )
+            if not j2_lower <= step.joints_deg[1] <= j2_upper:
+                raise RuntimeError(
+                    f"{step.label}: joint_2={step.joints_deg[1]:.3f} deg is outside "
+                    f"safe shake range [{j2_lower:.1f}, {j2_upper:.1f}] deg"
+                )
+            if not joint5_lower <= step.joints_deg[4] <= joint5_upper:
+                raise RuntimeError(
+                    f"{step.label}: refusing MoveJoint because joint_5="
+                    f"{step.joints_deg[4]:.3f} deg is outside "
+                    f"[{joint5_lower:.3f}, {joint5_upper:.3f}] deg"
+                )
+            if previous is not None:
+                deltas = [
+                    abs(current - last)
+                    for current, last in zip(step.joints_deg, previous.joints_deg)
+                ]
+                largest = max(deltas)
+                if largest > max_delta:
+                    raise RuntimeError(
+                        f"{step.label}: largest joint step is {largest:.1f} deg, "
+                        f"above joint_shake_max_single_delta_deg={max_delta:.1f}"
+                    )
+            previous = step
+
+        self.get_logger().info(
+            "Joint shake safety validated: "
+            f"joint_1 range=[{j1_lower:.1f}, {j1_upper:.1f}], "
+            f"joint_2 range=[{j2_lower:.1f}, {j2_upper:.1f}], "
+            f"joint_5 range=[{joint5_lower:.1f}, {joint5_upper:.1f}], "
+            f"max_single_delta={max_delta:.1f}"
+        )
+
+    def publish_joint_plan(self) -> None:
+        path = Path()
+        path.header.stamp = self.get_clock().now().to_msg()
+        path.header.frame_id = self.frame_id
+        self.path_pub.publish(path)
+
+    def check_joint_state_validity(self, step: JointSequenceStep) -> bool:
+        if not bool(self.get_parameter("require_state_validity_for_joint_shake").value):
+            return True
+        if self.state_validity is None:
+            self.get_logger().error(
+                "State-validity client is not initialized; refusing joint-space shake."
+            )
+            return False
+
+        req = GetStateValidity.Request()
+        req.group_name = str(self.get_parameter("planning_group").value)
+        req.robot_state.joint_state = JointState()
+        req.robot_state.joint_state.name = JOINT_NAMES
+        req.robot_state.joint_state.position = [
+            math.radians(value) for value in step.joints_deg
+        ]
+
+        future = self.state_validity.call_async(req)
+        timeout_sec = max(float(self.get_parameter("motion_response_timeout_sec").value), 0.1)
+        deadline = time.monotonic() + timeout_sec
+        while rclpy.ok() and not future.done():
+            if time.monotonic() > deadline:
+                self.get_logger().error(
+                    f"{step.label}: /check_state_validity timed out after {timeout_sec:.1f}s"
+                )
+                return False
+            time.sleep(0.01)
+        if future.exception() is not None:
+            self.get_logger().error(
+                f"{step.label}: /check_state_validity raised: {future.exception()}"
+            )
+            return False
+        result = future.result()
+        if result is None or not result.valid:
+            contacts = getattr(result, "contacts", []) if result is not None else []
+            contact_text = ""
+            if contacts:
+                first = contacts[0]
+                contact_text = (
+                    f" first_contact={getattr(first, 'contact_body_1', '?')}"
+                    f"<->{getattr(first, 'contact_body_2', '?')}"
+                )
+            self.get_logger().error(
+                f"{step.label}: MoveIt state validity is invalid; refusing MoveJoint."
+                f"{contact_text}"
+            )
+            return False
+        self.get_logger().info(f"{step.label}: MoveIt state validity OK")
+        return True
 
     def publish_plan(self, steps: Sequence[SequenceStep]) -> None:
         now = self.get_clock().now().to_msg()
@@ -480,6 +713,47 @@ class TumblerShakeSequenceNode(Node):
             return False
         return True
 
+    def call_movej(self, step: JointSequenceStep) -> bool:
+        if self.move_joint is None:
+            self.get_logger().error("MoveJoint client is not initialized; refusing hardware shake.")
+            return False
+        req = MoveJoint.Request()
+        req.pos = [float(value) for value in step.joints_deg]
+        req.vel, req.acc = self._joint_velocity_acceleration_for_step(step)
+        req.time = self._joint_time_for_step(step)
+        req.radius = 0.0
+        req.mode = MOVE_MODE_ABSOLUTE
+        req.blend_type = BLENDING_SPEED_TYPE_DUPLICATE
+        req.sync_type = SYNC
+
+        self.get_logger().info(
+            f"{step.label}: calling hardware service "
+            f"joints_deg={[round(value, 1) for value in req.pos]} "
+            f"time={req.time:.2f} vel={req.vel:.1f} acc={req.acc:.1f}"
+        )
+        future = self.move_joint.call_async(req)
+        timeout_sec = max(float(self.get_parameter("motion_response_timeout_sec").value), 0.1)
+        deadline = time.monotonic() + timeout_sec
+        while rclpy.ok() and not future.done():
+            if time.monotonic() > deadline:
+                self.get_logger().error(
+                    f"{step.label} timed out waiting {timeout_sec:.1f}s for service response"
+                )
+                return False
+            time.sleep(0.01)
+        if future.exception() is not None:
+            self.get_logger().error(f"{step.label} service call raised: {future.exception()}")
+            return False
+        result = future.result()
+        if result is None or not result.success:
+            self.get_logger().error(
+                f"{step.label} returned success=false for "
+                f"joints_deg={[round(value, 1) for value in req.pos]}. "
+                "Check the Doosan controller log for the exact reject reason."
+            )
+            return False
+        return True
+
     def _line_time_for_step(self, step: SequenceStep) -> float:
         global_time = max(float(self.get_parameter("line_time").value), 0.0)
         if global_time > 0.0:
@@ -503,6 +777,73 @@ class TumblerShakeSequenceNode(Node):
             float(self.get_parameter("line_velocity").value),
             float(self.get_parameter("line_acceleration").value),
         )
+
+    def _joint_time_for_step(self, step: JointSequenceStep) -> float:
+        if step.phase == "approach":
+            return max(float(self.get_parameter("approach_joint_time").value), 0.0)
+        return max(float(self.get_parameter("shake_joint_time").value), 0.0)
+
+    def _joint_velocity_acceleration_for_step(self, step: JointSequenceStep) -> tuple[float, float]:
+        if step.phase == "approach":
+            return (
+                float(self.get_parameter("approach_joint_velocity").value),
+                float(self.get_parameter("approach_joint_acceleration").value),
+            )
+        return (
+            float(self.get_parameter("shake_joint_velocity").value),
+            float(self.get_parameter("shake_joint_acceleration").value),
+        )
+
+    def execute_hardware_joint(self, steps: Sequence[JointSequenceStep]) -> bool:
+        if not self.hardware_armed:
+            self.get_logger().warning(
+                "Hardware not armed. Dry-run only. To arm, set enable_hardware:=true, "
+                f"hardware_confirm:={HARDWARE_CONFIRM_PHRASE}, and "
+                "allow_service_control_without_moveit:=true."
+            )
+            return True
+
+        service_timeout_sec = max(float(self.get_parameter("service_wait_timeout_sec").value), 0.1)
+        service_deadline = time.monotonic() + service_timeout_sec
+        while (
+            rclpy.ok()
+            and self.move_joint is not None
+            and not self.move_joint.wait_for_service(timeout_sec=1.0)
+        ):
+            if time.monotonic() > service_deadline:
+                self.get_logger().error(
+                    f"motion/move_joint service was not available within {service_timeout_sec:.1f}s"
+                )
+                return False
+            self.get_logger().info("Waiting for motion/move_joint")
+
+        if bool(self.get_parameter("require_state_validity_for_joint_shake").value):
+            validity_deadline = time.monotonic() + service_timeout_sec
+            while (
+                rclpy.ok()
+                and self.state_validity is not None
+                and not self.state_validity.wait_for_service(timeout_sec=1.0)
+            ):
+                if time.monotonic() > validity_deadline:
+                    self.get_logger().error(
+                        f"{self.get_parameter('state_validity_service').value} service was not "
+                        f"available within {service_timeout_sec:.1f}s"
+                    )
+                    return False
+                self.get_logger().info("Waiting for MoveIt state validity service")
+            self.get_logger().info(
+                "Running MoveIt state-validity checks for all joint shake waypoints before MoveJoint."
+            )
+            for step in steps:
+                if not self.check_joint_state_validity(step):
+                    return False
+
+        for step in steps:
+            if not self.call_movej(step):
+                return False
+            if step.hold_seconds > 0.0:
+                time.sleep(step.hold_seconds)
+        return True
 
     def execute_hardware(self, steps: Sequence[SequenceStep]) -> bool:
         if not self.hardware_armed:
@@ -550,6 +891,27 @@ class TumblerShakeSequenceNode(Node):
                 "enable_hardware was requested but hardware gates are incomplete. Refusing motion."
             )
             return False
+        if self.shake_control_mode() not in {"cartesian", "pose", "movel", "joint", "joint_space", "move_joint"}:
+            self.get_logger().error(
+                "unsupported shake_control_mode. Use cartesian or joint."
+            )
+            return False
+        if self.using_joint_control():
+            try:
+                joint_steps = self.build_joint_steps()
+                self.assert_joint_sequence_safe(joint_steps)
+            except (RuntimeError, ValueError) as exc:
+                self.get_logger().error(str(exc))
+                return False
+            self.publish_joint_plan()
+            for step in joint_steps:
+                self.get_logger().info(
+                    f"plan {step.label}: joints_deg="
+                    f"{[round(value, 1) for value in step.joints_deg]} "
+                    f"phase={step.phase} time={self._joint_time_for_step(step):.2f} "
+                    f"hold={step.hold_seconds:.2f}"
+                )
+            return self.execute_hardware_joint(joint_steps)
         try:
             steps = self.build_steps()
             self.assert_workspace_safe(steps)

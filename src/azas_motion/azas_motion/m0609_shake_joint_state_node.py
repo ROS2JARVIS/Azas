@@ -14,9 +14,12 @@ class M0609ShakeJointStateNode(Node):
     def __init__(self) -> None:
         super().__init__("m0609_shake_joint_state_node")
         self.declare_parameter("publish_rate", 30.0)
-        self.declare_parameter("shake_cycles_per_second", 3.2)
+        self.declare_parameter("shake_cycles_per_second", 4.0)
         self.declare_parameter("preview_mode", "shake")
-        self.declare_parameter("home_joints_rad", [0.0, 0.0, 1.57, 0.0, 1.57, 1.57])
+        self.declare_parameter(
+            "home_joints_rad",
+            [0.0, math.radians(-35.0), math.radians(-55.0), 0.0, math.radians(70.0), 0.0],
+        )
 
         self.publisher = self.create_publisher(JointState, "/joint_states", 10)
         self.start_time = self.get_clock().now()
@@ -41,7 +44,7 @@ class M0609ShakeJointStateNode(Node):
         else:
             positions = self.high_shake_joints(elapsed, home)
 
-        positions[4] = max(min(positions[4], math.radians(135.0)), math.radians(-135.0))
+        positions[4] = max(min(positions[4], math.radians(100.0)), math.radians(40.0))
 
         msg = JointState()
         msg.header.stamp = now.to_msg()
@@ -52,18 +55,18 @@ class M0609ShakeJointStateNode(Node):
     def high_shake_joints(self, elapsed: float, home: list[float]) -> list[float]:
         freq = max(float(self.get_parameter("shake_cycles_per_second").value), 0.1)
         phase = elapsed * math.tau * freq
-        sway = math.sin(phase)
-        counter = math.sin(phase + math.pi * 0.5)
-        lift_pulse = math.sin(phase * 0.5)
+        j5_swing = math.sin(phase)
+        wrist_counter = math.sin(phase + math.pi * 0.5)
+        elbow_pulse = math.sin(phase * 0.5)
         wrist_snap = math.sin(phase * 1.7 + math.pi * 0.25)
 
         return [
-            home[0] + 0.30 * sway,
-            home[1] + 0.16 * lift_pulse,
-            home[2] - 0.20 * lift_pulse,
-            home[3] + 0.42 * counter,
-            home[4] + 0.28 * sway,
-            home[5] + 1.20 * counter + 0.28 * wrist_snap,
+            home[0],
+            home[1],
+            home[2],
+            home[3] + math.radians(24.0) * wrist_counter,
+            home[4] + math.radians(30.0) * j5_swing,
+            home[5] + math.radians(36.0) * wrist_counter + math.radians(8.0) * wrist_snap,
         ]
 
     def side_grasp_move_then_shake_joints(self, elapsed: float, home: list[float]) -> list[float]:

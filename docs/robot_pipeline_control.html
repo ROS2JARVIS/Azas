@@ -244,7 +244,7 @@
           <input id="rg2Ip" type="text" value="192.168.1.1">
         </label>
         <label class="field">DISPENSER_TCP_NAME
-          <input id="dispenserTcpName" type="text" value="rg2_tcp" placeholder="Doosan controller TCP 이름">
+          <input id="dispenserTcpName" type="text" value="GripperDA_v1_jarvis" placeholder="Doosan controller TCP 이름">
         </label>
       </div>
       <label class="arm">
@@ -376,21 +376,30 @@
 
     document.getElementById("run").addEventListener("click", async () => {
       const selected = selectedStepKeys();
+      const selectedSet = new Set(selected);
       resetResultBadges();
       for (const key of selected) {
         setStepStatus(key, "running");
       }
       log.textContent = "실행 중...";
-      const res = await fetch("/api/run", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload())
-      });
-      const data = await res.json();
-      for (const result of data.results || []) {
-        setStepStatus(result.key, result.status);
+      try {
+        const res = await fetch("/api/run", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload())
+        });
+        const data = await res.json();
+        for (const result of data.results || []) {
+          setStepStatus(result.key, result.status);
+        }
+        log.textContent = JSON.stringify(data, null, 2);
+      } finally {
+        for (const input of document.querySelectorAll(".step-check")) {
+          if (selectedSet.has(input.value)) {
+            input.checked = false;
+          }
+        }
       }
-      log.textContent = JSON.stringify(data, null, 2);
     });
 
     document.getElementById("stop").addEventListener("click", async () => {

@@ -26,7 +26,7 @@ ROOT = Path("/home/ssu/Azas")
 HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
 ROS_SETUP = "source /opt/ros/humble/setup.bash && source /home/ssu/Azas/install/local_setup.bash"
 DEFAULT_ROBOT_HOST = "192.168.1.100"
-DEFAULT_DISPENSER_TCP_NAME = "rg2_tcp"
+DEFAULT_DISPENSER_TCP_NAME = "GripperDA_v1_jarvis"
 FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
 RVIZ_PREVIEW_ROS_DOMAIN_ID = "79"
@@ -143,7 +143,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=red",
         True,
         True,
-        "feature/dispenser의 taught posx red 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser의 taught posx red 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_2",
@@ -152,7 +152,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=green",
         True,
         True,
-        "feature/dispenser의 taught posx green 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser의 taught posx green 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_3",
@@ -161,7 +161,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=yellow",
         True,
         True,
-        "feature/dispenser의 taught posx yellow 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser의 taught posx yellow 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_4",
@@ -170,7 +170,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=blue",
         True,
         True,
-        "feature/dispenser의 taught posx blue 사용: Doosan TCP 설정 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser의 taught posx blue 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
@@ -185,7 +185,7 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: 고정 안전공간 쉐이킹"),
+    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J2/J3 음수 베이스, J4/J5/J6 칵테일 스냅 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
     Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
     Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
 ]
@@ -547,6 +547,8 @@ def run_output_failure(step: Step, output: str) -> str | None:
             " returned success=false",
             " Ikin returned success=false",
             " refusing MoveLine ",
+            " refusing MoveJoint",
+            "MoveIt state validity is invalid",
             "Hardware gates are incomplete",
             "enable_hardware was requested but hardware gates are incomplete",
         )
@@ -571,10 +573,13 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/motion/move_line",
             f"/{clean}/motion/ikin",
             f"/{clean}/motion/check_motion",
+            f"/{clean}/tcp/get_current_tcp",
+            f"/{clean}/aux_control/get_current_posx",
             "/jarvis/rg2/open",
         ]
     if step.key.startswith("press_dispenser_"):
         return [
+            "/jarvis/rg2/close",
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/move_line",
             f"/{clean}/motion/move_wait",
@@ -585,12 +590,11 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
         ]
     if step.key == "shake_closed_cup":
         return [
-            f"/{clean}/motion/move_line",
-            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/move_joint",
             f"/{clean}/motion/check_motion",
-            f"/{clean}/aux_control/get_current_posx",
             f"/{clean}/aux_control/get_current_posj",
             f"/{clean}/system/get_robot_state",
+            "/check_state_validity",
         ]
     return []
 
@@ -939,7 +943,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/move_to_measured_dispenser_front_hold.py "
             f"--service-prefix {service_prefix} --dispenser-id {shlex.quote(dispenser_id)} "
             f"--velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} --timeout-sec 180 "
-            "--verify-target --verify-timeout-sec 70 --target-tolerance-mm 15"
+            "--verify-target --verify-timeout-sec 70 --target-tolerance-mm 15 "
+            "--compensate-current-tcp --verify-link6-target"
             " --execute --confirm ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
             " && timeout 12s ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'"
         )
@@ -952,7 +957,9 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             or DEFAULT_DISPENSER_TCP_NAME
         ).strip()
         return (
-            f"cd {ROOT} && {ROS_SETUP} && ros2 run azas_dispenser dispenser_press_node --ros-args "
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "timeout 12s ros2 service call /jarvis/rg2/close std_srvs/srv/Trigger '{}' && "
+            "ros2 run azas_dispenser dispenser_press_node --ros-args "
             f"-p service_prefix:={shlex.quote(service_prefix)} "
             "-p use_taught_posx:=true "
             f"-p tcp_name:={shlex.quote(tcp_name)} "
@@ -972,12 +979,21 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
     if step.key == "shake_closed_cup":
         return (
             f"cd {ROOT} && SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
-            "REQUIRE_ROBOT_STANDBY=false SHAKE_CENTER_X=0.280 SHAKE_CENTER_Y=-0.300 "
-            "SHAKE_CENTER_Z=0.620 MIN_SHAKE_Z=0.550 SHAKE_AMPLITUDE_X=0.060 "
-            "SHAKE_AMPLITUDE_Y=0.030 SHAKE_AMPLITUDE_Z=0.035 SHAKE_CYCLES=2 "
-            "SHAKE_TWIST_RX_DEG=5.0 SHAKE_TWIST_RY_DEG=3.0 SHAKE_TWIST_RZ_DEG=18.0 "
+            "REQUIRE_ROBOT_STANDBY=false SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
+            "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
+            "JOINT_SHAKE_BASE_J3_DEG=-55.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
+            "JOINT_SHAKE_BASE_J5_DEG=70.0 JOINT_SHAKE_BASE_J6_DEG=0.0 "
+            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=24.0 "
+            "JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=36.0 "
+            "JOINT_SHAKE_J1_MIN_DEG=-20.0 JOINT_SHAKE_J1_MAX_DEG=5.0 "
+            "JOINT_SHAKE_J2_MIN_DEG=-80.0 JOINT_SHAKE_J2_MAX_DEG=5.0 "
+            "JOINT_SHAKE_MAX_SINGLE_DELTA_DEG=75.0 "
             "ENFORCE_WRIST_JOINT_LIMITS=false WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
-            "LINE_TIME=0.0 APPROACH_LINE_TIME=3.5 SHAKE_LINE_TIME=0.45 "
+            "JOINT5_MIN_DEG=40.0 JOINT5_MAX_DEG=100.0 "
+            "APPROACH_JOINT_VELOCITY=18.0 APPROACH_JOINT_ACCELERATION=22.0 "
+            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=115.0 "
+            "SHAKE_JOINT_ACCELERATION=180.0 SHAKE_JOINT_TIME=0.26 "
+            "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
         )
     return ""
