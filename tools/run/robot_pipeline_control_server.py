@@ -22,9 +22,9 @@ except ImportError:  # pragma: no cover - local panel can still run without tree
     psutil = None
 
 
-ROOT = Path("/home/ssu/Azas")
+ROOT = Path(__file__).resolve().parents[2]
 HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
-ROS_SETUP = "source /opt/ros/humble/setup.bash && source /home/ssu/Azas/install/local_setup.bash"
+ROS_SETUP = f"source /opt/ros/humble/setup.bash && source {shlex.quote(str(ROOT / 'install' / 'local_setup.bash'))}"
 DEFAULT_ROBOT_HOST = "192.168.1.100"
 DEFAULT_DISPENSER_TCP_NAME = "GripperDA_v1_jarvis"
 FAST_MOVE_VELOCITY = "30"
@@ -650,10 +650,17 @@ def missing_required_services(step: Step, service_prefix: str) -> tuple[list[str
         required,
         timeout_sec=required_service_wait_timeout(step),
     )
+    if ready:
+        # Trust the successful wait sample.  ROS 2/DDS service discovery can
+        # briefly return a partial graph on the very next `ros2 service list`,
+        # especially after earlier panel steps have just exercised Doosan and
+        # MoveIt services.  Re-listing here caused false blocks that reported
+        # both "required services became ready" and "missing" in the same
+        # response.  Real motion is still gated below by direct service calls
+        # (`get_robot_state`, `check_motion`) before any movement command runs.
+        return [], wait_output
     services, output = ros_service_names(timeout_sec=2.0)
     missing = [service for service in required if service not in services]
-    if ready and not missing:
-        return [], wait_output
     return missing, wait_output + "\n--- final service list ---\n" + output
 
 
@@ -1428,8 +1435,13 @@ class Handler(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(length) or b"{}")
         path = urlparse(self.path).path
         if path == "/api/run":
-            selected = set(payload.get("selected") or [])
-            results = [run_step(step, payload) for step in STEPS if step.key in selected]
+            selected = [str(key) for key in payload.get("selected") or []]
+            steps_by_key = {step.key: step for step in STEPS}
+            results = [
+                run_step(steps_by_key[key], payload)
+                for key in selected
+                if key in steps_by_key
+            ]
             self.send_json({"results": results})
             return
         if path == "/api/stop":

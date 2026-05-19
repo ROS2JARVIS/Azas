@@ -130,6 +130,8 @@ run_step "Cocktail dry-run sequence smoke" "${SMOKE_DIR}/smoke_cocktail_dryrun_s
 
 run_step "Full cocktail workflow plan gate" "${CHECKS_DIR}/check_cocktail_workflow_plan.py"
 
+run_step "Panel service discovery race regression" "${CHECKS_DIR}/check_panel_service_discovery_race.py"
+
 run_step "Real-motion entrypoint fail-closed smoke" "${SMOKE_DIR}/smoke_real_motion_entrypoint_gates.sh"
 
 run_step "Real-motion config gate smoke" "${SMOKE_DIR}/smoke_real_motion_config_gate.sh"
