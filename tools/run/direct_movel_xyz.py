@@ -302,7 +302,19 @@ def main() -> int:
         future = client.call_async(req)
         rclpy.spin_until_future_complete(node, future, timeout_sec=max(args.timeout_sec, 0.1))
         if not future.done():
-            print(f"[FAIL] MoveLine response timeout after {args.timeout_sec:.1f}s")
+            print(f"[WARN] MoveLine response timeout after {args.timeout_sec:.1f}s")
+            if args.verify_target:
+                print("[Azas] MoveLine request may still be executing; verifying target before failing.")
+                if wait_for_target(
+                    node,
+                    args.service_prefix,
+                    pos_mm_deg,
+                    tolerance_mm=max(args.target_tolerance_mm, 0.1),
+                    timeout_sec=max(args.verify_timeout_sec, 0.1),
+                ):
+                    print("[PASS] target reached after MoveLine response timeout")
+                    return 0
+            print("[FAIL] MoveLine response timeout and target verification did not pass")
             return 1
         if future.exception() is not None:
             print(f"[FAIL] MoveLine exception: {future.exception()}")

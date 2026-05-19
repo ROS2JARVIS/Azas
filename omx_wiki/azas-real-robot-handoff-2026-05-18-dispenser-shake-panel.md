@@ -362,6 +362,72 @@ Validation:
 
 No real robot motion was executed for this validation.
 
+## 2026-05-19 update — more dynamic joint-space cocktail shake
+
+User requested a more dynamic shake while preserving the safety rules already established for real robot testing.
+
+### Safety constraints preserved
+
+- Joint-space mode remains the panel default for `shake_closed_cup`.
+- `joint_1`: `[-20, 5]` deg.
+- `joint_2`: `[-80, 5]` deg.
+- `joint_3`: fixed positive at `50 deg`, allowed range `[0, 135]`; no negative J3 shake.
+- `joint_5`: constrained to `[40, 100]` deg.
+- `joint_shake_max_single_delta_deg=75`.
+- Panel still uses `REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true`.
+
+### Change applied
+
+- `src/azas_motion/azas_motion/tumbler_shake_sequence_node.py`
+  - Reworked joint shake cycle into a more cocktail-like wrist pattern:
+    - `j5_j6_plus`
+    - `wrist_snap_minus`
+    - `j5_j6_minus`
+    - `wrist_snap_plus`
+    - `j5_only_plus`
+    - `j5_only_minus`
+    - `diagonal_snap_plus`
+    - `diagonal_snap_minus`
+    - `center`
+  - This adds diagonal cross-snaps and alternating wrist recoil while keeping J3 fixed positive and J5 inside 40..100.
+  - Default J4 amplitude increased from `18` to `24`.
+  - Default shake joint speed increased:
+    - velocity `95 → 125`
+    - acceleration `150 → 190`
+    - time `0.32 → 0.24`
+
+- `src/azas_bringup/launch/tumbler_shake_sequence.launch.py`
+- `tools/run/run_rule_based_shake_real.sh`
+- `tools/run/robot_pipeline_control_server.py`
+  - Updated default/panel values to match the more dynamic joint shake.
+
+### Validation, no real robot motion
+
+```bash
+python3 -m py_compile src/azas_motion/azas_motion/tumbler_shake_sequence_node.py src/azas_bringup/launch/tumbler_shake_sequence.launch.py tools/run/robot_pipeline_control_server.py
+bash -n tools/run/run_rule_based_shake_real.sh
+colcon build --packages-select azas_motion azas_bringup --symlink-install
+tools/smoke/smoke_tumbler_shake_sequence.sh
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py ... enable_hardware:=false shake_control_mode:=joint shake_cycles:=1
+curl -s http://127.0.0.1:8765/api/steps
+```
+
+Evidence:
+
+- Fake hardware smoke reached `DONE`.
+- Unsafe joint_1 shake plan still fails closed.
+- Dry-run plan showed the new dynamic waypoints, e.g.:
+  - `j5_j6_plus`: `[0, -35, 50, -24, 100, 36]`
+  - `wrist_snap_minus`: `[0, -35, 50, 24, 54, -36]`
+  - `diagonal_snap_plus`: `[0, -35, 50, -18, 86, -27]`
+- `/api/steps` confirmed panel `shake_closed_cup` command includes:
+  - `JOINT_SHAKE_J4_AMPLITUDE_DEG=24.0`
+  - `SHAKE_JOINT_VELOCITY=125.0`
+  - `SHAKE_JOINT_ACCELERATION=190.0`
+  - `SHAKE_JOINT_TIME=0.24`
+
+No real robot motion was executed for this validation.
+
 ## 2026-05-19 update — press pre-HOME retreat to avoid cup sweep
 
 User observed that `press_dispenser_*` starts by moving HOME, and that direct joint-space HOME can sweep through the cup after the cup has been released under the dispenser.
