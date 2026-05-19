@@ -169,8 +169,8 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("approach_joint_velocity", 18.0)
         self.declare_parameter("approach_joint_acceleration", 22.0)
         self.declare_parameter("approach_joint_time", 2.6)
-        self.declare_parameter("shake_joint_velocity", 125.0)
-        self.declare_parameter("shake_joint_acceleration", 190.0)
+        self.declare_parameter("shake_joint_velocity", 180.0)
+        self.declare_parameter("shake_joint_acceleration", 260.0)
         self.declare_parameter("shake_joint_time", 0.0)
         self.declare_parameter("joint_shake_peak_velocity_limit_deg_s", 225.0)
         self.declare_parameter("verify_joint_targets", True)
@@ -509,6 +509,14 @@ class TumblerShakeSequenceNode(Node):
         peak_velocity_limit = float(
             self.get_parameter("joint_shake_peak_velocity_limit_deg_s").value
         )
+        shake_joint_velocity = float(self.get_parameter("shake_joint_velocity").value)
+        if peak_velocity_limit > 0.0 and shake_joint_velocity > peak_velocity_limit:
+            raise RuntimeError(
+                "shake_joint_velocity="
+                f"{shake_joint_velocity:.1f} deg/s is above "
+                "joint_shake_peak_velocity_limit_deg_s="
+                f"{peak_velocity_limit:.1f} deg/s"
+            )
 
         previous: JointSequenceStep | None = None
         for step in steps:
