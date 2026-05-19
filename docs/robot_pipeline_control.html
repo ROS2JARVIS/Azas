@@ -7,271 +7,587 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f5f6f8;
-      --panel: #ffffff;
-      --text: #18202a;
-      --muted: #627084;
-      --line: #d9dee7;
-      --blue: #1f6feb;
-      --green: #1a7f37;
-      --red: #c92a2a;
-      --yellow: #8a5a00;
+      --bg: #f3f6fb;
+      --card: #ffffff;
+      --soft: #f8fafc;
+      --text: #111827;
+      --muted: #64748b;
+      --line: #d8e0ec;
+      --line-strong: #b9c6d8;
+      --blue: #2563eb;
+      --blue-dark: #1e40af;
+      --green: #15803d;
+      --red: #dc2626;
+      --yellow: #a16207;
+      --purple: #7c3aed;
+      --shadow: 0 14px 34px rgba(15, 23, 42, 0.10);
+      --log-width: 430px;
     }
     * { box-sizing: border-box; }
+    html { min-height: 100%; }
     body {
       margin: 0;
+      min-height: 100%;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
     }
-    header {
-      padding: 18px 22px;
-      background: #202733;
-      color: #fff;
+    button, input, summary { font: inherit; }
+    button {
+      min-height: 38px;
+      border: 0;
+      border-radius: 10px;
+      padding: 0 13px;
+      font-weight: 850;
+      cursor: pointer;
+      color: #111827;
+      background: #e5e7eb;
+      transition: filter 0.12s ease, transform 0.05s ease;
     }
-    h1 {
-      margin: 0;
-      font-size: 22px;
-      letter-spacing: 0;
-    }
-    main {
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 18px;
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
-      gap: 16px;
-    }
-    section {
-      background: var(--panel);
+    button:hover { filter: brightness(0.98); }
+    button:active { transform: translateY(1px); }
+    input[type="text"], input[type="search"] {
+      width: 100%;
+      min-height: 38px;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 16px;
+      border-radius: 10px;
+      padding: 0 12px;
+      font-size: 14px;
+      color: var(--text);
+      background: #fff;
+      outline: none;
     }
-    .control-panel {
-      min-width: 0;
-    }
-    .log-panel {
+    input:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px #dbeafe; }
+
+    .topbar {
       position: sticky;
-      top: 12px;
-      align-self: start;
-      max-height: calc(100vh - 24px);
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      top: 0;
+      z-index: 40;
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 10px 18px;
+      background: #111827;
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
     }
-    h2 {
-      margin: 0 0 12px;
-      font-size: 17px;
+    .title-wrap { min-width: 0; }
+    h1 { margin: 0; font-size: 19px; letter-spacing: -0.02em; }
+    .subtitle { margin-top: 2px; color: #cbd5e1; font-size: 12px; }
+    .header-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 25px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
     }
-    .grid {
+    .pill.dark { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.18); color: #e5e7eb; }
+    .pill.real { color: var(--red); background: #fff1f2; border-color: #fecdd3; }
+    .pill.ok { color: var(--green); background: #f0fdf4; border-color: #bbf7d0; }
+    .pill.blocked { color: var(--yellow); background: #fffbeb; border-color: #fde68a; }
+    .pill.info { color: var(--blue); background: #eff6ff; border-color: #bfdbfe; }
+    .pill.kind { color: #475569; background: #f8fafc; border-color: #d7dee9; }
+
+    .page {
+      width: min(1680px, calc(100vw - 28px));
+      margin: 14px auto 34px;
+    }
+
+    .control-panel {
+      position: sticky;
+      top: 56px;
+      z-index: 30;
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
-      margin-bottom: 12px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+    .run-row {
+      display: grid;
+      grid-template-columns: minmax(210px, 1fr) auto auto auto auto;
+      gap: 9px;
+      align-items: center;
+    }
+    .search-wrap { min-width: 220px; }
+    .main-run { background: var(--blue); color: #fff; min-width: 138px; min-height: 44px; font-size: 15px; }
+    .danger { background: var(--red); color: #fff; }
+    .dark-btn { background: #334155; color: #fff; }
+    .plain-btn { background: #f1f5f9; border: 1px solid var(--line); color: #334155; }
+    .arm {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid #fecdd3;
+      border-radius: 11px;
+      background: #fff1f2;
+      color: var(--red);
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .arm input { width: 19px; height: 19px; }
+
+    .quick-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      align-items: center;
+    }
+    .quick-row button {
+      min-height: 32px;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #475569;
+      font-size: 13px;
+    }
+    .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
+
+    details.settings {
+      border-top: 1px dashed var(--line);
+      padding-top: 9px;
+    }
+    details.settings summary {
+      cursor: pointer;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 900;
+      list-style: none;
+    }
+    details.settings summary::-webkit-details-marker { display: none; }
+    details.settings summary::before { content: "▸ "; color: var(--blue); }
+    details.settings[open] summary::before { content: "▾ "; }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(130px, 1fr));
+      gap: 8px;
+      margin-top: 9px;
     }
     label.field {
       display: grid;
-      gap: 5px;
+      gap: 4px;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: 0.02em;
     }
-    input[type="text"] {
-      width: 100%;
-      height: 38px;
+
+	    .content-grid {
+	      display: grid;
+	      grid-template-columns: minmax(680px, 1fr) var(--log-width);
+	      gap: 14px;
+	      align-items: start;
+	      margin-top: 14px;
+	    }
+	    .flow-panel {
+	      position: sticky;
+	      top: 178px;
+	      z-index: 20;
+	      margin-top: 14px;
+	      border: 1px solid var(--line);
+	      border-radius: 16px;
+	      background: #fff;
+	      box-shadow: var(--shadow);
+	      overflow: hidden;
+	    }
+	    .flow-head {
+	      display: flex;
+	      justify-content: space-between;
+	      gap: 12px;
+	      align-items: center;
+	      padding: 14px 16px;
+	      border-bottom: 1px solid var(--line);
+	      background: #f8fafc;
+	    }
+	    .flow-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+	    .flow-help { margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+	    .flow-strip {
+	      display: flex;
+	      gap: 0;
+	      padding: 16px;
+	      overflow-x: auto;
+	      background: linear-gradient(90deg, rgba(37,99,235,0.07), transparent 36%), #ffffff;
+	    }
+	    .flow-empty {
+	      width: 100%;
+	      min-height: 84px;
+	      display: grid;
+	      place-items: center;
+	      color: var(--muted);
+	      border: 1px dashed var(--line);
+	      border-radius: 14px;
+	      background: var(--soft);
+	      font-weight: 850;
+	    }
+	    .flow-item {
+	      flex: 0 0 220px;
+	      display: grid;
+	      grid-template-columns: 34px minmax(0, 1fr) 28px;
+	      gap: 10px;
+	      align-items: start;
+	      min-height: 104px;
+	      padding: 12px;
+	      border: 1px solid var(--line);
+	      border-radius: 14px;
+	      background: #fff;
+	      position: relative;
+	      cursor: grab;
+	    }
+	    .flow-item.dragging { opacity: 0.55; cursor: grabbing; }
+	    .flow-item + .flow-item { margin-left: 42px; }
+	    .flow-item + .flow-item::before {
+	      content: "";
+	      position: absolute;
+	      left: -42px;
+	      top: 50%;
+	      width: 42px;
+	      border-top: 2px solid #94a3b8;
+	    }
+	    .flow-item + .flow-item::after {
+	      content: "";
+	      position: absolute;
+	      left: -10px;
+	      top: calc(50% - 5px);
+	      width: 10px;
+	      height: 10px;
+	      border-top: 2px solid #94a3b8;
+	      border-right: 2px solid #94a3b8;
+	      transform: rotate(45deg);
+	    }
+	    .flow-index {
+	      width: 32px;
+	      height: 32px;
+	      display: grid;
+	      place-items: center;
+	      border-radius: 999px;
+	      background: #e0f2fe;
+	      color: #075985;
+	      font-size: 13px;
+	      font-weight: 950;
+	    }
+	    .flow-title { font-size: 14px; line-height: 1.28; font-weight: 950; }
+	    .flow-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+	    .flow-remove {
+	      width: 28px;
+	      min-height: 28px;
+	      padding: 0;
+	      border-radius: 999px;
+	      background: #f1f5f9;
+	      border: 1px solid var(--line);
+	      color: #475569;
+	      font-size: 16px;
+	      line-height: 1;
+	    }
+	    .flow-item.status-running { border-color: #93c5fd; background: #eff6ff; box-shadow: inset 0 0 0 1px #bfdbfe; }
+	    .flow-item.status-passed { border-color: #86efac; background: #f0fdf4; }
+	    .flow-item.status-failed,
+	    .flow-item.status-timeout { border-color: #fca5a5; background: #fff1f2; }
+	    .flow-item.status-blocked { border-color: #fcd34d; background: #fffbeb; }
+	    .stage {
+      min-width: 0;
+      background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 0 10px;
-      font-size: 14px;
-      color: var(--text);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }
-    .arm {
+    .stage-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+    .stage-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+    .stage-help { margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+      gap: 12px;
+      padding: 14px;
+      align-items: start;
+    }
+    .group-title {
+      grid-column: 1 / -1;
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 10px;
-      border: 1px solid #efc2c2;
-      border-radius: 6px;
-      background: #fff5f5;
-      color: var(--red);
-      font-weight: 650;
-      margin: 10px 0;
-    }
-    .steps {
-      display: grid;
-      gap: 8px;
+      justify-content: space-between;
+      margin: 8px 0 0;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #eef2ff;
+      color: #1e3a8a;
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing: -0.01em;
     }
     .step {
       display: grid;
-      grid-template-columns: 34px minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 12px;
+      min-height: 136px;
       border: 1px solid var(--line);
-      border-radius: 7px;
-      padding: 10px;
-      min-height: 64px;
-    }
-    .step.status-running { border-color: #8bb8ff; background: #f4f8ff; }
-    .step.status-passed { border-color: #9bd5aa; background: #f3fbf5; }
-    .step.status-failed,
-    .step.status-timeout { border-color: #efb0b0; background: #fff5f5; }
-    .step.status-blocked { border-color: #e6c872; background: #fffaf0; }
-    .step.status-starting,
-    .step.status-started,
-    .step.status-restarted { border-color: #9fc4ff; background: #f4f8ff; }
-    .step code {
-      display: block;
-      margin-top: 8px;
-      padding: 8px;
-      border-radius: 6px;
-      background: #f0f3f8;
-      color: #243043;
-      font-size: 12px;
-      line-height: 1.35;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .step input { width: 18px; height: 18px; }
-    .step-title {
-      font-size: 14px;
-      font-weight: 700;
-      line-height: 1.25;
-    }
-    .step-note {
-      margin-top: 3px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.35;
-    }
-    .badge {
-      font-size: 12px;
-      padding: 4px 7px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      white-space: nowrap;
-    }
-    .ok { color: var(--green); background: #effaf2; border-color: #b7dfc2; }
-    .blocked { color: var(--yellow); background: #fff8e6; border-color: #efd38b; }
-    .motion { color: var(--red); background: #fff1f1; border-color: #efc2c2; }
-    .result-badge {
-      display: none;
-      margin-top: 6px;
-      text-align: center;
-    }
-    .result-badge.visible { display: inline-block; }
-    .result-running { color: var(--blue); background: #eef5ff; border-color: #a8c8ff; }
-    .result-passed { color: var(--green); background: #effaf2; border-color: #9bd5aa; }
-    .result-failed,
-    .result-timeout { color: var(--red); background: #fff1f1; border-color: #efb0b0; }
-    .result-blocked { color: var(--yellow); background: #fff8e6; border-color: #e6c872; }
-    .result-starting,
-    .result-started,
-    .result-restarted { color: var(--blue); background: #eef5ff; border-color: #a8c8ff; }
-    .actions {
-      position: sticky;
-      top: 12px;
-      z-index: 20;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin: 12px 0;
-      padding: 10px;
-      border: 1px solid #c8d7f0;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.96);
-      box-shadow: 0 8px 18px rgba(18, 32, 50, 0.10);
-      backdrop-filter: blur(6px);
-    }
-    button {
-      height: 38px;
-      border: 0;
-      border-radius: 6px;
-      padding: 0 14px;
-      font-weight: 700;
+      border-left: 6px solid #cbd5e1;
+      border-radius: 15px;
+      padding: 13px;
+      background: #fff;
       cursor: pointer;
     }
-    #run { background: var(--blue); color: #fff; }
-    #cleanup { background: var(--red); color: #fff; }
-    #stop { background: #343b46; color: #fff; }
-    #selectCore { background: #e9eef7; color: #1f2a3d; }
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      min-height: 520px;
-      max-height: calc(100vh - 96px);
-      overflow: auto;
-      background: #101720;
-      color: #dbe7ff;
-      border-radius: 7px;
-      padding: 14px;
+    .step:hover { border-color: var(--line-strong); box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06); }
+    .step input { width: 22px; height: 22px; margin-top: 2px; }
+    .step-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+    .step-title { font-size: 16px; font-weight: 950; line-height: 1.28; letter-spacing: -0.015em; }
+    .step-note { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+	    .step-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+	    .step-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+	    .step-add {
+	      min-height: 32px;
+	      padding: 0 10px;
+	      border-radius: 9px;
+	      background: #e0f2fe;
+	      border: 1px solid #bae6fd;
+	      color: #075985;
+	      font-size: 13px;
+	    }
+    details.command { margin-top: 10px; }
+    details.command summary {
+      cursor: pointer;
+      color: var(--blue-dark);
+      font-size: 13px;
+      font-weight: 900;
+      list-style: none;
+    }
+    details.command summary::-webkit-details-marker { display: none; }
+    details.command summary::before { content: "▸ "; }
+    details.command[open] summary::before { content: "▾ "; }
+    .step code {
+      display: block;
+      margin-top: 7px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #0f172a;
+      color: #dbeafe;
       font-size: 12px;
       line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 220px;
+      overflow: auto;
     }
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; }
-      .grid { grid-template-columns: 1fr; }
-      .actions,
-      .log-panel {
-        position: static;
-      }
-      pre {
-        max-height: 70vh;
-      }
+    .step.kind-background { border-left-color: var(--purple); }
+    .step.kind-run { border-left-color: var(--blue); }
+    .step.unimplemented { opacity: 0.72; }
+    .step.status-running,
+    .step.status-starting,
+    .step.status-started,
+    .step.status-restarted { border-color: #93c5fd; border-left-color: var(--blue); background: #eff6ff; }
+    .step.status-passed { border-color: #86efac; border-left-color: var(--green); background: #f0fdf4; }
+    .step.status-failed,
+    .step.status-timeout { border-color: #fca5a5; border-left-color: var(--red); background: #fff1f2; }
+    .step.status-blocked { border-color: #fcd34d; border-left-color: var(--yellow); background: #fffbeb; }
+    .result-badge { display: none; }
+    .result-badge.visible { display: inline-flex; }
+    .empty {
+      grid-column: 1 / -1;
+      padding: 34px;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed var(--line);
+      border-radius: 14px;
+      background: var(--soft);
+      font-weight: 800;
     }
+
+    .log-panel {
+      position: sticky;
+      top: 178px;
+      height: calc(100vh - 196px);
+      min-height: 520px;
+      display: grid;
+      grid-template-rows: 48px 1fr;
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      background: #0b1120;
+    }
+    .log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 12px;
+      background: #111827;
+      color: #fff;
+    }
+    .log-title { font-size: 14px; font-weight: 950; }
+    .log-tools { display: flex; gap: 7px; }
+    .log-tools button { min-height: 30px; font-size: 12px; background: #1f2937; border: 1px solid #334155; color: #e5e7eb; }
+    pre {
+      margin: 0;
+      height: 100%;
+      overflow: auto;
+      background: #0b1120;
+      color: #dbeafe;
+      padding: 13px;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 1100px) {
+      .run-row { grid-template-columns: 1fr 1fr; }
+      .search-wrap { grid-column: 1 / -1; }
+      .arm { justify-content: center; }
+	      .field-grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+	      .content-grid { grid-template-columns: 1fr; }
+	      .board { grid-template-columns: 1fr; }
+	      .stage-head { display: block; }
+	      .flow-panel { position: static; }
+	      .flow-head { display: block; }
+	      .log-panel { position: static; height: 420px; min-height: 420px; }
+	    }
+    @media (max-width: 640px) {
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .page { width: calc(100vw - 16px); margin-top: 8px; }
+      .control-panel { top: 0; }
+      .run-row { grid-template-columns: 1fr; }
+	      .field-grid { grid-template-columns: 1fr; }
+	      .board { padding: 10px; }
+	      .step { grid-template-columns: 30px 1fr; min-height: auto; }
+	      .flow-strip { padding: 10px; }
+	      .flow-item { flex-basis: 190px; }
+	      .log-panel { height: 340px; min-height: 340px; }
+	    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Azas Robot Pipeline Control</h1>
+  <header class="topbar">
+    <div class="title-wrap">
+      <h1>Azas Robot Pipeline Control</h1>
+      <div class="subtitle">넓은 단계판 · 상단 고정 실행바 · 오른쪽 상시 로그</div>
+    </div>
+    <div class="header-meta">
+      <span class="pill dark" id="loadedCount">단계 로드 전</span>
+      <span class="pill dark" id="selectedCount">큐 0</span>
+      <span class="pill dark">실제 모션은 arm 체크 필요</span>
+    </div>
   </header>
-  <main>
-    <section class="control-panel">
-      <h2>실행 설정</h2>
-      <div class="grid">
-        <label class="field">ROBOT_HOST
-          <input id="robotHost" type="text" value="192.168.1.100" placeholder="예: 192.168.1.100">
-        </label>
-        <label class="field">ROBOT_NAME
-          <input id="robotName" type="text" value="dsr01">
-        </label>
-        <label class="field">SERVICE_PREFIX
-          <input id="servicePrefix" type="text" value="dsr01">
-        </label>
-        <label class="field">RT_HOST
-          <input id="rtHost" type="text" placeholder="자동: ROBOT_HOST로 가는 PC IP">
-        </label>
-        <label class="field">RG2_IP
-          <input id="rg2Ip" type="text" value="192.168.1.1">
-        </label>
-        <label class="field">DISPENSER_TCP_NAME
-          <input id="dispenserTcpName" type="text" value="GripperDA_v1_jarvis" placeholder="Doosan controller TCP 이름">
-        </label>
+
+  <main class="page">
+    <section class="control-panel" aria-label="control panel">
+      <div class="run-row">
+        <div class="search-wrap">
+          <input id="search" type="search" placeholder="검색: 연결, 디스펜서, 프레스, 쉐이킹...">
+        </div>
+        <label class="arm"><input id="armed" type="checkbox"> 실제 로봇 모션 허용</label>
+        <button id="run" class="main-run">선택 실행</button>
+        <button id="cleanup" class="danger">프로세스 정리</button>
+        <button id="stop" class="dark-btn">실행 중지</button>
       </div>
-      <label class="arm">
-        <input id="armed" type="checkbox">
-        실제 로봇 모션 실행 허용
-      </label>
-      <div class="actions" aria-label="sticky execution controls">
-        <button id="selectCore">핵심 단계 선택</button>
-        <button id="run">선택 실행</button>
-        <button id="cleanup">프로세스 정리</button>
-        <button id="stop">실행 중지</button>
+
+      <div class="quick-row" aria-label="quick selection">
+        <button data-select="core">연결/상태 선택</button>
+        <button data-select="move">컵 이동 선택</button>
+        <button data-select="press">프레스 선택</button>
+        <button data-select="shake">쉐이킹 선택</button>
+        <button data-select="visible">현재 보이는 것 선택</button>
+        <button data-select="clear" class="danger-light">선택 해제</button>
+        <button id="refresh" class="plain-btn">단계 새로고침</button>
+        <button id="focusLog" class="plain-btn">로그로 이동</button>
       </div>
-      <h2>파이프라인 단계</h2>
-      <div id="steps" class="steps"></div>
+
+      <details class="settings">
+        <summary>설정 보기 / 숨기기</summary>
+        <div class="field-grid">
+          <label class="field">ROBOT_HOST
+            <input id="robotHost" type="text" value="192.168.1.100" placeholder="예: 192.168.1.100">
+          </label>
+          <label class="field">ROBOT_NAME
+            <input id="robotName" type="text" value="dsr01">
+          </label>
+          <label class="field">SERVICE_PREFIX
+            <input id="servicePrefix" type="text" value="dsr01">
+          </label>
+          <label class="field">RT_HOST
+            <input id="rtHost" type="text" placeholder="자동: ROBOT_HOST로 가는 PC IP">
+          </label>
+          <label class="field">RG2_IP
+            <input id="rg2Ip" type="text" value="192.168.1.1">
+          </label>
+          <label class="field">DISPENSER_TCP_NAME
+            <input id="dispenserTcpName" type="text" value="GripperDA_v1_jarvis" placeholder="Doosan controller TCP 이름">
+          </label>
+        </div>
+      </details>
+	    </section>
+	
+	    <section class="flow-panel" aria-label="selected execution order">
+	      <div class="flow-head">
+	        <div>
+	          <h2>선택 실행 순서</h2>
+	          <div class="flow-help">큐 순서대로 실행됩니다. 같은 단계는 여러 번 추가할 수 있고, 노드를 드래그해서 순서를 바꿀 수 있습니다.</div>
+	        </div>
+	        <span class="pill info" id="flowMode">대기</span>
+	      </div>
+	      <div id="flow" class="flow-strip"></div>
+	    </section>
+	
+	    <div class="content-grid">
+    <section class="stage">
+      <div class="stage-head">
+        <div>
+          <h2>파이프라인 단계</h2>
+          <div class="stage-help">긴 명령어는 카드 안의 “명령 보기”에 숨겼습니다. 평소에는 단계 이름/상태만 보고 누르면 됩니다.</div>
+        </div>
+      </div>
+      <div id="steps" class="board"></div>
     </section>
-    <section class="log-panel">
-      <h2>실행 로그</h2>
-      <pre id="log">서버 연결 대기...</pre>
-    </section>
+
+    <aside id="logPanel" class="log-panel" aria-label="execution log">
+    <div class="log-head">
+      <div class="log-title">실행 로그</div>
+      <div class="log-tools">
+        <button id="copyLog">복사</button>
+        <button id="clearLog">지우기</button>
+      </div>
+    </div>
+    <pre id="log">서버 연결 대기...</pre>
+    </aside>
+    </div>
   </main>
+
   <script>
-    const core = new Set([
-      "connect_robot",
-      "status_check"
-    ]);
-    const log = document.getElementById("log");
-    const stepsEl = document.getElementById("steps");
+    const core = new Set(["connect_robot", "status_check"]);
+    const groupOrder = ["core", "grip", "move", "press", "shake", "blocked", "etc"];
+    const groupLabels = {
+      core: "연결/준비",
+      grip: "그리퍼",
+      move: "컵 이동/배치",
+      press: "디스펜서 프레스",
+      shake: "쉐이킹",
+      blocked: "미구현/보류",
+      etc: "기타"
+    };
     const statusLabels = {
       running: "실행 중",
       starting: "시작 중",
@@ -282,6 +598,56 @@
       blocked: "차단",
       timeout: "시간초과"
     };
+    const log = document.getElementById("log");
+    const logPanel = document.getElementById("logPanel");
+	    const stepsEl = document.getElementById("steps");
+	    const flowEl = document.getElementById("flow");
+	    const flowModeEl = document.getElementById("flowMode");
+	    const selectedCountEl = document.getElementById("selectedCount");
+	    const loadedCountEl = document.getElementById("loadedCount");
+	    let allSteps = [];
+	    let selectedQueue = [];
+	    let resultStatuses = new Map();
+	    let itemStatuses = new Map();
+	    let isRunning = false;
+	    let nextQueueId = 1;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function stepGroup(step) {
+      const key = step.key || "";
+      if (core.has(key)) return "core";
+      if (key.includes("gripper")) return "grip";
+      if (key.startsWith("move_to_dispenser") || key.includes("cup") || key.includes("holder") || key.includes("side_grip") || key.includes("home") || key.includes("lift")) return "move";
+      if (key.startsWith("press_dispenser")) return "press";
+      if (key.includes("shake")) return "shake";
+      if (!step.implemented || step.kind === "blocked") return "blocked";
+      return "etc";
+    }
+
+    function countsByGroup() {
+      const counts = { all: allSteps.length, motion: allSteps.filter((s) => s.real_motion).length, blocked: allSteps.filter((s) => !s.implemented || s.kind === "blocked").length };
+      for (const group of groupOrder) counts[group] = allSteps.filter((step) => stepGroup(step) === group).length;
+      return counts;
+    }
+
+    function matchesSearch(step) {
+      const q = document.getElementById("search").value.trim().toLowerCase();
+      if (!q) return true;
+      return [step.key, step.label, step.note, step.resolved_command, step.command]
+        .some((item) => String(item || "").toLowerCase().includes(q));
+    }
+
+    function visibleSteps() {
+      return allSteps.filter((step) => matchesSearch(step));
+    }
 
     function payload() {
       return {
@@ -292,130 +658,341 @@
         rg2_ip: document.getElementById("rg2Ip").value.trim(),
         dispenser_tcp_name: document.getElementById("dispenserTcpName").value.trim(),
         armed: document.getElementById("armed").checked,
-        selected: Array.from(document.querySelectorAll(".step-check:checked")).map((item) => item.value)
+        selected: selectedStepKeys()
       };
     }
 
-    function renderSteps(steps) {
-      stepsEl.innerHTML = "";
-      for (const step of steps) {
-        const row = document.createElement("label");
-        row.className = "step";
-        row.dataset.stepKey = step.key;
-        row.innerHTML = `
-          <input class="step-check" type="checkbox" value="${step.key}">
-          <div>
-            <div class="step-title">${step.label}</div>
-            <div class="step-note">${step.note}</div>
-            <code>${step.resolved_command || step.command || "실행 명령 없음"}</code>
-          </div>
-          <div>
-            <span class="badge ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
-            ${step.real_motion ? `<span class="badge motion">실제모션</span>` : ""}
-            <span class="badge result-badge" data-result-for="${step.key}"></span>
-          </div>
-        `;
-        stepsEl.appendChild(row);
-      }
-      log.textContent = "단계 목록 로드 완료";
+	    function renderSummary() {
+	      const total = allSteps.length;
+	      loadedCountEl.textContent = `단계 ${total}`;
+	    }
+
+	    function stepByKey(key) {
+	      return allSteps.find((step) => step.key === key);
+	    }
+
+	    function queuedKeysSet() {
+	      return new Set(selectedQueue.map((item) => item.key));
+	    }
+
+	    function addQueueItem(key) {
+	      if (!stepByKey(key)) return;
+	      selectedQueue.push({id: `q${nextQueueId++}`, key});
+	    }
+
+	    function removeQueueItem(id) {
+	      selectedQueue = selectedQueue.filter((item) => item.id !== id);
+	      itemStatuses.delete(id);
+	    }
+
+	    function removeQueueKey(key) {
+	      selectedQueue = selectedQueue.filter((item) => item.key !== key);
+	      for (const [id] of itemStatuses) {
+	        if (!selectedQueue.some((item) => item.id === id)) itemStatuses.delete(id);
+	      }
+	    }
+
+	    function compactSelectionQueue() {
+	      const known = new Set(allSteps.map((step) => step.key));
+	      selectedQueue = selectedQueue.filter((item) => known.has(item.key));
+	      for (const [id] of itemStatuses) {
+	        if (!selectedQueue.some((item) => item.id === id)) itemStatuses.delete(id);
+	      }
+	    }
+
+    function statusBadgeClass(status) {
+      if (status === "passed") return "ok";
+      if (status === "blocked") return "blocked";
+      if (status === "failed" || status === "timeout") return "real";
+      return "info";
     }
 
-    function resetResultBadges() {
+    function orderedVisibleGroups() {
+      const byGroup = new Map(groupOrder.map((group) => [group, []]));
+      for (const step of visibleSteps()) {
+        const group = stepGroup(step);
+        if (!byGroup.has(group)) byGroup.set(group, []);
+        byGroup.get(group).push(step);
+      }
+      return Array.from(byGroup.entries()).filter(([, steps]) => steps.length > 0);
+    }
+
+	    function renderSteps() {
+	      renderSummary();
+      const grouped = orderedVisibleGroups();
+      if (!grouped.length) {
+        stepsEl.innerHTML = `<div class="empty">조건에 맞는 단계가 없습니다.</div>`;
+        updateSelectedCount();
+        return;
+      }
+      const parts = [];
+      for (const [group, steps] of grouped) {
+        parts.push(`<div class="group-title"><span>${escapeHtml(groupLabels[group] || group)}</span><span>${steps.length}개</span></div>`);
+	        for (const step of steps) {
+	          const cmd = step.resolved_command || step.command || "실행 명령 없음";
+	          const status = resultStatuses.get(step.key);
+	          const statusClass = status ? `status-${status}` : "";
+	          const isQueued = queuedKeysSet().has(step.key);
+	          const result = status
+	            ? `<span class="pill result-badge visible ${statusBadgeClass(status)}" data-result-for="${escapeHtml(step.key)}">${escapeHtml(statusLabels[status] || status)}</span>`
+	            : `<span class="pill result-badge" data-result-for="${escapeHtml(step.key)}"></span>`;
+	          parts.push(`
+	            <label class="step kind-${escapeHtml(step.kind)} ${statusClass} ${step.implemented ? "" : "unimplemented"}" data-step-key="${escapeHtml(step.key)}" data-group="${group}">
+	              <input class="step-check" type="checkbox" value="${escapeHtml(step.key)}" ${isQueued ? "checked" : ""}>
+	              <div>
+                <div class="step-top">
+                  <div class="step-title">${escapeHtml(step.label)}</div>
+                  <span class="pill kind">${escapeHtml(step.kind)}</span>
+                </div>
+                <div class="step-note">${escapeHtml(step.note)}</div>
+                <div class="step-meta">
+                  <span class="pill ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
+	                  ${step.real_motion ? `<span class="pill real">실제모션</span>` : ""}
+	                  ${result}
+	                </div>
+	                <div class="step-actions">
+	                  <button class="step-add" type="button" data-add-step="${escapeHtml(step.key)}">순서에 추가</button>
+	                </div>
+	                <details class="command">
+                  <summary>명령 보기</summary>
+                  <code>${escapeHtml(cmd)}</code>
+                </details>
+              </div>
+            </label>
+          `);
+        }
+      }
+	      stepsEl.innerHTML = parts.join("");
+	      updateSelectedCount();
+	    }
+
+	    function renderFlow(currentId = "") {
+	      compactSelectionQueue();
+	      if (!selectedQueue.length) {
+	        flowEl.innerHTML = `<div class="flow-empty">아직 선택된 단계가 없습니다.</div>`;
+	        flowModeEl.textContent = isRunning ? "실행 중" : "대기";
+	        return;
+	      }
+	      const parts = [];
+	      selectedQueue.forEach((item, index) => {
+	        const step = stepByKey(item.key);
+	        if (!step) return;
+	        const status = itemStatuses.get(item.id) || (item.id === currentId ? "running" : "");
+	        const statusClass = status ? `status-${status}` : "";
+	        const statusLabel = status ? statusLabels[status] || status : "대기";
+	        parts.push(`
+	          <div class="flow-item ${statusClass}" draggable="true" data-flow-id="${escapeHtml(item.id)}" data-flow-key="${escapeHtml(item.key)}">
+	            <div class="flow-index">${index + 1}</div>
+	            <div>
+	              <div class="flow-title">${escapeHtml(step.label)}</div>
+	              <div class="flow-meta">
+	                <span class="pill kind">${escapeHtml(stepGroup(step))}</span>
+	                <span class="pill ${status ? statusBadgeClass(status) : "kind"}">${escapeHtml(statusLabel)}</span>
+	                ${step.real_motion ? `<span class="pill real">실제모션</span>` : ""}
+	              </div>
+	            </div>
+	            <button class="flow-remove" type="button" data-remove-flow="${escapeHtml(item.id)}" title="순서에서 제거">×</button>
+	          </div>
+	        `);
+	      });
+	      flowEl.innerHTML = parts.join("");
+	      flowModeEl.textContent = isRunning ? "실행 중" : `큐 ${selectedQueue.length}`;
+	    }
+
+	    function resetResultBadges() {
+	      resultStatuses = new Map();
+	      itemStatuses = new Map();
       for (const row of document.querySelectorAll(".step")) {
-        row.classList.remove(
-          "status-running",
-          "status-starting",
-          "status-started",
-          "status-restarted",
-          "status-passed",
-          "status-failed",
-          "status-blocked",
-          "status-timeout"
-        );
+        row.classList.remove("status-running", "status-starting", "status-started", "status-restarted", "status-passed", "status-failed", "status-blocked", "status-timeout");
       }
-      for (const badge of document.querySelectorAll(".result-badge")) {
-        badge.className = "badge result-badge";
-        badge.textContent = "";
-      }
-    }
+	      for (const badge of document.querySelectorAll(".result-badge")) {
+	        badge.className = "pill result-badge";
+	        badge.textContent = "";
+	      }
+	      renderFlow();
+	    }
 
-    function setStepStatus(key, status) {
-      const row = document.querySelector(`.step[data-step-key="${CSS.escape(key)}"]`);
-      const badge = document.querySelector(`.result-badge[data-result-for="${CSS.escape(key)}"]`);
-      if (!row || !badge) return;
-      const safeStatus = statusLabels[status] ? status : "failed";
-      row.classList.remove(
-        "status-running",
-        "status-starting",
-        "status-started",
-        "status-restarted",
-        "status-passed",
-        "status-failed",
-        "status-blocked",
-        "status-timeout"
-      );
-      row.classList.add(`status-${safeStatus}`);
-      badge.className = `badge result-badge visible result-${safeStatus}`;
-      badge.textContent = statusLabels[safeStatus];
-    }
+	    function setStepStatus(key, status, itemId = "") {
+	      const safeStatus = statusLabels[status] ? status : "failed";
+	      resultStatuses.set(key, safeStatus);
+	      if (itemId) itemStatuses.set(itemId, safeStatus);
+	      const row = document.querySelector(`.step[data-step-key="${CSS.escape(key)}"]`);
+	      const badge = document.querySelector(`.result-badge[data-result-for="${CSS.escape(key)}"]`);
+	      if (!row || !badge) {
+	        renderFlow();
+	        return;
+	      }
+      row.classList.remove("status-running", "status-starting", "status-started", "status-restarted", "status-passed", "status-failed", "status-blocked", "status-timeout");
+	      row.classList.add(`status-${safeStatus}`);
+	      badge.className = `pill result-badge visible ${statusBadgeClass(safeStatus)}`;
+	      badge.textContent = statusLabels[safeStatus];
+	      renderFlow();
+	    }
+	
+	    function selectedStepKeys() {
+	      compactSelectionQueue();
+	      return selectedQueue.map((item) => item.key);
+	    }
 
-    function selectedStepKeys() {
-      return Array.from(document.querySelectorAll(".step-check:checked")).map((item) => item.value);
+	    function syncRenderedChecks() {
+	      const queued = queuedKeysSet();
+	      for (const input of document.querySelectorAll(".step-check")) input.checked = queued.has(input.value);
+	    }
+
+	    function updateSelectedCount() {
+	      syncRenderedChecks();
+	      selectedCountEl.textContent = `큐 ${selectedStepKeys().length}`;
+	      renderSummary();
+	      renderFlow();
+	    }
+	
+	    function selectByMode(mode) {
+	      const visible = new Set(visibleSteps().map((step) => step.key));
+	      let keys = [];
+	      if (mode === "clear") keys = [];
+	      else if (mode === "visible") keys = allSteps.filter((step) => visible.has(step.key)).map((step) => step.key);
+	      else if (mode === "core") keys = allSteps.filter((step) => core.has(step.key)).map((step) => step.key);
+	      else keys = allSteps.filter((step) => stepGroup(step) === mode).map((step) => step.key);
+	      selectedQueue = keys.map((key) => ({id: `q${nextQueueId++}`, key}));
+	      itemStatuses = new Map();
+	      updateSelectedCount();
+	    }
+
+    function focusLog() {
+      logPanel.scrollIntoView({behavior: "smooth", block: "nearest"});
     }
 
     async function loadSteps() {
-      const res = await fetch("/api/steps");
-      renderSteps(await res.json());
-    }
+      log.textContent = "단계 목록 로드 중...";
+	      const res = await fetch("/api/steps");
+	      allSteps = await res.json();
+	      const knownKeys = new Set(allSteps.map((step) => step.key));
+	      selectedQueue = selectedQueue.filter((item) => knownKeys.has(item.key));
+	      renderSteps();
+	      log.textContent = "단계 목록 로드 완료. 상단 검색/필터 또는 빠른 선택을 사용하세요.";
+	    }
 
-    document.getElementById("selectCore").addEventListener("click", () => {
-      for (const input of document.querySelectorAll(".step-check")) {
-        input.checked = core.has(input.value);
-      }
+	    document.addEventListener("change", (event) => {
+	      if (!event.target.classList?.contains("step-check")) return;
+	      if (event.target.checked) {
+	        if (!selectedQueue.some((item) => item.key === event.target.value)) addQueueItem(event.target.value);
+	      } else {
+	        removeQueueKey(event.target.value);
+	      }
+	      updateSelectedCount();
+	    });
+	    document.addEventListener("click", (event) => {
+	      const addKey = event.target?.dataset?.addStep;
+	      if (addKey) {
+	        event.preventDefault();
+	        event.stopPropagation();
+	        addQueueItem(addKey);
+	        updateSelectedCount();
+	        return;
+	      }
+	      const removeId = event.target?.dataset?.removeFlow;
+	      if (removeId) {
+	        removeQueueItem(removeId);
+	        updateSelectedCount();
+	      }
+	    });
+	    flowEl.addEventListener("dragstart", (event) => {
+	      const item = event.target.closest(".flow-item");
+	      if (!item) return;
+	      item.classList.add("dragging");
+	      event.dataTransfer.effectAllowed = "move";
+	      event.dataTransfer.setData("text/plain", item.dataset.flowId || "");
+	    });
+	    flowEl.addEventListener("dragend", (event) => {
+	      event.target.closest(".flow-item")?.classList.remove("dragging");
+	    });
+	    flowEl.addEventListener("dragover", (event) => {
+	      event.preventDefault();
+	      event.dataTransfer.dropEffect = "move";
+	    });
+	    flowEl.addEventListener("drop", (event) => {
+	      event.preventDefault();
+	      const draggedId = event.dataTransfer.getData("text/plain");
+	      const target = event.target.closest(".flow-item");
+	      if (!draggedId || !target || target.dataset.flowId === draggedId) return;
+	      const from = selectedQueue.findIndex((item) => item.id === draggedId);
+	      const to = selectedQueue.findIndex((item) => item.id === target.dataset.flowId);
+	      if (from < 0 || to < 0) return;
+	      const [moved] = selectedQueue.splice(from, 1);
+	      selectedQueue.splice(to, 0, moved);
+	      updateSelectedCount();
+	    });
+    document.getElementById("search").addEventListener("input", renderSteps);
+    document.getElementById("refresh").addEventListener("click", loadSteps);
+    document.querySelector(".quick-row").addEventListener("click", (event) => {
+      const mode = event.target?.dataset?.select;
+      if (mode) selectByMode(mode);
     });
+    document.getElementById("focusLog").addEventListener("click", focusLog);
 
-    document.getElementById("run").addEventListener("click", async () => {
-      const selected = selectedStepKeys();
-      const selectedSet = new Set(selected);
-      resetResultBadges();
-      for (const key of selected) {
-        setStepStatus(key, "running");
-      }
-      log.textContent = "실행 중...";
-      try {
-        const res = await fetch("/api/run", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(payload())
-        });
-        const data = await res.json();
-        for (const result of data.results || []) {
-          setStepStatus(result.key, result.status);
-        }
-        log.textContent = JSON.stringify(data, null, 2);
-      } finally {
-        for (const input of document.querySelectorAll(".step-check")) {
-          if (selectedSet.has(input.value)) {
-            input.checked = false;
-          }
-        }
-      }
-    });
+	    document.getElementById("run").addEventListener("click", async () => {
+	      const selected = selectedQueue.map((item) => ({...item}));
+	      resetResultBadges();
+	      isRunning = Boolean(selected.length);
+	      renderFlow(selected[0]?.id || "");
+	      log.textContent = selected.length ? `실행 중... (${selected.length}개 단계, 큐 순서대로 실행)` : "선택된 단계가 없습니다.";
+	      focusLog();
+	      if (!selected.length) return;
+	      try {
+	        const results = [];
+	        for (const [index, item] of selected.entries()) {
+	          setStepStatus(item.key, "running", item.id);
+	          renderFlow(item.id);
+	          log.textContent = `실행 중 ${index + 1}/${selected.length}: ${stepByKey(item.key)?.label || item.key}`;
+	          const body = payload();
+	          body.selected = [item.key];
+	          const res = await fetch("/api/run", {
+	            method: "POST",
+	            headers: {"Content-Type": "application/json"},
+	            body: JSON.stringify(body)
+	          });
+	          const data = await res.json();
+	          const result = (data.results || [])[0] || {key: item.key, status: "failed", output: "결과 없음"};
+	          results.push(result);
+	          setStepStatus(result.key || item.key, result.status, item.id);
+	          if (result.status === "failed" || result.status === "blocked" || result.status === "timeout") break;
+	        }
+	        log.textContent = JSON.stringify({execution_order: selected.map((item) => item.key), results}, null, 2);
+	      } catch (err) {
+	        log.textContent = String(err);
+	      } finally {
+	        isRunning = false;
+	        updateSelectedCount();
+	      }
+	    });
 
     document.getElementById("stop").addEventListener("click", async () => {
+      focusLog();
       const res = await fetch("/api/stop", {method: "POST"});
       log.textContent = JSON.stringify(await res.json(), null, 2);
     });
-
     document.getElementById("cleanup").addEventListener("click", async () => {
+      focusLog();
       log.textContent = "프로세스 정리 중...";
       const res = await fetch("/api/cleanup", {method: "POST"});
       log.textContent = JSON.stringify(await res.json(), null, 2);
     });
-
-    loadSteps().catch((err) => {
-      log.textContent = String(err);
+    document.getElementById("clearLog").addEventListener("click", () => { log.textContent = ""; });
+    document.getElementById("copyLog").addEventListener("click", async () => {
+      const text = log.textContent || "";
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
     });
+
+    loadSteps().catch((err) => { log.textContent = String(err); focusLog(); });
   </script>
 </body>
 </html>

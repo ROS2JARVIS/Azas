@@ -65,6 +65,13 @@ def generate_launch_description():
     shake_joint_velocity = LaunchConfiguration("shake_joint_velocity")
     shake_joint_acceleration = LaunchConfiguration("shake_joint_acceleration")
     shake_joint_time = LaunchConfiguration("shake_joint_time")
+    joint_shake_peak_velocity_limit_deg_s = LaunchConfiguration(
+        "joint_shake_peak_velocity_limit_deg_s"
+    )
+    verify_joint_targets = LaunchConfiguration("verify_joint_targets")
+    joint_target_tolerance_deg = LaunchConfiguration("joint_target_tolerance_deg")
+    joint_target_wait_extra_sec = LaunchConfiguration("joint_target_wait_extra_sec")
+    joint_target_poll_sec = LaunchConfiguration("joint_target_poll_sec")
     require_state_validity_for_joint_shake = LaunchConfiguration(
         "require_state_validity_for_joint_shake"
     )
@@ -185,6 +192,20 @@ def generate_launch_description():
         "shake_joint_velocity": ParameterValue(shake_joint_velocity, value_type=float),
         "shake_joint_acceleration": ParameterValue(shake_joint_acceleration, value_type=float),
         "shake_joint_time": ParameterValue(shake_joint_time, value_type=float),
+        "joint_shake_peak_velocity_limit_deg_s": ParameterValue(
+            joint_shake_peak_velocity_limit_deg_s,
+            value_type=float,
+        ),
+        "verify_joint_targets": ParameterValue(verify_joint_targets, value_type=bool),
+        "joint_target_tolerance_deg": ParameterValue(
+            joint_target_tolerance_deg,
+            value_type=float,
+        ),
+        "joint_target_wait_extra_sec": ParameterValue(
+            joint_target_wait_extra_sec,
+            value_type=float,
+        ),
+        "joint_target_poll_sec": ParameterValue(joint_target_poll_sec, value_type=float),
         "require_state_validity_for_joint_shake": ParameterValue(
             require_state_validity_for_joint_shake,
             value_type=bool,
@@ -238,9 +259,9 @@ def generate_launch_description():
             DeclareLaunchArgument("joint_shake_base_j5_deg", default_value="70.0"),
             DeclareLaunchArgument("joint_shake_base_j6_deg", default_value="0.0"),
             DeclareLaunchArgument("joint_shake_j3_amplitude_deg", default_value="0.0"),
-            DeclareLaunchArgument("joint_shake_j4_amplitude_deg", default_value="18.0"),
+            DeclareLaunchArgument("joint_shake_j4_amplitude_deg", default_value="25.0"),
             DeclareLaunchArgument("joint_shake_j5_amplitude_deg", default_value="30.0"),
-            DeclareLaunchArgument("joint_shake_j6_amplitude_deg", default_value="36.0"),
+            DeclareLaunchArgument("joint_shake_j6_amplitude_deg", default_value="37.0"),
             DeclareLaunchArgument("joint_shake_j1_min_deg", default_value="-20.0"),
             DeclareLaunchArgument("joint_shake_j1_max_deg", default_value="5.0"),
             DeclareLaunchArgument("joint_shake_j2_min_deg", default_value="-80.0"),
@@ -251,9 +272,14 @@ def generate_launch_description():
             DeclareLaunchArgument("approach_joint_velocity", default_value="18.0"),
             DeclareLaunchArgument("approach_joint_acceleration", default_value="22.0"),
             DeclareLaunchArgument("approach_joint_time", default_value="2.6"),
-            DeclareLaunchArgument("shake_joint_velocity", default_value="95.0"),
-            DeclareLaunchArgument("shake_joint_acceleration", default_value="150.0"),
-            DeclareLaunchArgument("shake_joint_time", default_value="0.32"),
+            DeclareLaunchArgument("shake_joint_velocity", default_value="180.0"),
+            DeclareLaunchArgument("shake_joint_acceleration", default_value="260.0"),
+            DeclareLaunchArgument("shake_joint_time", default_value="0.0"),
+            DeclareLaunchArgument("joint_shake_peak_velocity_limit_deg_s", default_value="225.0"),
+            DeclareLaunchArgument("verify_joint_targets", default_value="true"),
+            DeclareLaunchArgument("joint_target_tolerance_deg", default_value="8.0"),
+            DeclareLaunchArgument("joint_target_wait_extra_sec", default_value="3.0"),
+            DeclareLaunchArgument("joint_target_poll_sec", default_value="0.05"),
             DeclareLaunchArgument("require_state_validity_for_joint_shake", default_value="false"),
             DeclareLaunchArgument("state_validity_service", default_value="/check_state_validity"),
             DeclareLaunchArgument("planning_group", default_value="manipulator"),

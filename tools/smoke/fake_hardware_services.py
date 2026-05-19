@@ -9,7 +9,15 @@ from __future__ import annotations
 
 import rclpy
 from azas_interfaces.srv import SetGripper
-from dsr_msgs2.srv import GetCurrentPosx, GetCurrentTcp, MoveJoint, MoveLine, MoveWait, SetCurrentTcp
+from dsr_msgs2.srv import (
+    GetCurrentPosj,
+    GetCurrentPosx,
+    GetCurrentTcp,
+    MoveJoint,
+    MoveLine,
+    MoveWait,
+    SetCurrentTcp,
+)
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
@@ -26,6 +34,7 @@ class FakeHardwareServices(Node):
         aux_prefix = f"/{prefix}/aux_control" if prefix else "/aux_control"
         tcp_prefix = f"/{prefix}/tcp" if prefix else "/tcp"
         self.current_posx = [224.819, 4.105, 453.241, 89.8, 179.9, 120.3]
+        self.current_posj = [0.0, -35.0, 50.0, 0.0, 70.0, 0.0]
         self.current_tcp = "GripperDA_v1_jarvis"
         self.create_service(MoveJoint, f"{motion_prefix}/move_joint", self.on_move_joint)
         self.create_service(MoveLine, f"{motion_prefix}/move_line", self.on_move_line)
@@ -34,6 +43,11 @@ class FakeHardwareServices(Node):
             GetCurrentPosx,
             f"{aux_prefix}/get_current_posx",
             self.on_get_current_posx,
+        )
+        self.create_service(
+            GetCurrentPosj,
+            f"{aux_prefix}/get_current_posj",
+            self.on_get_current_posj,
         )
         self.create_service(GetCurrentTcp, f"{tcp_prefix}/get_current_tcp", self.on_get_current_tcp)
         self.create_service(SetCurrentTcp, f"{tcp_prefix}/set_current_tcp", self.on_set_current_tcp)
@@ -44,6 +58,7 @@ class FakeHardwareServices(Node):
             "Fake/no-motion hardware services ready; does not command real RG2 or Doosan: "
             f"{motion_prefix}/move_joint, {motion_prefix}/move_line, "
             f"{motion_prefix}/move_wait, {aux_prefix}/get_current_posx, "
+            f"{aux_prefix}/get_current_posj, "
             f"{tcp_prefix}/get_current_tcp, {tcp_prefix}/set_current_tcp, "
             "/jarvis/rg2/open, /jarvis/rg2/close, /jarvis/rg2/set_width"
         )
@@ -53,6 +68,7 @@ class FakeHardwareServices(Node):
             "fake move_joint: "
             f"pos={list(request.pos)} vel={request.vel} acc={request.acc}"
         )
+        self.current_posj = [float(value) for value in request.pos[:6]]
         self.current_posx = [224.819, 4.105, 453.241, 89.8, 179.9, 120.3]
         response.success = True
         return response
@@ -76,6 +92,12 @@ class FakeHardwareServices(Node):
         response.task_pos_info = [Float64MultiArray(data=list(self.current_posx))]
         response.success = True
         self.get_logger().info(f"fake get_current_posx: pos={self.current_posx}")
+        return response
+
+    def on_get_current_posj(self, request, response):
+        response.pos = list(self.current_posj)
+        response.success = True
+        self.get_logger().info(f"fake get_current_posj: pos={self.current_posj}")
         return response
 
     def on_get_current_tcp(self, request, response):

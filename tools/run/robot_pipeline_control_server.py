@@ -22,9 +22,9 @@ except ImportError:  # pragma: no cover - local panel can still run without tree
     psutil = None
 
 
-ROOT = Path("/home/ssu/Azas")
+ROOT = Path(__file__).resolve().parents[2]
 HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
-ROS_SETUP = "source /opt/ros/humble/setup.bash && source /home/ssu/Azas/install/local_setup.bash"
+ROS_SETUP = f"source /opt/ros/humble/setup.bash && source {shlex.quote(str(ROOT / 'install' / 'local_setup.bash'))}"
 DEFAULT_ROBOT_HOST = "192.168.1.100"
 DEFAULT_DISPENSER_TCP_NAME = "GripperDA_v1_jarvis"
 FAST_MOVE_VELOCITY = "30"
@@ -193,7 +193,7 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J3 양수 고정, J4/J5/J6 조인트 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
+    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J3 양수 고정, J4/J5/J6 트위스트 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
     Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
     Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
 ]
@@ -611,6 +611,7 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
     if step.key == "shake_closed_cup":
         return [
             f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/move_wait",
             f"/{clean}/motion/check_motion",
             f"/{clean}/aux_control/get_current_posj",
             f"/{clean}/system/get_robot_state",
@@ -649,10 +650,17 @@ def missing_required_services(step: Step, service_prefix: str) -> tuple[list[str
         required,
         timeout_sec=required_service_wait_timeout(step),
     )
+    if ready:
+        # Trust the successful wait sample.  ROS 2/DDS service discovery can
+        # briefly return a partial graph on the very next `ros2 service list`,
+        # especially after earlier panel steps have just exercised Doosan and
+        # MoveIt services.  Re-listing here caused false blocks that reported
+        # both "required services became ready" and "missing" in the same
+        # response.  Real motion is still gated below by direct service calls
+        # (`get_robot_state`, `check_motion`) before any movement command runs.
+        return [], wait_output
     services, output = ros_service_names(timeout_sec=2.0)
     missing = [service for service in required if service not in services]
-    if ready and not missing:
-        return [], wait_output
     return missing, wait_output + "\n--- final service list ---\n" + output
 
 
@@ -1052,18 +1060,19 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--approach-velocity 15.0 --approach-acceleration 20.0 "
             "--place-velocity 6.0 --place-acceleration 10.0 "
             "--retreat-velocity 12.0 --retreat-acceleration 16.0 "
-            "--target-tolerance-mm 12.0 --verify-timeout-sec 35.0 "
+            "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
+            "--z-max 0.28 "
             "--execute --confirm ENABLE_CUP_HOLDER_PLACE"
         )
     if step.key == "shake_closed_cup":
         return (
             f"cd {ROOT} && SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
-            "REQUIRE_ROBOT_STANDBY=false SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
+            "REQUIRE_ROBOT_STANDBY=true SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
             "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
             "JOINT_SHAKE_BASE_J3_DEG=50.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
             "JOINT_SHAKE_BASE_J5_DEG=70.0 JOINT_SHAKE_BASE_J6_DEG=0.0 "
-            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=18.0 "
-            "JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=36.0 "
+            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=25.0 "
+            "JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=37.0 "
             "JOINT_SHAKE_J1_MIN_DEG=-20.0 JOINT_SHAKE_J1_MAX_DEG=5.0 "
             "JOINT_SHAKE_J2_MIN_DEG=-80.0 JOINT_SHAKE_J2_MAX_DEG=5.0 "
             "JOINT_SHAKE_J3_MIN_DEG=0.0 JOINT_SHAKE_J3_MAX_DEG=135.0 "
@@ -1071,8 +1080,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "ENFORCE_WRIST_JOINT_LIMITS=false WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
             "JOINT5_MIN_DEG=40.0 JOINT5_MAX_DEG=100.0 "
             "APPROACH_JOINT_VELOCITY=18.0 APPROACH_JOINT_ACCELERATION=22.0 "
-            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=95.0 "
-            "SHAKE_JOINT_ACCELERATION=150.0 SHAKE_JOINT_TIME=0.32 "
+            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=180.0 "
+            "SHAKE_JOINT_ACCELERATION=260.0 SHAKE_JOINT_TIME=0.0 "
+            "JOINT_SHAKE_PEAK_VELOCITY_LIMIT_DEG_S=225.0 "
+            "VERIFY_JOINT_TARGETS=true JOINT_TARGET_TOLERANCE_DEG=8.0 "
+            "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
         )
@@ -1423,8 +1435,13 @@ class Handler(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(length) or b"{}")
         path = urlparse(self.path).path
         if path == "/api/run":
-            selected = set(payload.get("selected") or [])
-            results = [run_step(step, payload) for step in STEPS if step.key in selected]
+            selected = [str(key) for key in payload.get("selected") or []]
+            steps_by_key = {step.key: step for step in STEPS}
+            results = [
+                run_step(steps_by_key[key], payload)
+                for key in selected
+                if key in steps_by_key
+            ]
             self.send_json({"results": results})
             return
         if path == "/api/stop":

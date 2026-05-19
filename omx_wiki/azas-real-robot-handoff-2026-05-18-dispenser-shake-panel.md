@@ -362,6 +362,72 @@ Validation:
 
 No real robot motion was executed for this validation.
 
+## 2026-05-19 update — more dynamic joint-space cocktail shake
+
+User requested a more dynamic shake while preserving the safety rules already established for real robot testing.
+
+### Safety constraints preserved
+
+- Joint-space mode remains the panel default for `shake_closed_cup`.
+- `joint_1`: `[-20, 5]` deg.
+- `joint_2`: `[-80, 5]` deg.
+- `joint_3`: fixed positive at `50 deg`, allowed range `[0, 135]`; no negative J3 shake.
+- `joint_5`: constrained to `[40, 100]` deg.
+- `joint_shake_max_single_delta_deg=75`.
+- Panel still uses `REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true`.
+
+### Change applied
+
+- `src/azas_motion/azas_motion/tumbler_shake_sequence_node.py`
+  - Reworked joint shake cycle into a more cocktail-like wrist pattern:
+    - `j5_j6_plus`
+    - `wrist_snap_minus`
+    - `j5_j6_minus`
+    - `wrist_snap_plus`
+    - `j5_only_plus`
+    - `j5_only_minus`
+    - `diagonal_snap_plus`
+    - `diagonal_snap_minus`
+    - `center`
+  - This adds diagonal cross-snaps and alternating wrist recoil while keeping J3 fixed positive and J5 inside 40..100.
+  - Default J4 amplitude increased from `18` to `24`.
+  - Default shake joint speed increased:
+    - velocity `95 → 125`
+    - acceleration `150 → 190`
+    - time `0.32 → 0.24`
+
+- `src/azas_bringup/launch/tumbler_shake_sequence.launch.py`
+- `tools/run/run_rule_based_shake_real.sh`
+- `tools/run/robot_pipeline_control_server.py`
+  - Updated default/panel values to match the more dynamic joint shake.
+
+### Validation, no real robot motion
+
+```bash
+python3 -m py_compile src/azas_motion/azas_motion/tumbler_shake_sequence_node.py src/azas_bringup/launch/tumbler_shake_sequence.launch.py tools/run/robot_pipeline_control_server.py
+bash -n tools/run/run_rule_based_shake_real.sh
+colcon build --packages-select azas_motion azas_bringup --symlink-install
+tools/smoke/smoke_tumbler_shake_sequence.sh
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py ... enable_hardware:=false shake_control_mode:=joint shake_cycles:=1
+curl -s http://127.0.0.1:8765/api/steps
+```
+
+Evidence:
+
+- Fake hardware smoke reached `DONE`.
+- Unsafe joint_1 shake plan still fails closed.
+- Dry-run plan showed the new dynamic waypoints, e.g.:
+  - `j5_j6_plus`: `[0, -35, 50, -24, 100, 36]`
+  - `wrist_snap_minus`: `[0, -35, 50, 24, 54, -36]`
+  - `diagonal_snap_plus`: `[0, -35, 50, -18, 86, -27]`
+- `/api/steps` confirmed panel `shake_closed_cup` command includes:
+  - `JOINT_SHAKE_J4_AMPLITUDE_DEG=24.0`
+  - `SHAKE_JOINT_VELOCITY=125.0`
+  - `SHAKE_JOINT_ACCELERATION=190.0`
+  - `SHAKE_JOINT_TIME=0.24`
+
+No real robot motion was executed for this validation.
+
 ## 2026-05-19 update — press pre-HOME retreat to avoid cup sweep
 
 User observed that `press_dispenser_*` starts by moving HOME, and that direct joint-space HOME can sweep through the cup after the cup has been released under the dispenser.
@@ -408,3 +474,137 @@ Evidence:
 - `/api/steps` confirmed all four `press_dispenser_*` resolved commands include `pre_home_retreat_before_home:=true`.
 
 No real robot motion was executed for this validation.
+
+## 2026-05-19T15:34:58+09:00 update — panel UI/UX compact three-pane layout
+
+The user reported that the robot control panel required too much scrolling and was hard to read.
+
+### Fix applied
+
+- `docs/robot_pipeline_control.html`
+  - Reworked the page into a fixed-height three-pane layout:
+    - left: settings, arm checkbox, run/cleanup/stop, quick selection buttons.
+    - center: searchable/filterable pipeline step list.
+    - right: execution log, fixed independently from the step list.
+  - Collapsed long shell commands behind per-step `명령 보기` accordions so each card stays compact.
+  - Added quick filters/selection for connection, cup move, press, shake, real motion, and blocked steps.
+  - Added selected/loaded counts in the header.
+  - Preserved per-step result badges across filtering/re-rendering.
+  - After execution, selected checkboxes are cleared from the internal selection state.
+  - Added log copy/clear controls.
+
+### Validation, no real robot motion
+
+```bash
+python3 -m py_compile tools/run/robot_pipeline_control_server.py
+node --check /tmp/azas_panel_script.js
+curl -fsS http://127.0.0.1:8765/
+curl -fsS http://127.0.0.1:8765/api/steps
+```
+
+Evidence:
+
+- HTML static checks passed for the new layout markers and collapsed command UI.
+- JavaScript syntax check passed.
+- Panel server restarted on `127.0.0.1:8765`.
+- `/api/steps` returned 27 steps.
+
+No real robot motion was executed for this validation.
+
+
+## 2026-05-19T15:45:47+09:00 update — panel readability correction after three-pane feedback
+
+The first three-pane UI reduced scrolling but made readability worse because the center column became cramped.
+
+### Fix applied
+
+- `docs/robot_pipeline_control.html`
+  - Removed the narrow permanent 3-column layout.
+  - Replaced it with a wide single-board layout and sticky top execution/search bar.
+  - Moved settings into a collapsible `설정 보기 / 숨기기` section.
+  - Kept commands hidden behind `명령 보기` accordions.
+  - Changed the log to a bottom drawer that is collapsed by default and opens automatically for run/cleanup/stop.
+  - Rendered steps as wider cards in an auto-fit grid, grouped by stage.
+
+### Validation, no real robot motion
+
+```bash
+node --check /tmp/azas_panel_script.js
+python3 -m py_compile tools/run/robot_pipeline_control_server.py
+curl -fsS http://127.0.0.1:8765/
+curl -fsS http://127.0.0.1:8765/api/steps
+```
+
+Evidence:
+
+- HTML rewrite checks passed.
+- JavaScript syntax check passed.
+- Panel server restarted on `127.0.0.1:8765`.
+- `/api/steps` returned 27 steps.
+
+No real robot motion was executed for this validation.
+
+
+## 2026-05-19T15:51:41+09:00 update — panel side-log layout per user request
+
+The user rejected the collapsible bottom log and requested the log to stay on the side.
+
+### Fix applied
+
+- `docs/robot_pipeline_control.html`
+  - Removed the bottom collapsible log drawer.
+  - Added a two-column content layout:
+    - left: wide grouped pipeline cards.
+    - right: always-visible sticky execution log.
+  - Kept settings collapsed in the top control bar to avoid returning to the cramped 3-column layout.
+  - Kept command text collapsed under `명령 보기`.
+  - Added `로그로 이동` button for narrow screens where the log stacks below the card board.
+
+### Validation, no real robot motion
+
+```bash
+node --check /tmp/azas_panel_script.js
+python3 -m py_compile tools/run/robot_pipeline_control_server.py
+curl -fsS http://127.0.0.1:8765/
+curl -fsS http://127.0.0.1:8765/api/steps
+```
+
+Evidence:
+
+- HTML side-log checks passed.
+- JavaScript syntax check passed.
+- Panel server restarted on `127.0.0.1:8765`.
+- `/api/steps` returned 27 steps.
+
+No real robot motion was executed for this validation.
+
+
+## 2026-05-19T16:10:47+09:00 update — one-command browser launcher
+
+The user asked for a simple command that immediately opens the browser for the local HTML control panel.
+
+### Fix applied
+
+- Added `tools/run/open_robot_pipeline_control_panel.sh`.
+  - Checks `http://127.0.0.1:8765/`.
+  - Starts `tools/run/robot_pipeline_control_server.py` with ROS setup if the panel is not already ready.
+  - Opens the default browser through `xdg-open`, with `gio`, Chrome, and Firefox fallbacks.
+  - Writes panel server logs to `log/panel/robot_pipeline_control_panel.log`.
+- Added symlink command:
+  - `/home/ssu/.local/bin/azas-panel` → `tools/run/open_robot_pipeline_control_panel.sh`.
+
+### Validation, no real robot motion
+
+```bash
+bash -n tools/run/open_robot_pipeline_control_panel.sh
+test -x /home/ssu/.local/bin/azas-panel
+azas-panel
+```
+
+Evidence:
+
+- Shell syntax check passed.
+- `azas-panel` command exists in `~/.local/bin`.
+- Running `azas-panel` opened/requested `http://127.0.0.1:8765/`.
+
+No real robot motion was executed.

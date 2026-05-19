@@ -62,6 +62,14 @@ cleanup() {
     kill "${BAD_STATUS_PID}" 2>/dev/null || true
     wait "${BAD_STATUS_PID}" 2>/dev/null || true
   fi
+  if [[ -n "${FAST_TIME_LAUNCH_PID:-}" ]] && kill -0 "${FAST_TIME_LAUNCH_PID}" 2>/dev/null; then
+    kill "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+    wait "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${FAST_TIME_STATUS_PID:-}" ]] && kill -0 "${FAST_TIME_STATUS_PID}" 2>/dev/null; then
+    kill "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+    wait "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -116,9 +124,9 @@ LAUNCH_ARGS=(
   joint_shake_base_j5_deg:=70.0
   joint_shake_base_j6_deg:=0.0
   joint_shake_j3_amplitude_deg:=0.0
-  joint_shake_j4_amplitude_deg:=18.0
+  joint_shake_j4_amplitude_deg:=25.0
   joint_shake_j5_amplitude_deg:=30.0
-  joint_shake_j6_amplitude_deg:=36.0
+  joint_shake_j6_amplitude_deg:=37.0
   joint_shake_j1_min_deg:=-20.0
   joint_shake_j1_max_deg:=5.0
   joint_shake_j2_min_deg:=-80.0
@@ -147,11 +155,13 @@ for _ in {1..50}; do
   if grep -q "DONE" "${STATUS_FILE}" 2>/dev/null || grep -q "tumbler_shake_sequence_node.*DONE" "${LOG_FILE}" 2>/dev/null; then
     assert_log_contains "${LOG_FILE}" "Joint shake safety validated: .*joint_5 range=\\[40\\.0, 100\\.0\\]" "joint-space shake passed joint_5 safety validation"
     assert_log_contains "${LOG_FILE}" "plan joint_shake_safe_ready: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 0\\.0, 70\\.0, 0\\.0\\]" "joint shake starts from J3-positive safe base"
-    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_plus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, -18\\.0, 100\\.0, 36\\.0\\]" "joint shake drives J5/J6 positive dynamically without moving J3 negative"
-    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_minus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 18\\.0, 40\\.0, -36\\.0\\]" "joint shake drives J5/J6 negative dynamically without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_twist_left_high: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, -25\\.0, 100\\.0, 37\\.0\\]" "joint shake drives left/high wrist twist without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_twist_right_low: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 25\\.0, 40\\.0, -37\\.0\\]" "joint shake drives right/low wrist twist without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "joint_shake_cycle_1_twist_left_high: target_error_deg=0\\.000" "joint target verification observes the left/high wrist twist target"
     assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*0\\.0.*70\\.0.*0\\.0" "fake Doosan received J3-positive joint safe base"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*-18\\.0.*100\\.0.*36\\.0" "fake Doosan received dynamic J5/J6 plus waypoint"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*18\\.0.*40\\.0.*-36\\.0" "fake Doosan received dynamic J5/J6 minus waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*-25\\.0.*100\\.0.*37\\.0" "fake Doosan received dynamic left/high wrist twist waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*25\\.0.*40\\.0.*-37\\.0" "fake Doosan received dynamic right/low wrist twist waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake get_current_posj: pos=.*-25\\.0.*100\\.0.*37\\.0" "fake Doosan reports wrist twist target for verification"
     echo "[OK] high-shake fake hardware path reached DONE"
     DONE_OK=true
     break
@@ -183,6 +193,42 @@ wait "${STATUS_PID}" 2>/dev/null || true
 
 BAD_LOG_FILE="${BAD_LOG_FILE:-/tmp/azas_smoke_tumbler_shake_bad_launch.log}"
 BAD_STATUS_FILE="${BAD_STATUS_FILE:-/tmp/azas_smoke_tumbler_shake_bad_status.txt}"
+FAST_TIME_LOG_FILE="${FAST_TIME_LOG_FILE:-/tmp/azas_smoke_tumbler_shake_fast_time_launch.log}"
+FAST_TIME_STATUS_FILE="${FAST_TIME_STATUS_FILE:-/tmp/azas_smoke_tumbler_shake_fast_time_status.txt}"
+rm -f "${FAST_TIME_LOG_FILE}" "${FAST_TIME_STATUS_FILE}"
+
+echo "[Azas] Checking that over-limit final-time shake fails closed"
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
+  use_visualizer:=false \
+  shake_control_mode:=joint \
+  shake_joint_time:=0.24 \
+  joint_shake_peak_velocity_limit_deg_s:=225.0 \
+  >"${FAST_TIME_LOG_FILE}" 2>&1 &
+FAST_TIME_LAUNCH_PID=$!
+
+timeout 12s ros2 topic echo /jarvis/tumbler_shake_sequence/status --field data --no-daemon >"${FAST_TIME_STATUS_FILE}" 2>/tmp/azas_smoke_tumbler_shake_fast_time_topic.err &
+FAST_TIME_STATUS_PID=$!
+
+for _ in {1..24}; do
+  if grep -q "FAILED" "${FAST_TIME_STATUS_FILE}" 2>/dev/null || grep -q "tumbler_shake_sequence_node.*FAILED" "${FAST_TIME_LOG_FILE}" 2>/dev/null; then
+    assert_log_contains "${FAST_TIME_LOG_FILE}" "final-time joint step would require peak velocity" "over-limit final-time shake plan fails closed"
+    echo "[OK] over-limit final-time shake was rejected"
+    break
+  fi
+  sleep 0.5
+done
+
+if ! grep -q "FAILED" "${FAST_TIME_STATUS_FILE}" 2>/dev/null && ! grep -q "tumbler_shake_sequence_node.*FAILED" "${FAST_TIME_LOG_FILE}" 2>/dev/null; then
+  echo "[FAIL] over-limit final-time shake did not fail closed"
+  sed -n '1,180p' "${FAST_TIME_LOG_FILE}" 2>/dev/null || true
+  exit 1
+fi
+
+kill "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+wait "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+kill "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+wait "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+
 rm -f "${BAD_LOG_FILE}" "${BAD_STATUS_FILE}"
 
 echo "[Azas] Checking that unsafe shake space fails closed"
