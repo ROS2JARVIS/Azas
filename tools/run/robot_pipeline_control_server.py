@@ -193,7 +193,7 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J3 양수 고정, J4/J5/J6 조인트 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
+    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J3 양수 고정, J4/J5/J6 트위스트 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
     Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
     Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
 ]
@@ -611,6 +611,7 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
     if step.key == "shake_closed_cup":
         return [
             f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/move_wait",
             f"/{clean}/motion/check_motion",
             f"/{clean}/aux_control/get_current_posj",
             f"/{clean}/system/get_robot_state",
@@ -1052,18 +1053,19 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--approach-velocity 15.0 --approach-acceleration 20.0 "
             "--place-velocity 6.0 --place-acceleration 10.0 "
             "--retreat-velocity 12.0 --retreat-acceleration 16.0 "
-            "--target-tolerance-mm 12.0 --verify-timeout-sec 35.0 "
+            "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
+            "--z-max 0.28 "
             "--execute --confirm ENABLE_CUP_HOLDER_PLACE"
         )
     if step.key == "shake_closed_cup":
         return (
             f"cd {ROOT} && SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
-            "REQUIRE_ROBOT_STANDBY=false SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
+            "REQUIRE_ROBOT_STANDBY=true SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
             "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
             "JOINT_SHAKE_BASE_J3_DEG=50.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
             "JOINT_SHAKE_BASE_J5_DEG=70.0 JOINT_SHAKE_BASE_J6_DEG=0.0 "
-            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=18.0 "
-            "JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=36.0 "
+            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=25.0 "
+            "JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=37.0 "
             "JOINT_SHAKE_J1_MIN_DEG=-20.0 JOINT_SHAKE_J1_MAX_DEG=5.0 "
             "JOINT_SHAKE_J2_MIN_DEG=-80.0 JOINT_SHAKE_J2_MAX_DEG=5.0 "
             "JOINT_SHAKE_J3_MIN_DEG=0.0 JOINT_SHAKE_J3_MAX_DEG=135.0 "
@@ -1071,8 +1073,10 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "ENFORCE_WRIST_JOINT_LIMITS=false WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
             "JOINT5_MIN_DEG=40.0 JOINT5_MAX_DEG=100.0 "
             "APPROACH_JOINT_VELOCITY=18.0 APPROACH_JOINT_ACCELERATION=22.0 "
-            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=95.0 "
-            "SHAKE_JOINT_ACCELERATION=150.0 SHAKE_JOINT_TIME=0.32 "
+            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=125.0 "
+            "SHAKE_JOINT_ACCELERATION=190.0 SHAKE_JOINT_TIME=0.24 "
+            "VERIFY_JOINT_TARGETS=true JOINT_TARGET_TOLERANCE_DEG=8.0 "
+            "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
         )

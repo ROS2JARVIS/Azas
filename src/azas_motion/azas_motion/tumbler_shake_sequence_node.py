@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import List, Sequence, Tuple
 
 import rclpy
-from dsr_msgs2.srv import Ikin, MoveJoint, MoveLine
+from dsr_msgs2.srv import GetCurrentPosj, Ikin, MoveJoint, MoveLine, MoveWait
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.srv import GetStateValidity
 from nav_msgs.msg import Path
@@ -156,9 +156,9 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("joint_shake_base_j5_deg", 70.0)
         self.declare_parameter("joint_shake_base_j6_deg", 0.0)
         self.declare_parameter("joint_shake_j3_amplitude_deg", 0.0)
-        self.declare_parameter("joint_shake_j4_amplitude_deg", 18.0)
+        self.declare_parameter("joint_shake_j4_amplitude_deg", 25.0)
         self.declare_parameter("joint_shake_j5_amplitude_deg", 30.0)
-        self.declare_parameter("joint_shake_j6_amplitude_deg", 36.0)
+        self.declare_parameter("joint_shake_j6_amplitude_deg", 37.0)
         self.declare_parameter("joint_shake_j1_min_deg", -20.0)
         self.declare_parameter("joint_shake_j1_max_deg", 5.0)
         self.declare_parameter("joint_shake_j2_min_deg", -80.0)
@@ -169,9 +169,13 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("approach_joint_velocity", 18.0)
         self.declare_parameter("approach_joint_acceleration", 22.0)
         self.declare_parameter("approach_joint_time", 2.6)
-        self.declare_parameter("shake_joint_velocity", 95.0)
-        self.declare_parameter("shake_joint_acceleration", 150.0)
-        self.declare_parameter("shake_joint_time", 0.32)
+        self.declare_parameter("shake_joint_velocity", 125.0)
+        self.declare_parameter("shake_joint_acceleration", 190.0)
+        self.declare_parameter("shake_joint_time", 0.24)
+        self.declare_parameter("verify_joint_targets", True)
+        self.declare_parameter("joint_target_tolerance_deg", 8.0)
+        self.declare_parameter("joint_target_wait_extra_sec", 3.0)
+        self.declare_parameter("joint_target_poll_sec", 0.05)
         self.declare_parameter("require_state_validity_for_joint_shake", False)
         self.declare_parameter("state_validity_service", "/check_state_validity")
         self.declare_parameter("planning_group", "manipulator")
@@ -193,6 +197,8 @@ class TumblerShakeSequenceNode(Node):
 
         self.move_line = None
         self.move_joint = None
+        self.move_wait = None
+        self.current_posj = None
         self.ikin = None
         self.state_validity = None
         if self.hardware_armed:
@@ -200,6 +206,14 @@ class TumblerShakeSequenceNode(Node):
                 self.move_joint = self.create_client(
                     MoveJoint,
                     service_name(self.service_prefix, "motion/move_joint"),
+                )
+                self.move_wait = self.create_client(
+                    MoveWait,
+                    service_name(self.service_prefix, "motion/move_wait"),
+                )
+                self.current_posj = self.create_client(
+                    GetCurrentPosj,
+                    service_name(self.service_prefix, "aux_control/get_current_posj"),
                 )
                 if bool(self.get_parameter("require_state_validity_for_joint_shake").value):
                     self.state_validity = self.create_client(
@@ -348,11 +362,13 @@ class TumblerShakeSequenceNode(Node):
             float(self.get_parameter(f"joint_shake_base_j{index}_deg").value)
             for index in range(1, 7)
         )
-        j3_amp = self._clamped_abs_parameter("joint_shake_j3_amplitude_deg", 10.0)
         j4_amp = self._clamped_abs_parameter("joint_shake_j4_amplitude_deg", 25.0)
         j5_amp = self._clamped_abs_parameter("joint_shake_j5_amplitude_deg", 30.0)
-        j6_amp = self._clamped_abs_parameter("joint_shake_j6_amplitude_deg", 40.0)
-        j5_mid_amp = min(j5_amp * 0.40, 12.0)
+        j6_amp = self._clamped_abs_parameter("joint_shake_j6_amplitude_deg", 37.0)
+        j4_cross_amp = min(j4_amp * 0.75, 18.0)
+        j5_mid_amp = min(j5_amp * 0.55, 16.0)
+        j5_recoil_amp = min(j5_amp * 0.35, 10.0)
+        j6_cross_amp = min(j6_amp * 0.75, 27.0)
         cycles = max(int(self.get_parameter("shake_cycles").value), 1)
         hold = max(float(self.get_parameter("shake_hold_seconds").value), 0.0)
 
@@ -374,30 +390,39 @@ class TumblerShakeSequenceNode(Node):
             JointSequenceStep("joint_shake_center_start", base, phase="approach"),
         ]
         for cycle in range(1, cycles + 1):
+            # Keep shoulder/elbow fixed and make the closed-cup shake read as wrist twist.
             steps.extend(
                 [
                     step(
-                        f"joint_shake_cycle_{cycle}_j5_j6_plus",
-                        (0.0, 0.0, j3_amp, -j4_amp, j5_amp, j6_amp),
+                        f"joint_shake_cycle_{cycle}_twist_left_high",
+                        (0.0, 0.0, 0.0, -j4_amp, j5_amp, j6_amp),
                     ),
                     step(
-                        f"joint_shake_cycle_{cycle}_j5_j6_minus",
-                        (0.0, 0.0, -j3_amp, j4_amp, -j5_amp, -j6_amp),
+                        f"joint_shake_cycle_{cycle}_counter_twist_left",
+                        (0.0, 0.0, 0.0, 0.0, j5_mid_amp, -j6_cross_amp),
                     ),
                     step(
-                        f"joint_shake_cycle_{cycle}_wrist_snap_plus",
-                        (0.0, 0.0, 0.0, j4_amp, j5_mid_amp, -j6_amp),
+                        f"joint_shake_cycle_{cycle}_twist_right_low",
+                        (0.0, 0.0, 0.0, j4_amp, -j5_amp, -j6_amp),
                     ),
                     step(
-                        f"joint_shake_cycle_{cycle}_wrist_snap_minus",
-                        (0.0, 0.0, 0.0, -j4_amp, -j5_mid_amp, j6_amp),
+                        f"joint_shake_cycle_{cycle}_counter_twist_right",
+                        (0.0, 0.0, 0.0, 0.0, -j5_mid_amp, j6_cross_amp),
                     ),
                     step(
-                        f"joint_shake_cycle_{cycle}_j5_only_plus",
+                        f"joint_shake_cycle_{cycle}_diagonal_snap_left",
+                        (0.0, 0.0, 0.0, -j4_cross_amp, j5_recoil_amp, -j6_cross_amp),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_diagonal_snap_right",
+                        (0.0, 0.0, 0.0, j4_cross_amp, -j5_recoil_amp, j6_cross_amp),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_j5_pop_high",
                         (0.0, 0.0, 0.0, 0.0, j5_amp, 0.0),
                     ),
                     step(
-                        f"joint_shake_cycle_{cycle}_j5_only_minus",
+                        f"joint_shake_cycle_{cycle}_j5_pop_low",
                         (0.0, 0.0, 0.0, 0.0, -j5_amp, 0.0),
                     ),
                     step(f"joint_shake_cycle_{cycle}_center", (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
@@ -772,6 +797,109 @@ class TumblerShakeSequenceNode(Node):
             return False
         return True
 
+    def wait_for_movej_done(self, step: JointSequenceStep) -> bool:
+        if self.move_wait is None:
+            self.get_logger().error("MoveWait client is not initialized; refusing hardware shake.")
+            return False
+
+        req = MoveWait.Request()
+        timeout_sec = max(
+            float(self.get_parameter("motion_response_timeout_sec").value),
+            self._joint_time_for_step(step) + 3.0,
+            0.1,
+        )
+        self.get_logger().info(f"{step.label}: waiting for MoveJoint completion")
+        future = self.move_wait.call_async(req)
+        deadline = time.monotonic() + timeout_sec
+        while rclpy.ok() and not future.done():
+            if time.monotonic() > deadline:
+                self.get_logger().error(
+                    f"{step.label} move_wait timed out after {timeout_sec:.1f}s"
+                )
+                return False
+            time.sleep(0.01)
+        if future.exception() is not None:
+            self.get_logger().error(f"{step.label} move_wait raised: {future.exception()}")
+            return False
+        result = future.result()
+        if result is not None and hasattr(result, "success") and not result.success:
+            self.get_logger().error(f"{step.label} move_wait returned success=false")
+            return False
+        return True
+
+    def read_current_posj(self, label: str) -> tuple[float, float, float, float, float, float] | None:
+        if self.current_posj is None:
+            self.get_logger().error(
+                "GetCurrentPosj client is not initialized; cannot verify joint target."
+            )
+            return None
+
+        future = self.current_posj.call_async(GetCurrentPosj.Request())
+        timeout_sec = max(float(self.get_parameter("service_wait_timeout_sec").value), 0.1)
+        deadline = time.monotonic() + timeout_sec
+        while rclpy.ok() and not future.done():
+            if time.monotonic() > deadline:
+                self.get_logger().error(
+                    f"{label}: get_current_posj timed out after {timeout_sec:.1f}s"
+                )
+                return None
+            time.sleep(0.01)
+        if future.exception() is not None:
+            self.get_logger().error(f"{label}: get_current_posj raised: {future.exception()}")
+            return None
+        result = future.result()
+        if result is None or not getattr(result, "success", False):
+            self.get_logger().error(f"{label}: get_current_posj returned success=false")
+            return None
+        current = tuple(float(value) for value in result.pos[:6])
+        if len(current) != 6:
+            self.get_logger().error(
+                f"{label}: get_current_posj returned {len(current)} joints, expected 6"
+            )
+            return None
+        return current
+
+    def wait_for_joint_target_reached(self, step: JointSequenceStep) -> bool:
+        if not bool(self.get_parameter("verify_joint_targets").value):
+            return True
+
+        tolerance_deg = max(float(self.get_parameter("joint_target_tolerance_deg").value), 0.0)
+        wait_extra_sec = max(float(self.get_parameter("joint_target_wait_extra_sec").value), 0.0)
+        poll_sec = max(float(self.get_parameter("joint_target_poll_sec").value), 0.01)
+        timeout_sec = max(self._joint_time_for_step(step) + wait_extra_sec, poll_sec)
+        deadline = time.monotonic() + timeout_sec
+        last_current: tuple[float, float, float, float, float, float] | None = None
+        last_error = math.inf
+
+        while rclpy.ok() and time.monotonic() <= deadline:
+            current = self.read_current_posj(step.label)
+            if current is None:
+                return False
+            last_current = current
+            last_error = max(
+                abs(float(target) - float(actual))
+                for target, actual in zip(step.joints_deg, current)
+            )
+            self.get_logger().info(
+                f"{step.label}: target_error_deg={last_error:.3f} "
+                f"current_joints_deg={[round(value, 2) for value in current]}"
+            )
+            if last_error <= tolerance_deg:
+                return True
+            time.sleep(poll_sec)
+
+        self.get_logger().error(
+            f"{step.label}: MoveJoint was accepted, but current joints did not reach target "
+            f"within {timeout_sec:.2f}s. max_error_deg={last_error:.3f}, "
+            f"tolerance_deg={tolerance_deg:.3f}, "
+            f"target_joints_deg={[round(value, 2) for value in step.joints_deg]}, "
+            f"last_current_joints_deg="
+            f"{[round(value, 2) for value in last_current] if last_current is not None else '<unreadable>'}. "
+            "Check robot STATE_STANDBY/servo state, safe-stop/recovery, pendant hold state, "
+            "and that the running Doosan bringup is connected to the real controller."
+        )
+        return False
+
     def _line_time_for_step(self, step: SequenceStep) -> float:
         global_time = max(float(self.get_parameter("line_time").value), 0.0)
         if global_time > 0.0:
@@ -835,6 +963,34 @@ class TumblerShakeSequenceNode(Node):
                 return False
             self.get_logger().info("Waiting for motion/move_joint")
 
+        move_wait_deadline = time.monotonic() + service_timeout_sec
+        while (
+            rclpy.ok()
+            and self.move_wait is not None
+            and not self.move_wait.wait_for_service(timeout_sec=1.0)
+        ):
+            if time.monotonic() > move_wait_deadline:
+                self.get_logger().error(
+                    f"motion/move_wait service was not available within {service_timeout_sec:.1f}s"
+                )
+                return False
+            self.get_logger().info("Waiting for motion/move_wait")
+
+        if bool(self.get_parameter("verify_joint_targets").value):
+            current_posj_deadline = time.monotonic() + service_timeout_sec
+            while (
+                rclpy.ok()
+                and self.current_posj is not None
+                and not self.current_posj.wait_for_service(timeout_sec=1.0)
+            ):
+                if time.monotonic() > current_posj_deadline:
+                    self.get_logger().error(
+                        "aux_control/get_current_posj service was not available within "
+                        f"{service_timeout_sec:.1f}s"
+                    )
+                    return False
+                self.get_logger().info("Waiting for aux_control/get_current_posj")
+
         if bool(self.get_parameter("require_state_validity_for_joint_shake").value):
             validity_deadline = time.monotonic() + service_timeout_sec
             while (
@@ -858,6 +1014,10 @@ class TumblerShakeSequenceNode(Node):
 
         for step in steps:
             if not self.call_movej(step):
+                return False
+            if not self.wait_for_movej_done(step):
+                return False
+            if not self.wait_for_joint_target_reached(step):
                 return False
             if step.hold_seconds > 0.0:
                 time.sleep(step.hold_seconds)

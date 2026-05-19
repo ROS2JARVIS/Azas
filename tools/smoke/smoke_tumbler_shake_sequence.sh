@@ -116,9 +116,9 @@ LAUNCH_ARGS=(
   joint_shake_base_j5_deg:=70.0
   joint_shake_base_j6_deg:=0.0
   joint_shake_j3_amplitude_deg:=0.0
-  joint_shake_j4_amplitude_deg:=18.0
+  joint_shake_j4_amplitude_deg:=25.0
   joint_shake_j5_amplitude_deg:=30.0
-  joint_shake_j6_amplitude_deg:=36.0
+  joint_shake_j6_amplitude_deg:=37.0
   joint_shake_j1_min_deg:=-20.0
   joint_shake_j1_max_deg:=5.0
   joint_shake_j2_min_deg:=-80.0
@@ -147,11 +147,13 @@ for _ in {1..50}; do
   if grep -q "DONE" "${STATUS_FILE}" 2>/dev/null || grep -q "tumbler_shake_sequence_node.*DONE" "${LOG_FILE}" 2>/dev/null; then
     assert_log_contains "${LOG_FILE}" "Joint shake safety validated: .*joint_5 range=\\[40\\.0, 100\\.0\\]" "joint-space shake passed joint_5 safety validation"
     assert_log_contains "${LOG_FILE}" "plan joint_shake_safe_ready: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 0\\.0, 70\\.0, 0\\.0\\]" "joint shake starts from J3-positive safe base"
-    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_plus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, -18\\.0, 100\\.0, 36\\.0\\]" "joint shake drives J5/J6 positive dynamically without moving J3 negative"
-    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_minus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 18\\.0, 40\\.0, -36\\.0\\]" "joint shake drives J5/J6 negative dynamically without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_twist_left_high: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, -25\\.0, 100\\.0, 37\\.0\\]" "joint shake drives left/high wrist twist without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_twist_right_low: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 25\\.0, 40\\.0, -37\\.0\\]" "joint shake drives right/low wrist twist without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "joint_shake_cycle_1_twist_left_high: target_error_deg=0\\.000" "joint target verification observes the left/high wrist twist target"
     assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*0\\.0.*70\\.0.*0\\.0" "fake Doosan received J3-positive joint safe base"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*-18\\.0.*100\\.0.*36\\.0" "fake Doosan received dynamic J5/J6 plus waypoint"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*18\\.0.*40\\.0.*-36\\.0" "fake Doosan received dynamic J5/J6 minus waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*-25\\.0.*100\\.0.*37\\.0" "fake Doosan received dynamic left/high wrist twist waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*25\\.0.*40\\.0.*-37\\.0" "fake Doosan received dynamic right/low wrist twist waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake get_current_posj: pos=.*-25\\.0.*100\\.0.*37\\.0" "fake Doosan reports wrist twist target for verification"
     echo "[OK] high-shake fake hardware path reached DONE"
     DONE_OK=true
     break
