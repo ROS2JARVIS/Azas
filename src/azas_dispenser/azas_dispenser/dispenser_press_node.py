@@ -177,6 +177,12 @@ class DispenserPressNode:
         self.joint_acceleration = float(get_param(self.node, "joint_acceleration", 20.0))
         self.line_velocity = float(get_param(self.node, "line_velocity", 30.0))
         self.line_acceleration = float(get_param(self.node, "line_acceleration", 50.0))
+        self.travel_line_velocity = float(
+            get_param(self.node, "travel_line_velocity", self.line_velocity)
+        )
+        self.travel_line_acceleration = float(
+            get_param(self.node, "travel_line_acceleration", self.line_acceleration)
+        )
 
         self.move_joint = self.node.create_client(
             MoveJoint,
@@ -382,7 +388,7 @@ class DispenserPressNode:
         self.logger.info(f"{label}: movej {req.pos}")
         return self.call_service(self.move_joint, req, label)
 
-    def movel(self, x_mm, y_mm, z_mm, label, rpy_deg=None):
+    def movel(self, x_mm, y_mm, z_mm, label, rpy_deg=None, velocity=None, acceleration=None):
         safe_x = clamp(x_mm, SAFE_X_MIN_MM, SAFE_X_MAX_MM)
         safe_y = clamp(y_mm, SAFE_Y_MIN_MM, SAFE_Y_MAX_MM)
         safe_z = clamp(z_mm, SAFE_Z_MIN_MM, SAFE_Z_MAX_MM)
@@ -397,8 +403,10 @@ class DispenserPressNode:
 
         req = MoveLine.Request()
         req.pos = [safe_x, safe_y, safe_z, float(rx), float(ry), float(rz)]
-        req.vel = [self.line_velocity, self.line_velocity]
-        req.acc = [self.line_acceleration, self.line_acceleration]
+        line_velocity = self.line_velocity if velocity is None else float(velocity)
+        line_acceleration = self.line_acceleration if acceleration is None else float(acceleration)
+        req.vel = [line_velocity, line_velocity]
+        req.acc = [line_acceleration, line_acceleration]
         req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -639,8 +647,21 @@ class DispenserPressNode:
                 rx, ry, rz = self.rx, self.ry, self.rz
             else:
                 x_mm, y_mm, z_mm, rx, ry, rz, label = step
+            is_press_down = label == "press dispenser pump"
+            line_velocity = self.line_velocity if is_press_down else self.travel_line_velocity
+            line_acceleration = (
+                self.line_acceleration if is_press_down else self.travel_line_acceleration
+            )
             self.logger.info(f"단계 {idx}/{len(steps)}: 시작 '{label}' -> x={x_mm:.1f} y={y_mm:.1f} z={z_mm:.1f} mm")
-            if not self.movel(x_mm, y_mm, z_mm, label, (rx, ry, rz)):
+            if not self.movel(
+                x_mm,
+                y_mm,
+                z_mm,
+                label,
+                (rx, ry, rz),
+                velocity=line_velocity,
+                acceleration=line_acceleration,
+            ):
                 self.logger.error(f"{label} 단계에서 movel 실패")
                 return False
             if not self.wait_for_motion_done(label):

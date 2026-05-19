@@ -567,12 +567,14 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
         return [
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
         ]
     if step.key.startswith("move_to_dispenser_"):
         return [
             f"/{clean}/motion/move_line",
             f"/{clean}/motion/ikin",
             f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
             f"/{clean}/tcp/get_current_tcp",
             f"/{clean}/aux_control/get_current_posx",
             "/jarvis/rg2/set_width",
@@ -584,6 +586,7 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/motion/move_line",
             f"/{clean}/motion/move_wait",
             f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
             f"/{clean}/aux_control/get_current_posx",
             f"/{clean}/tcp/set_current_tcp",
             f"/{clean}/tcp/get_current_tcp",
@@ -599,13 +602,37 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
     return []
 
 
+def required_service_wait_timeout(step: Step) -> float:
+    """Wait long enough for the Doosan service graph to settle before blocking.
+
+    Doosan bringup can publish MoveIt/RViz/gripper services before dsr_controller2
+    finishes exporting motion/tcp/aux/system services.  A single immediate
+    service-list check makes panel steps look randomly blocked even though the
+    same services appear a few seconds later.
+    """
+
+    if step.key.startswith("move_to_dispenser_") or step.key.startswith("press_dispenser_"):
+        return 35.0
+    if step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}:
+        return 30.0
+    if step.key in {"gripper_open", "gripper_soft_grasp"}:
+        return 12.0
+    return 8.0
+
+
 def missing_required_services(step: Step, service_prefix: str) -> tuple[list[str], str]:
     required = required_services_for_step(step, service_prefix)
     if not required:
         return [], ""
-    services, output = ros_service_names(timeout_sec=6.0)
+    ready, wait_output = wait_for_required_services(
+        required,
+        timeout_sec=required_service_wait_timeout(step),
+    )
+    services, output = ros_service_names(timeout_sec=2.0)
     missing = [service for service in required if service not in services]
-    return missing, output
+    if ready and not missing:
+        return [], wait_output
+    return missing, wait_output + "\n--- final service list ---\n" + output
 
 
 def gripper_services_for_step(step: Step, service_prefix: str) -> list[str]:
@@ -977,8 +1004,10 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "-p pose_orientation_tolerance_deg:=6.0 "
             "-p line_velocity:=20.0 "
             "-p line_acceleration:=30.0 "
-            "-p joint_velocity:=30.0 "
-            "-p joint_acceleration:=30.0"
+            "-p travel_line_velocity:=45.0 "
+            "-p travel_line_acceleration:=70.0 "
+            "-p joint_velocity:=40.0 "
+            "-p joint_acceleration:=50.0"
         )
     if step.key == "shake_closed_cup":
         return (

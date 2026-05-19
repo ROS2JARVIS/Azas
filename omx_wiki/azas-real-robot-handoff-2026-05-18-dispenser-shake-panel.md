@@ -2,7 +2,7 @@
 title: "Azas Real Robot Handoff 2026-05-18 Dispenser Shake Panel"
 tags: ["azas", "real-robot", "handoff", "dispenser", "shake", "panel", "safety"]
 created: 2026-05-18T10:06:59.396Z
-updated: 2026-05-19T13:27:29+09:00
+updated: 2026-05-19T13:54:12+09:00
 sources: []
 links: []
 category: session-log
@@ -333,3 +333,31 @@ Panel server restarted and `/api/steps` confirmed:
 
 - `move_to_dispenser_1`: measured front hold + `tools/run/rg2_full_open_verify.sh`.
 - `press_dispenser_1`: PR-compatible path with `move_home_first:=true`, `close_gripper_at_home:=true`, `strict_pose_verification:=false`.
+
+## 2026-05-19 update — panel Doosan service startup race
+
+Latest user evidence showed `move_to_dispenser_1` blocked because motion/TCP/aux services were absent in the panel pre-check while `press_dispenser_1` in the same run later succeeded after waiting for motion services.
+
+### Diagnosis
+
+- This is a service graph readiness race, not a dispenser coordinate failure.
+- `move_to_dispenser_*` did a one-shot `ros2 service list` pre-check and blocked immediately.
+- `dispenser_press_node` has its own service wait loop, so it survived the same startup delay and then completed.
+
+### Fix applied
+
+- `tools/run/robot_pipeline_control_server.py`
+  - Added a per-step required-service wait window before blocking:
+    - `move_to_dispenser_*` and `press_dispenser_*`: 35 seconds.
+    - HOME/lift/side/shake: 30 seconds.
+    - gripper-only steps: 12 seconds.
+  - Added `/{service_prefix}/system/get_robot_state` to Doosan real-motion service requirements so the later motion-ready gate is not called before the system service exists.
+  - `missing_required_services()` now retries until the required Doosan/RG2 services settle, then only blocks with the final missing list if they never appear.
+
+Validation:
+
+- `python3 -m py_compile tools/run/robot_pipeline_control_server.py src/azas_dispenser/azas_dispenser/dispenser_press_node.py`
+- Local import/monkeypatch smoke verified `move_to_dispenser_1` no longer fails on an early incomplete service list and waits until required services appear.
+- Panel server restarted and `/api/steps` returned 27 steps.
+
+No real robot motion was executed for this validation.
