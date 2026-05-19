@@ -161,16 +161,17 @@ class YoloCupPickNode(Node):
         self.declare_parameter("min_depth_valid_ratio", 0.03)
         self.declare_parameter("min_depth_m", 0.15)
         self.declare_parameter("max_depth_m", 1.20)
-        self.declare_parameter("redetect_on_approach", True)
+        self.declare_parameter("redetect_on_approach", False)
         self.declare_parameter("redetect_settle_sec", 0.5)
         self.declare_parameter("grasp_mode", "side")
         dynamic_param = ParameterDescriptor(dynamic_typing=True)
         self.declare_parameter("side_grasp_axis", "y_axis", dynamic_param)
+        self.declare_parameter("auto_side_grasp_direction", True)
         self.declare_parameter("side_grasp_direction", -1.0)
         self.declare_parameter("side_approach_offset", 0.12)
         self.declare_parameter("side_staging_offset", 0.24)
         self.declare_parameter("side_grasp_offset", 0.035)
-        self.declare_parameter("side_grasp_z_offset", 0.05)
+        self.declare_parameter("side_grasp_z_offset", 0.02)
         self.declare_parameter("side_orientation_mode", "approach")
         self.declare_parameter("side_tool_roll_deg", 0.0)
         self.declare_parameter("side_roll_deg", 0.0)
@@ -189,7 +190,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("camera_home_z", 0.62)
         self.declare_parameter("place_x", 0.45)
         self.declare_parameter("place_y", 0.0)
-        self.declare_parameter("place_z", 0.30)
+        self.declare_parameter("place_z", 0.12)
 
         self.model_path = self.get_parameter("model_path").value
         self.conf = float(self.get_parameter("conf").value)
@@ -211,6 +212,9 @@ class YoloCupPickNode(Node):
         self.redetect_settle_sec = float(self.get_parameter("redetect_settle_sec").value)
         self.grasp_mode = str(self.get_parameter("grasp_mode").value).strip().lower()
         self.side_grasp_axis = parse_axis(self.get_parameter("side_grasp_axis").value)
+        self.auto_side_grasp_direction = parse_bool(
+            self.get_parameter("auto_side_grasp_direction").value
+        )
         self.side_grasp_direction = float(
             self.get_parameter("side_grasp_direction").value
         )
@@ -491,8 +495,15 @@ class YoloCupPickNode(Node):
     def wait_until_gripper_idle(self, timeout_sec=GRIPPER_OPEN_TIMEOUT_SEC):
         log = self.get_logger()
         start_time = time.time()
+        last_error = None
         while time.time() - start_time < timeout_sec:
-            status = self.gripper.get_status()
+            try:
+                status = self.gripper.get_status()
+            except Exception as exc:
+                last_error = exc
+                log.warning(f"Gripper status read failed: {exc}")
+                time.sleep(GRIPPER_STATUS_POLL_SEC)
+                continue
             busy = bool(status[0])
             if not busy:
                 try:
@@ -503,6 +514,8 @@ class YoloCupPickNode(Node):
                 return True
             time.sleep(GRIPPER_STATUS_POLL_SEC)
 
+        if last_error is not None:
+            log.warning(f"Last gripper status read error: {last_error}")
         log.warning("Timed out waiting for gripper to finish opening.")
         return False
 
@@ -511,9 +524,23 @@ class YoloCupPickNode(Node):
             f"Open gripper to max width={GRIPPER_OPEN_WIDTH} "
             f"({GRIPPER_OPEN_WIDTH / 10.0:.1f} mm)"
         )
-        self.gripper.move_gripper(GRIPPER_OPEN_WIDTH, GRIPPER_FORCE)
+        try:
+            self.gripper.move_gripper(GRIPPER_OPEN_WIDTH, GRIPPER_FORCE)
+        except Exception as exc:
+            self.get_logger().error(f"Gripper open command failed: {exc}")
+            return False
         if wait:
             return self.wait_until_gripper_idle()
+        return True
+
+    def close_gripper_for_pick(self):
+        self.get_logger().info("Close gripper for pick")
+        try:
+            self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
+        except Exception as exc:
+            self.get_logger().error(f"Gripper close command failed: {exc}")
+            return False
+        time.sleep(1.0)
         return True
 
     def detect_objects(self, image):
@@ -650,10 +677,17 @@ class YoloCupPickNode(Node):
         base2cam = base2ee @ self.gripper2cam
         return (base2cam @ coord)[:3]
 
-    def side_unit_vector(self):
+    def side_unit_vector(self, target_xy=None):
+        direction = self.side_grasp_direction
+        if self.auto_side_grasp_direction and target_xy is not None:
+            target_xy = np.asarray(target_xy, dtype=float)
+            axis_value = target_xy[0] if self.side_grasp_axis == "x" else target_xy[1]
+            if abs(axis_value) > 1e-6:
+                direction = -1.0 if axis_value > 0.0 else 1.0
+
         if self.side_grasp_axis == "x":
-            return np.array([self.side_grasp_direction, 0.0], dtype=float)
-        return np.array([0.0, self.side_grasp_direction], dtype=float)
+            return np.array([direction, 0.0], dtype=float)
+        return np.array([0.0, direction], dtype=float)
 
     def side_grasp_orientation(self, side_vec):
         if self.side_orientation_mode == "home":
@@ -766,7 +800,8 @@ class YoloCupPickNode(Node):
     def pick_and_place_side(self, base_xyz):
         log = self.get_logger()
         bx, by, bz = [float(v) for v in base_xyz]
-        side_vec = self.side_unit_vector()
+        side_vec = self.side_unit_vector([bx, by])
+        side_direction = side_vec[0] if self.side_grasp_axis == "x" else side_vec[1]
         side_ori = self.side_grasp_orientation(side_vec)
         stage_xy = (
             np.array([bx, by], dtype=float) + side_vec * self.side_staging_offset
@@ -780,7 +815,7 @@ class YoloCupPickNode(Node):
 
         log.info(
             f"Side grasp target base=({bx:.3f}, {by:.3f}, {bz:.3f}), "
-            f"axis={self.side_grasp_axis}, dir={self.side_grasp_direction:.0f}, "
+            f"axis={self.side_grasp_axis}, dir={side_direction:.0f}, "
             f"ori_mode={self.side_orientation_mode}, "
             f"tool_roll={self.side_tool_roll_deg:.1f}deg, "
             f"stage=({stage_xy[0]:.3f}, {stage_xy[1]:.3f}, {pre_z:.3f}), "
@@ -788,7 +823,9 @@ class YoloCupPickNode(Node):
             f"grasp=({grasp_xy[0]:.3f}, {grasp_xy[1]:.3f}, {grasp_z:.3f})"
         )
 
-        self.open_gripper_max(wait=False)
+        if not self.open_gripper_max(wait=True):
+            log.error("Cannot start side pick because gripper did not open.")
+            return False
 
         steps = [
             (
@@ -808,9 +845,6 @@ class YoloCupPickNode(Node):
             log.info(label)
             if not self.plan_and_execute(pose_goal=pose, params=self.pilz_params):
                 return False
-
-        if not self.wait_until_gripper_idle():
-            return False
 
         refined_base = self.refine_target_from_current_view(log)
         if refined_base is not None:
@@ -838,8 +872,8 @@ class YoloCupPickNode(Node):
             return False
 
         log.info("close gripper for side grasp")
-        self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
-        time.sleep(1.0)
+        if not self.close_gripper_for_pick():
+            return False
 
         move_steps = [
             ("lift cup", make_pose(grasp_xy[0], grasp_xy[1], lift_z, side_ori)),
@@ -858,7 +892,8 @@ class YoloCupPickNode(Node):
                 return False
 
         log.info("open gripper")
-        self.open_gripper_max(wait=True)
+        if not self.open_gripper_max(wait=True):
+            return False
 
         log.info("retract")
         return self.plan_and_execute(
@@ -879,7 +914,9 @@ class YoloCupPickNode(Node):
             f"pick_z={pick_z:.3f}"
         )
 
-        self.open_gripper_max(wait=False)
+        if not self.open_gripper_max(wait=True):
+            log.error("Cannot start top pick because gripper did not open.")
+            return False
 
         steps = [
             ("move above cup", make_pose(bx, by, approach_z, self.home_ori)),
@@ -888,9 +925,6 @@ class YoloCupPickNode(Node):
             log.info(label)
             if not self.plan_and_execute(pose_goal=pose, params=self.pilz_params):
                 return False
-
-        if not self.wait_until_gripper_idle():
-            return False
 
         refined_base = self.refine_target_from_current_view(log)
         if refined_base is not None:
@@ -915,8 +949,8 @@ class YoloCupPickNode(Node):
             return False
 
         log.info("close gripper")
-        self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
-        time.sleep(1.0)
+        if not self.close_gripper_for_pick():
+            return False
 
         move_steps = [
             ("lift cup", make_pose(bx, by, approach_z, self.home_ori)),
@@ -935,7 +969,8 @@ class YoloCupPickNode(Node):
                 return False
 
         log.info("open gripper")
-        self.open_gripper_max(wait=True)
+        if not self.open_gripper_max(wait=True):
+            return False
         time.sleep(1.0)
 
         log.info("retract")
