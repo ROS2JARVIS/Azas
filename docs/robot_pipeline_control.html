@@ -196,6 +196,9 @@
 	      margin-top: 14px;
 	    }
 	    .flow-panel {
+	      position: sticky;
+	      top: 178px;
+	      z-index: 20;
 	      margin-top: 14px;
 	      border: 1px solid var(--line);
 	      border-radius: 16px;
@@ -235,7 +238,7 @@
 	    .flow-item {
 	      flex: 0 0 220px;
 	      display: grid;
-	      grid-template-columns: 34px minmax(0, 1fr);
+	      grid-template-columns: 34px minmax(0, 1fr) 28px;
 	      gap: 10px;
 	      align-items: start;
 	      min-height: 104px;
@@ -244,7 +247,9 @@
 	      border-radius: 14px;
 	      background: #fff;
 	      position: relative;
+	      cursor: grab;
 	    }
+	    .flow-item.dragging { opacity: 0.55; cursor: grabbing; }
 	    .flow-item + .flow-item { margin-left: 42px; }
 	    .flow-item + .flow-item::before {
 	      content: "";
@@ -278,6 +283,17 @@
 	    }
 	    .flow-title { font-size: 14px; line-height: 1.28; font-weight: 950; }
 	    .flow-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+	    .flow-remove {
+	      width: 28px;
+	      min-height: 28px;
+	      padding: 0;
+	      border-radius: 999px;
+	      background: #f1f5f9;
+	      border: 1px solid var(--line);
+	      color: #475569;
+	      font-size: 16px;
+	      line-height: 1;
+	    }
 	    .flow-item.status-running { border-color: #93c5fd; background: #eff6ff; box-shadow: inset 0 0 0 1px #bfdbfe; }
 	    .flow-item.status-passed { border-color: #86efac; background: #f0fdf4; }
 	    .flow-item.status-failed,
@@ -340,7 +356,17 @@
     .step-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
     .step-title { font-size: 16px; font-weight: 950; line-height: 1.28; letter-spacing: -0.015em; }
     .step-note { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.45; }
-    .step-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+	    .step-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+	    .step-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+	    .step-add {
+	      min-height: 32px;
+	      padding: 0 10px;
+	      border-radius: 9px;
+	      background: #e0f2fe;
+	      border: 1px solid #bae6fd;
+	      color: #075985;
+	      font-size: 13px;
+	    }
     details.command { margin-top: 10px; }
     details.command summary {
       cursor: pointer;
@@ -436,6 +462,7 @@
 	      .content-grid { grid-template-columns: 1fr; }
 	      .board { grid-template-columns: 1fr; }
 	      .stage-head { display: block; }
+	      .flow-panel { position: static; }
 	      .flow-head { display: block; }
 	      .log-panel { position: static; height: 420px; min-height: 420px; }
 	    }
@@ -461,7 +488,7 @@
     </div>
     <div class="header-meta">
       <span class="pill dark" id="loadedCount">단계 로드 전</span>
-      <span class="pill dark" id="selectedCount">선택 0</span>
+      <span class="pill dark" id="selectedCount">큐 0</span>
       <span class="pill dark">실제 모션은 arm 체크 필요</span>
     </div>
   </header>
@@ -518,7 +545,7 @@
 	      <div class="flow-head">
 	        <div>
 	          <h2>선택 실행 순서</h2>
-	          <div class="flow-help">체크한 순서대로 실행됩니다. 빠른 선택 버튼은 화면에 정의된 안전 순서로 넣습니다.</div>
+	          <div class="flow-help">큐 순서대로 실행됩니다. 같은 단계는 여러 번 추가할 수 있고, 노드를 드래그해서 순서를 바꿀 수 있습니다.</div>
 	        </div>
 	        <span class="pill info" id="flowMode">대기</span>
 	      </div>
@@ -579,10 +606,11 @@
 	    const selectedCountEl = document.getElementById("selectedCount");
 	    const loadedCountEl = document.getElementById("loadedCount");
 	    let allSteps = [];
-	    let selectedKeys = new Set();
-	    let selectedOrder = [];
+	    let selectedQueue = [];
 	    let resultStatuses = new Map();
+	    let itemStatuses = new Map();
 	    let isRunning = false;
+	    let nextQueueId = 1;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -643,11 +671,32 @@
 	      return allSteps.find((step) => step.key === key);
 	    }
 
-	    function compactSelectionOrder() {
+	    function queuedKeysSet() {
+	      return new Set(selectedQueue.map((item) => item.key));
+	    }
+
+	    function addQueueItem(key) {
+	      if (!stepByKey(key)) return;
+	      selectedQueue.push({id: `q${nextQueueId++}`, key});
+	    }
+
+	    function removeQueueItem(id) {
+	      selectedQueue = selectedQueue.filter((item) => item.id !== id);
+	      itemStatuses.delete(id);
+	    }
+
+	    function removeQueueKey(key) {
+	      selectedQueue = selectedQueue.filter((item) => item.key !== key);
+	      for (const [id] of itemStatuses) {
+	        if (!selectedQueue.some((item) => item.id === id)) itemStatuses.delete(id);
+	      }
+	    }
+
+	    function compactSelectionQueue() {
 	      const known = new Set(allSteps.map((step) => step.key));
-	      selectedOrder = selectedOrder.filter((key) => selectedKeys.has(key) && known.has(key));
-	      for (const step of allSteps) {
-	        if (selectedKeys.has(step.key) && !selectedOrder.includes(step.key)) selectedOrder.push(step.key);
+	      selectedQueue = selectedQueue.filter((item) => known.has(item.key));
+	      for (const [id] of itemStatuses) {
+	        if (!selectedQueue.some((item) => item.id === id)) itemStatuses.delete(id);
 	      }
 	    }
 
@@ -679,17 +728,18 @@
       const parts = [];
       for (const [group, steps] of grouped) {
         parts.push(`<div class="group-title"><span>${escapeHtml(groupLabels[group] || group)}</span><span>${steps.length}개</span></div>`);
-        for (const step of steps) {
-          const cmd = step.resolved_command || step.command || "실행 명령 없음";
-          const status = resultStatuses.get(step.key);
-          const statusClass = status ? `status-${status}` : "";
-          const result = status
-            ? `<span class="pill result-badge visible ${statusBadgeClass(status)}" data-result-for="${escapeHtml(step.key)}">${escapeHtml(statusLabels[status] || status)}</span>`
-            : `<span class="pill result-badge" data-result-for="${escapeHtml(step.key)}"></span>`;
-          parts.push(`
-            <label class="step kind-${escapeHtml(step.kind)} ${statusClass} ${step.implemented ? "" : "unimplemented"}" data-step-key="${escapeHtml(step.key)}" data-group="${group}">
-              <input class="step-check" type="checkbox" value="${escapeHtml(step.key)}" ${selectedKeys.has(step.key) ? "checked" : ""}>
-              <div>
+	        for (const step of steps) {
+	          const cmd = step.resolved_command || step.command || "실행 명령 없음";
+	          const status = resultStatuses.get(step.key);
+	          const statusClass = status ? `status-${status}` : "";
+	          const isQueued = queuedKeysSet().has(step.key);
+	          const result = status
+	            ? `<span class="pill result-badge visible ${statusBadgeClass(status)}" data-result-for="${escapeHtml(step.key)}">${escapeHtml(statusLabels[status] || status)}</span>`
+	            : `<span class="pill result-badge" data-result-for="${escapeHtml(step.key)}"></span>`;
+	          parts.push(`
+	            <label class="step kind-${escapeHtml(step.kind)} ${statusClass} ${step.implemented ? "" : "unimplemented"}" data-step-key="${escapeHtml(step.key)}" data-group="${group}">
+	              <input class="step-check" type="checkbox" value="${escapeHtml(step.key)}" ${isQueued ? "checked" : ""}>
+	              <div>
                 <div class="step-top">
                   <div class="step-title">${escapeHtml(step.label)}</div>
                   <span class="pill kind">${escapeHtml(step.kind)}</span>
@@ -697,10 +747,13 @@
                 <div class="step-note">${escapeHtml(step.note)}</div>
                 <div class="step-meta">
                   <span class="pill ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
-                  ${step.real_motion ? `<span class="pill real">실제모션</span>` : ""}
-                  ${result}
-                </div>
-                <details class="command">
+	                  ${step.real_motion ? `<span class="pill real">실제모션</span>` : ""}
+	                  ${result}
+	                </div>
+	                <div class="step-actions">
+	                  <button class="step-add" type="button" data-add-step="${escapeHtml(step.key)}">순서에 추가</button>
+	                </div>
+	                <details class="command">
                   <summary>명령 보기</summary>
                   <code>${escapeHtml(cmd)}</code>
                 </details>
@@ -713,23 +766,22 @@
 	      updateSelectedCount();
 	    }
 
-	    function renderFlow(currentKey = "") {
-	      compactSelectionOrder();
-	      const selected = selectedStepKeys();
-	      if (!selected.length) {
+	    function renderFlow(currentId = "") {
+	      compactSelectionQueue();
+	      if (!selectedQueue.length) {
 	        flowEl.innerHTML = `<div class="flow-empty">아직 선택된 단계가 없습니다.</div>`;
 	        flowModeEl.textContent = isRunning ? "실행 중" : "대기";
 	        return;
 	      }
 	      const parts = [];
-	      selected.forEach((key, index) => {
-	        const step = stepByKey(key);
+	      selectedQueue.forEach((item, index) => {
+	        const step = stepByKey(item.key);
 	        if (!step) return;
-	        const status = resultStatuses.get(key) || (key === currentKey ? "running" : "");
+	        const status = itemStatuses.get(item.id) || (item.id === currentId ? "running" : "");
 	        const statusClass = status ? `status-${status}` : "";
 	        const statusLabel = status ? statusLabels[status] || status : "대기";
 	        parts.push(`
-	          <div class="flow-item ${statusClass}" data-flow-key="${escapeHtml(key)}">
+	          <div class="flow-item ${statusClass}" draggable="true" data-flow-id="${escapeHtml(item.id)}" data-flow-key="${escapeHtml(item.key)}">
 	            <div class="flow-index">${index + 1}</div>
 	            <div>
 	              <div class="flow-title">${escapeHtml(step.label)}</div>
@@ -739,15 +791,17 @@
 	                ${step.real_motion ? `<span class="pill real">실제모션</span>` : ""}
 	              </div>
 	            </div>
+	            <button class="flow-remove" type="button" data-remove-flow="${escapeHtml(item.id)}" title="순서에서 제거">×</button>
 	          </div>
 	        `);
 	      });
 	      flowEl.innerHTML = parts.join("");
-	      flowModeEl.textContent = isRunning ? "실행 중" : `선택 ${selected.length}`;
+	      flowModeEl.textContent = isRunning ? "실행 중" : `큐 ${selectedQueue.length}`;
 	    }
 
 	    function resetResultBadges() {
 	      resultStatuses = new Map();
+	      itemStatuses = new Map();
       for (const row of document.querySelectorAll(".step")) {
         row.classList.remove("status-running", "status-starting", "status-started", "status-restarted", "status-passed", "status-failed", "status-blocked", "status-timeout");
       }
@@ -758,12 +812,16 @@
 	      renderFlow();
 	    }
 
-    function setStepStatus(key, status) {
-      const safeStatus = statusLabels[status] ? status : "failed";
-      resultStatuses.set(key, safeStatus);
-      const row = document.querySelector(`.step[data-step-key="${CSS.escape(key)}"]`);
-      const badge = document.querySelector(`.result-badge[data-result-for="${CSS.escape(key)}"]`);
-      if (!row || !badge) return;
+	    function setStepStatus(key, status, itemId = "") {
+	      const safeStatus = statusLabels[status] ? status : "failed";
+	      resultStatuses.set(key, safeStatus);
+	      if (itemId) itemStatuses.set(itemId, safeStatus);
+	      const row = document.querySelector(`.step[data-step-key="${CSS.escape(key)}"]`);
+	      const badge = document.querySelector(`.result-badge[data-result-for="${CSS.escape(key)}"]`);
+	      if (!row || !badge) {
+	        renderFlow();
+	        return;
+	      }
       row.classList.remove("status-running", "status-starting", "status-started", "status-restarted", "status-passed", "status-failed", "status-blocked", "status-timeout");
 	      row.classList.add(`status-${safeStatus}`);
 	      badge.className = `pill result-badge visible ${statusBadgeClass(safeStatus)}`;
@@ -772,17 +830,18 @@
 	    }
 	
 	    function selectedStepKeys() {
-	      compactSelectionOrder();
-	      return selectedOrder.slice();
+	      compactSelectionQueue();
+	      return selectedQueue.map((item) => item.key);
 	    }
 
-    function syncRenderedChecks() {
-      for (const input of document.querySelectorAll(".step-check")) input.checked = selectedKeys.has(input.value);
-    }
+	    function syncRenderedChecks() {
+	      const queued = queuedKeysSet();
+	      for (const input of document.querySelectorAll(".step-check")) input.checked = queued.has(input.value);
+	    }
 
 	    function updateSelectedCount() {
 	      syncRenderedChecks();
-	      selectedCountEl.textContent = `선택 ${selectedStepKeys().length}`;
+	      selectedCountEl.textContent = `큐 ${selectedStepKeys().length}`;
 	      renderSummary();
 	      renderFlow();
 	    }
@@ -794,8 +853,8 @@
 	      else if (mode === "visible") keys = allSteps.filter((step) => visible.has(step.key)).map((step) => step.key);
 	      else if (mode === "core") keys = allSteps.filter((step) => core.has(step.key)).map((step) => step.key);
 	      else keys = allSteps.filter((step) => stepGroup(step) === mode).map((step) => step.key);
-	      selectedKeys = new Set(keys);
-	      selectedOrder = keys.slice();
+	      selectedQueue = keys.map((key) => ({id: `q${nextQueueId++}`, key}));
+	      itemStatuses = new Map();
 	      updateSelectedCount();
 	    }
 
@@ -805,25 +864,62 @@
 
     async function loadSteps() {
       log.textContent = "단계 목록 로드 중...";
-      const res = await fetch("/api/steps");
+	      const res = await fetch("/api/steps");
 	      allSteps = await res.json();
 	      const knownKeys = new Set(allSteps.map((step) => step.key));
-	      selectedKeys = new Set(Array.from(selectedKeys).filter((key) => knownKeys.has(key)));
-	      selectedOrder = selectedOrder.filter((key) => selectedKeys.has(key) && knownKeys.has(key));
+	      selectedQueue = selectedQueue.filter((item) => knownKeys.has(item.key));
 	      renderSteps();
 	      log.textContent = "단계 목록 로드 완료. 상단 검색/필터 또는 빠른 선택을 사용하세요.";
 	    }
 
-    document.addEventListener("change", (event) => {
+	    document.addEventListener("change", (event) => {
 	      if (!event.target.classList?.contains("step-check")) return;
 	      if (event.target.checked) {
-	        selectedKeys.add(event.target.value);
-	        selectedOrder = selectedOrder.filter((key) => key !== event.target.value);
-	        selectedOrder.push(event.target.value);
+	        if (!selectedQueue.some((item) => item.key === event.target.value)) addQueueItem(event.target.value);
 	      } else {
-	        selectedKeys.delete(event.target.value);
-	        selectedOrder = selectedOrder.filter((key) => key !== event.target.value);
+	        removeQueueKey(event.target.value);
 	      }
+	      updateSelectedCount();
+	    });
+	    document.addEventListener("click", (event) => {
+	      const addKey = event.target?.dataset?.addStep;
+	      if (addKey) {
+	        event.preventDefault();
+	        event.stopPropagation();
+	        addQueueItem(addKey);
+	        updateSelectedCount();
+	        return;
+	      }
+	      const removeId = event.target?.dataset?.removeFlow;
+	      if (removeId) {
+	        removeQueueItem(removeId);
+	        updateSelectedCount();
+	      }
+	    });
+	    flowEl.addEventListener("dragstart", (event) => {
+	      const item = event.target.closest(".flow-item");
+	      if (!item) return;
+	      item.classList.add("dragging");
+	      event.dataTransfer.effectAllowed = "move";
+	      event.dataTransfer.setData("text/plain", item.dataset.flowId || "");
+	    });
+	    flowEl.addEventListener("dragend", (event) => {
+	      event.target.closest(".flow-item")?.classList.remove("dragging");
+	    });
+	    flowEl.addEventListener("dragover", (event) => {
+	      event.preventDefault();
+	      event.dataTransfer.dropEffect = "move";
+	    });
+	    flowEl.addEventListener("drop", (event) => {
+	      event.preventDefault();
+	      const draggedId = event.dataTransfer.getData("text/plain");
+	      const target = event.target.closest(".flow-item");
+	      if (!draggedId || !target || target.dataset.flowId === draggedId) return;
+	      const from = selectedQueue.findIndex((item) => item.id === draggedId);
+	      const to = selectedQueue.findIndex((item) => item.id === target.dataset.flowId);
+	      if (from < 0 || to < 0) return;
+	      const [moved] = selectedQueue.splice(from, 1);
+	      selectedQueue.splice(to, 0, moved);
 	      updateSelectedCount();
 	    });
     document.getElementById("search").addEventListener("input", renderSteps);
@@ -835,33 +931,33 @@
     document.getElementById("focusLog").addEventListener("click", focusLog);
 
 	    document.getElementById("run").addEventListener("click", async () => {
-	      const selected = selectedStepKeys();
+	      const selected = selectedQueue.map((item) => ({...item}));
 	      resetResultBadges();
 	      isRunning = Boolean(selected.length);
-	      renderFlow(selected[0] || "");
-	      log.textContent = selected.length ? `실행 중... (${selected.length}개 단계, 체크 순서대로 실행)` : "선택된 단계가 없습니다.";
+	      renderFlow(selected[0]?.id || "");
+	      log.textContent = selected.length ? `실행 중... (${selected.length}개 단계, 큐 순서대로 실행)` : "선택된 단계가 없습니다.";
 	      focusLog();
 	      if (!selected.length) return;
 	      try {
 	        const results = [];
-	        for (const [index, key] of selected.entries()) {
-	          setStepStatus(key, "running");
-	          renderFlow(key);
-	          log.textContent = `실행 중 ${index + 1}/${selected.length}: ${stepByKey(key)?.label || key}`;
+	        for (const [index, item] of selected.entries()) {
+	          setStepStatus(item.key, "running", item.id);
+	          renderFlow(item.id);
+	          log.textContent = `실행 중 ${index + 1}/${selected.length}: ${stepByKey(item.key)?.label || item.key}`;
 	          const body = payload();
-	          body.selected = [key];
+	          body.selected = [item.key];
 	          const res = await fetch("/api/run", {
 	            method: "POST",
 	            headers: {"Content-Type": "application/json"},
 	            body: JSON.stringify(body)
 	          });
 	          const data = await res.json();
-	          const result = (data.results || [])[0] || {key, status: "failed", output: "결과 없음"};
+	          const result = (data.results || [])[0] || {key: item.key, status: "failed", output: "결과 없음"};
 	          results.push(result);
-	          setStepStatus(result.key || key, result.status);
+	          setStepStatus(result.key || item.key, result.status, item.id);
 	          if (result.status === "failed" || result.status === "blocked" || result.status === "timeout") break;
 	        }
-	        log.textContent = JSON.stringify({execution_order: selected, results}, null, 2);
+	        log.textContent = JSON.stringify({execution_order: selected.map((item) => item.key), results}, null, 2);
 	      } catch (err) {
 	        log.textContent = String(err);
 	      } finally {
