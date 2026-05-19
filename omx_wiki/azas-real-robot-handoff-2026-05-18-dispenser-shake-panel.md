@@ -577,3 +577,34 @@ Evidence:
 - `/api/steps` returned 27 steps.
 
 No real robot motion was executed for this validation.
+
+
+## 2026-05-19T16:10:47+09:00 update — one-command browser launcher
+
+The user asked for a simple command that immediately opens the browser for the local HTML control panel.
+
+### Fix applied
+
+- Added `tools/run/open_robot_pipeline_control_panel.sh`.
+  - Checks `http://127.0.0.1:8765/`.
+  - Starts `tools/run/robot_pipeline_control_server.py` with ROS setup if the panel is not already ready.
+  - Opens the default browser through `xdg-open`, with `gio`, Chrome, and Firefox fallbacks.
+  - Writes panel server logs to `log/panel/robot_pipeline_control_panel.log`.
+- Added symlink command:
+  - `/home/ssu/.local/bin/azas-panel` → `tools/run/open_robot_pipeline_control_panel.sh`.
+
+### Validation, no real robot motion
+
+```bash
+bash -n tools/run/open_robot_pipeline_control_panel.sh
+test -x /home/ssu/.local/bin/azas-panel
+azas-panel
+```
+
+Evidence:
+
+- Shell syntax check passed.
+- `azas-panel` command exists in `~/.local/bin`.
+- Running `azas-panel` opened/requested `http://127.0.0.1:8765/`.
+
+No real robot motion was executed.

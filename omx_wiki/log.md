@@ -41,3 +41,8 @@
 ## [2026-05-19T15:51:41+09:00] update
 - **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
 - **Summary:** Recorded user-requested switch from collapsible bottom log to always-visible right-side sticky log while keeping the wide pipeline board and collapsed settings.
+
+
+## [2026-05-19T16:10:47+09:00] update
+- **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
+- **Summary:** Recorded creation of `azas-panel` one-command launcher that starts the panel server if needed and opens the browser.
