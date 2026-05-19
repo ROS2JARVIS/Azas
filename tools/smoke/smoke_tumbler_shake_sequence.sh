@@ -111,7 +111,7 @@ LAUNCH_ARGS=(
   shake_cycles:=4
   joint_shake_base_j1_deg:=0.0
   joint_shake_base_j2_deg:=-35.0
-  joint_shake_base_j3_deg:=-55.0
+  joint_shake_base_j3_deg:=50.0
   joint_shake_base_j4_deg:=0.0
   joint_shake_base_j5_deg:=70.0
   joint_shake_base_j6_deg:=0.0
@@ -123,6 +123,8 @@ LAUNCH_ARGS=(
   joint_shake_j1_max_deg:=5.0
   joint_shake_j2_min_deg:=-80.0
   joint_shake_j2_max_deg:=5.0
+  joint_shake_j3_min_deg:=0.0
+  joint_shake_j3_max_deg:=135.0
   joint_shake_max_single_delta_deg:=75.0
   joint5_min_deg:=40.0
   joint5_max_deg:=100.0
@@ -144,12 +146,12 @@ DONE_OK=false
 for _ in {1..50}; do
   if grep -q "DONE" "${STATUS_FILE}" 2>/dev/null || grep -q "tumbler_shake_sequence_node.*DONE" "${LOG_FILE}" 2>/dev/null; then
     assert_log_contains "${LOG_FILE}" "Joint shake safety validated: .*joint_5 range=\\[40\\.0, 100\\.0\\]" "joint-space shake passed joint_5 safety validation"
-    assert_log_contains "${LOG_FILE}" "plan joint_shake_safe_ready: joints_deg=\\[0\\.0, -35\\.0, -55\\.0, 0\\.0, 70\\.0, 0\\.0\\]" "joint shake starts from operator-approved safe base"
-    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_plus: joints_deg=\\[0\\.0, -35\\.0, -55\\.0, -18\\.0, 100\\.0, 36\\.0\\]" "joint shake drives J5/J6 positive dynamically"
-    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_minus: joints_deg=\\[0\\.0, -35\\.0, -55\\.0, 18\\.0, 40\\.0, -36\\.0\\]" "joint shake drives J5/J6 negative dynamically"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*-55\\.0.*0\\.0.*70\\.0.*0\\.0" "fake Doosan received joint safe base"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*-55\\.0.*-18\\.0.*100\\.0.*36\\.0" "fake Doosan received dynamic J5/J6 plus waypoint"
-    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*-55\\.0.*18\\.0.*40\\.0.*-36\\.0" "fake Doosan received dynamic J5/J6 minus waypoint"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_safe_ready: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 0\\.0, 70\\.0, 0\\.0\\]" "joint shake starts from J3-positive safe base"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_plus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, -18\\.0, 100\\.0, 36\\.0\\]" "joint shake drives J5/J6 positive dynamically without moving J3 negative"
+    assert_log_contains "${LOG_FILE}" "plan joint_shake_cycle_1_j5_j6_minus: joints_deg=\\[0\\.0, -35\\.0, 50\\.0, 18\\.0, 40\\.0, -36\\.0\\]" "joint shake drives J5/J6 negative dynamically without moving J3 negative"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*0\\.0.*70\\.0.*0\\.0" "fake Doosan received J3-positive joint safe base"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*-18\\.0.*100\\.0.*36\\.0" "fake Doosan received dynamic J5/J6 plus waypoint"
+    assert_log_contains "${FAKE_LOG_FILE}" "fake move_joint: pos=.*0\\.0.*-35\\.0.*50\\.0.*18\\.0.*40\\.0.*-36\\.0" "fake Doosan received dynamic J5/J6 minus waypoint"
     echo "[OK] high-shake fake hardware path reached DONE"
     DONE_OK=true
     break

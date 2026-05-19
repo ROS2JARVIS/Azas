@@ -151,25 +151,27 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("wrist_max_deg", 135.0)
         self.declare_parameter("joint_shake_base_j1_deg", 0.0)
         self.declare_parameter("joint_shake_base_j2_deg", -35.0)
-        self.declare_parameter("joint_shake_base_j3_deg", -55.0)
+        self.declare_parameter("joint_shake_base_j3_deg", 50.0)
         self.declare_parameter("joint_shake_base_j4_deg", 0.0)
         self.declare_parameter("joint_shake_base_j5_deg", 70.0)
         self.declare_parameter("joint_shake_base_j6_deg", 0.0)
         self.declare_parameter("joint_shake_j3_amplitude_deg", 0.0)
-        self.declare_parameter("joint_shake_j4_amplitude_deg", 24.0)
+        self.declare_parameter("joint_shake_j4_amplitude_deg", 18.0)
         self.declare_parameter("joint_shake_j5_amplitude_deg", 30.0)
         self.declare_parameter("joint_shake_j6_amplitude_deg", 36.0)
         self.declare_parameter("joint_shake_j1_min_deg", -20.0)
         self.declare_parameter("joint_shake_j1_max_deg", 5.0)
         self.declare_parameter("joint_shake_j2_min_deg", -80.0)
         self.declare_parameter("joint_shake_j2_max_deg", 5.0)
+        self.declare_parameter("joint_shake_j3_min_deg", 0.0)
+        self.declare_parameter("joint_shake_j3_max_deg", 135.0)
         self.declare_parameter("joint_shake_max_single_delta_deg", 75.0)
         self.declare_parameter("approach_joint_velocity", 18.0)
         self.declare_parameter("approach_joint_acceleration", 22.0)
         self.declare_parameter("approach_joint_time", 2.6)
-        self.declare_parameter("shake_joint_velocity", 115.0)
-        self.declare_parameter("shake_joint_acceleration", 180.0)
-        self.declare_parameter("shake_joint_time", 0.26)
+        self.declare_parameter("shake_joint_velocity", 95.0)
+        self.declare_parameter("shake_joint_acceleration", 150.0)
+        self.declare_parameter("shake_joint_time", 0.32)
         self.declare_parameter("require_state_validity_for_joint_shake", False)
         self.declare_parameter("state_validity_service", "/check_state_validity")
         self.declare_parameter("planning_group", "manipulator")
@@ -375,20 +377,28 @@ class TumblerShakeSequenceNode(Node):
             steps.extend(
                 [
                     step(
-                        f"joint_shake_cycle_{cycle}_cocktail_high_forward",
+                        f"joint_shake_cycle_{cycle}_j5_j6_plus",
                         (0.0, 0.0, j3_amp, -j4_amp, j5_amp, j6_amp),
                     ),
                     step(
-                        f"joint_shake_cycle_{cycle}_cocktail_high_cross",
-                        (0.0, 0.0, 0.0, j4_amp, j5_mid_amp, -j6_amp),
-                    ),
-                    step(
-                        f"joint_shake_cycle_{cycle}_cocktail_low_back",
+                        f"joint_shake_cycle_{cycle}_j5_j6_minus",
                         (0.0, 0.0, -j3_amp, j4_amp, -j5_amp, -j6_amp),
                     ),
                     step(
-                        f"joint_shake_cycle_{cycle}_cocktail_low_snap",
+                        f"joint_shake_cycle_{cycle}_wrist_snap_plus",
+                        (0.0, 0.0, 0.0, j4_amp, j5_mid_amp, -j6_amp),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_wrist_snap_minus",
                         (0.0, 0.0, 0.0, -j4_amp, -j5_mid_amp, j6_amp),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_j5_only_plus",
+                        (0.0, 0.0, 0.0, 0.0, j5_amp, 0.0),
+                    ),
+                    step(
+                        f"joint_shake_cycle_{cycle}_j5_only_minus",
+                        (0.0, 0.0, 0.0, 0.0, -j5_amp, 0.0),
                     ),
                     step(f"joint_shake_cycle_{cycle}_center", (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
                 ]
@@ -467,6 +477,8 @@ class TumblerShakeSequenceNode(Node):
         j1_upper = float(self.get_parameter("joint_shake_j1_max_deg").value)
         j2_lower = float(self.get_parameter("joint_shake_j2_min_deg").value)
         j2_upper = float(self.get_parameter("joint_shake_j2_max_deg").value)
+        j3_lower = float(self.get_parameter("joint_shake_j3_min_deg").value)
+        j3_upper = float(self.get_parameter("joint_shake_j3_max_deg").value)
         max_delta = float(self.get_parameter("joint_shake_max_single_delta_deg").value)
 
         previous: JointSequenceStep | None = None
@@ -488,6 +500,11 @@ class TumblerShakeSequenceNode(Node):
                 raise RuntimeError(
                     f"{step.label}: joint_2={step.joints_deg[1]:.3f} deg is outside "
                     f"safe shake range [{j2_lower:.1f}, {j2_upper:.1f}] deg"
+                )
+            if not j3_lower <= step.joints_deg[2] <= j3_upper:
+                raise RuntimeError(
+                    f"{step.label}: joint_3={step.joints_deg[2]:.3f} deg is outside "
+                    f"safe shake range [{j3_lower:.1f}, {j3_upper:.1f}] deg"
                 )
             if not joint5_lower <= step.joints_deg[4] <= joint5_upper:
                 raise RuntimeError(
@@ -512,6 +529,7 @@ class TumblerShakeSequenceNode(Node):
             "Joint shake safety validated: "
             f"joint_1 range=[{j1_lower:.1f}, {j1_upper:.1f}], "
             f"joint_2 range=[{j2_lower:.1f}, {j2_upper:.1f}], "
+            f"joint_3 range=[{j3_lower:.1f}, {j3_upper:.1f}], "
             f"joint_5 range=[{joint5_lower:.1f}, {joint5_upper:.1f}], "
             f"max_single_delta={max_delta:.1f}"
         )

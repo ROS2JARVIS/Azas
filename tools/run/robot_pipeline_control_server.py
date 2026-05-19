@@ -99,7 +99,7 @@ STEPS = [
     Step("recipe_generate", "레시피 생성", "blocked", "", False, False, "음성/레시피 토픽 통합 버튼은 별도 연결 필요"),
     Step("side_grip", "컵 잡기 side grip", "run", "tools/run/direct_movej_joints.py --j1 159 --j2 -43 --j3 -105 --j4 -81 --j5 85 --j6 31", True, True, "수동 테스트 전용: 불필요한 후퇴 모션을 막기 위해 핵심 자동선택에서는 제외"),
     Step("gripper_soft_grasp", "그리퍼 살짝 잡기", "run", "ros2 service call /jarvis/rg2/set_width azas_interfaces/srv/SetGripper", True, True, "큰 컵용: 완전 close 대신 폭 75mm/약한 힘으로 살짝 오므림"),
-    Step("gripper_open", "그리퍼 open / 컵 놓기", "run", "ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'", True, True, "컵을 배출구 아래에 둔 뒤 RG2 open"),
+    Step("gripper_open", "그리퍼 full open / 컵 놓기 검증", "run", "tools/run/rg2_full_open_verify.sh", True, True, "컵을 배출구 아래에 둔 뒤 RG2 full-open 명령 success=True 검증"),
     Step(
         "move_to_dispenser_1",
         "고정 디스펜서 1 배출구 아래로 컵 이동",
@@ -107,7 +107,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 1",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_1 좌표 사용; 이동/검증 성공 후 RG2 open",
+        "실제모션 후보: front_hold_poses.dispenser_1 좌표 사용; 이동/검증 성공 후 RG2 full-open success 검증",
     ),
     Step(
         "move_to_dispenser_2",
@@ -116,7 +116,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 2",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_2 좌표 사용; 이동/검증 성공 후 RG2 open",
+        "실제모션 후보: front_hold_poses.dispenser_2 좌표 사용; 이동/검증 성공 후 RG2 full-open success 검증",
     ),
     Step(
         "move_to_dispenser_3",
@@ -125,7 +125,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 3",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_3 좌표 사용; 이동/검증 성공 후 RG2 open",
+        "실제모션 후보: front_hold_poses.dispenser_3 좌표 사용; 이동/검증 성공 후 RG2 full-open success 검증",
     ),
     Step(
         "move_to_dispenser_4",
@@ -134,7 +134,7 @@ STEPS = [
         "tools/run/move_to_measured_dispenser_front_hold.py --dispenser-id 4",
         True,
         True,
-        "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용; 이동/검증 성공 후 RG2 open",
+        "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용; 이동/검증 성공 후 RG2 full-open success 검증",
     ),
     Step(
         "press_dispenser_1",
@@ -143,7 +143,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=red",
         True,
         True,
-        "feature/dispenser의 taught posx red 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx red 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_2",
@@ -152,7 +152,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=green",
         True,
         True,
-        "feature/dispenser의 taught posx green 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx green 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_3",
@@ -161,7 +161,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=yellow",
         True,
         True,
-        "feature/dispenser의 taught posx yellow 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx yellow 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_4",
@@ -170,7 +170,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=blue",
         True,
         True,
-        "feature/dispenser의 taught posx blue 사용: RG2 close 후 transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx blue 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
@@ -185,7 +185,7 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J2/J3 음수 베이스, J4/J5/J6 칵테일 스냅 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
+    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J3 양수 고정, J4/J5/J6 조인트 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
     Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
     Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
 ]
@@ -560,7 +560,7 @@ def run_output_failure(step: Step, output: str) -> str | None:
 def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
     clean = service_prefix.strip("/") or "dsr01"
     if step.key == "gripper_open":
-        return ["/jarvis/rg2/open"]
+        return ["/jarvis/rg2/set_width"]
     if step.key == "gripper_soft_grasp":
         return ["/jarvis/rg2/set_width"]
     if step.key in {"home_robot", "lift_robot", "side_grip"}:
@@ -575,11 +575,11 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/motion/check_motion",
             f"/{clean}/tcp/get_current_tcp",
             f"/{clean}/aux_control/get_current_posx",
-            "/jarvis/rg2/open",
+            "/jarvis/rg2/set_width",
         ]
     if step.key.startswith("press_dispenser_"):
         return [
-            "/jarvis/rg2/close",
+            "/jarvis/rg2/set_width",
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/move_line",
             f"/{clean}/motion/move_wait",
@@ -900,7 +900,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
             f"ros2 launch jarvis rg2_trigger.launch.py ip:={shlex.quote(rg2_ip)} "
-            "port:=502 connect:=true open_width:=900 close_width:=700 force:=120 settle_seconds:=0.4"
+            "port:=502 connect:=true open_width:=1100 close_width:=0 force:=120 settle_seconds:=0.4"
         )
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
@@ -916,7 +916,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
     if step.key == "gripper_open":
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
-            "timeout 12s ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'"
+            "tools/run/rg2_full_open_verify.sh"
         )
     if step.key == "gripper_soft_grasp":
         return (
@@ -946,7 +946,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--verify-target --verify-timeout-sec 70 --target-tolerance-mm 15 "
             "--compensate-current-tcp --verify-link6-target"
             " --execute --confirm ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
-            " && timeout 12s ros2 service call /jarvis/rg2/open std_srvs/srv/Trigger '{}'"
+            " && tools/run/rg2_full_open_verify.sh"
         )
     if step.key.startswith("press_dispenser_"):
         dispenser_id = step.key.rsplit("_", 1)[-1]
@@ -958,41 +958,46 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
-            "timeout 12s ros2 service call /jarvis/rg2/close std_srvs/srv/Trigger '{}' && "
             "ros2 run azas_dispenser dispenser_press_node --ros-args "
             f"-p service_prefix:={shlex.quote(service_prefix)} "
             "-p use_taught_posx:=true "
             f"-p tcp_name:={shlex.quote(tcp_name)} "
             "-p require_tcp_for_taught_posx:=true "
             f"-p target_dispenser:={shlex.quote(target)} "
-            "-p move_home_first:=false "
+            "-p move_home_first:=true "
             "-p return_home:=true "
-            "-p close_gripper_at_home:=false "
+            "-p close_gripper_at_home:=true "
+            "-p gripper_service:=/jarvis/rg2/set_width "
+            "-p gripper_close_width:=0.0 "
+            "-p gripper_close_force:=12.0 "
+            "-p gripper_wait_timeout:=12.0 "
+            "-p strict_pose_verification:=false "
             "-p service_wait_timeout_sec:=10.0 "
             "-p pose_position_tolerance_mm:=8.0 "
             "-p pose_orientation_tolerance_deg:=6.0 "
-            "-p line_velocity:=10.0 "
-            "-p line_acceleration:=15.0 "
-            "-p joint_velocity:=20.0 "
-            "-p joint_acceleration:=20.0"
+            "-p line_velocity:=20.0 "
+            "-p line_acceleration:=30.0 "
+            "-p joint_velocity:=30.0 "
+            "-p joint_acceleration:=30.0"
         )
     if step.key == "shake_closed_cup":
         return (
             f"cd {ROOT} && SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
             "REQUIRE_ROBOT_STANDBY=false SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
             "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
-            "JOINT_SHAKE_BASE_J3_DEG=-55.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
+            "JOINT_SHAKE_BASE_J3_DEG=50.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
             "JOINT_SHAKE_BASE_J5_DEG=70.0 JOINT_SHAKE_BASE_J6_DEG=0.0 "
-            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=24.0 "
+            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=18.0 "
             "JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=36.0 "
             "JOINT_SHAKE_J1_MIN_DEG=-20.0 JOINT_SHAKE_J1_MAX_DEG=5.0 "
             "JOINT_SHAKE_J2_MIN_DEG=-80.0 JOINT_SHAKE_J2_MAX_DEG=5.0 "
+            "JOINT_SHAKE_J3_MIN_DEG=0.0 JOINT_SHAKE_J3_MAX_DEG=135.0 "
             "JOINT_SHAKE_MAX_SINGLE_DELTA_DEG=75.0 "
             "ENFORCE_WRIST_JOINT_LIMITS=false WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
             "JOINT5_MIN_DEG=40.0 JOINT5_MAX_DEG=100.0 "
             "APPROACH_JOINT_VELOCITY=18.0 APPROACH_JOINT_ACCELERATION=22.0 "
-            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=115.0 "
-            "SHAKE_JOINT_ACCELERATION=180.0 SHAKE_JOINT_TIME=0.26 "
+            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=95.0 "
+            "SHAKE_JOINT_ACCELERATION=150.0 SHAKE_JOINT_TIME=0.32 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
         )

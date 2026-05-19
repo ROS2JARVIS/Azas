@@ -2,7 +2,7 @@
 title: "Azas Real Robot Handoff 2026-05-18 Dispenser Shake Panel"
 tags: ["azas", "real-robot", "handoff", "dispenser", "shake", "panel", "safety"]
 created: 2026-05-18T10:06:59.396Z
-updated: 2026-05-18T10:06:59.396Z
+updated: 2026-05-19T13:27:29+09:00
 sources: []
 links: []
 category: session-log
@@ -188,3 +188,148 @@ Do not tell the user shake is safe until all are true:
 - Collision/state validity gate is either passing with evidence or the step remains blocked.
 - RViz preview matches the actual real-motion command path.
 - Panel unchecks selected steps after execution.
+
+## 2026-05-19 update — press failure and shake J3 rollback
+
+Latest branch remains `integration/dispenser-feature-trial-20260518`.
+
+### Latest user evidence
+
+- `press_dispenser_2 / green` failed after RG2 full-close because `dispenser_press_node` built the first taught-POSX step as:
+  - current HOME-ish XYZ: `[224.8, 4.1, 579.2]`
+  - but taught dispenser RPY: `[168.6, -117.1, -149.8]`
+- Robot did not move to the mixed pose; strict verification correctly failed at `position=125.91 mm`.
+- User also reported current shake is worse than the previous version:
+  - `joint_3` must not go negative / backward.
+  - Shake was not visibly happening.
+
+### Fixes applied
+
+- `src/azas_dispenser/azas_dispenser/dispenser_press_node.py`
+  - Taught-POSX first lift now preserves **current TCP RPY** while lifting at current XY.
+  - Dispenser alignment and press steps then use taught dispenser RPY.
+  - Step verification now checks each step against its own per-step RPY instead of one global RPY.
+  - This prevents the bad “current XYZ + taught RPY” first MoveLine.
+
+- `tools/run/robot_pipeline_control_server.py`
+  - `press_dispenser_*` panel command changed to:
+    - `move_home_first:=true`
+    - `close_gripper_at_home:=true`
+    - `gripper_service:=/jarvis/rg2/set_width`
+    - `gripper_close_width:=0.0`
+    - `gripper_close_force:=12.0`
+  - Meaning: HOME 이동 → RG2 full-close success 검증 → taught POSX transit/press/retreat → HOME 복귀.
+  - External `tools/run/rg2_full_close_verify.sh && ...` was removed from the press command because closing must happen after the HOME move, not before it.
+
+- Shake joint defaults restored to a safer previous-style J3-positive base:
+  - `JOINT_SHAKE_BASE_J1_DEG=0.0`
+  - `JOINT_SHAKE_BASE_J2_DEG=-35.0`
+  - `JOINT_SHAKE_BASE_J3_DEG=50.0`
+  - `JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0`
+  - `JOINT_SHAKE_J3_MIN_DEG=0.0`
+  - `JOINT_SHAKE_J3_MAX_DEG=135.0`
+  - `JOINT_SHAKE_BASE_J5_DEG=70.0`
+  - `JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0`, so J5 stays `40..100`.
+  - `JOINT_SHAKE_J4_AMPLITUDE_DEG=18.0`, `JOINT_SHAKE_J6_AMPLITUDE_DEG=36.0`.
+  - Shake speed restored to `SHAKE_JOINT_VELOCITY=95.0`, `SHAKE_JOINT_ACCELERATION=150.0`, `SHAKE_JOINT_TIME=0.32`.
+
+- `src/azas_motion/azas_motion/tumbler_shake_sequence_node.py`
+  - Added J3 safety range validation.
+  - Restored non-cocktail labels/pattern: `j5_j6_plus`, `j5_j6_minus`, wrist snaps, J5-only pulses, center.
+  - J3 remains positive and fixed by default.
+
+- `src/azas_bringup/launch/tumbler_shake_sequence.launch.py`
+- `tools/run/run_rule_based_shake_real.sh`
+- `src/azas_motion/azas_motion/m0609_shake_joint_state_node.py`
+- `tools/smoke/smoke_tumbler_shake_sequence.sh`
+  - Updated to match the J3-positive shake path.
+
+- `tools/smoke/fake_hardware_services.py`
+  - Extended fake services to support `move_wait`, `get_current_posx`, and TCP set/get for no-motion dispenser press validation.
+
+### Validation evidence
+
+No real robot motion was executed by the agent.
+
+Passed:
+
+```bash
+python3 -m py_compile \
+  src/azas_dispenser/azas_dispenser/dispenser_press_node.py \
+  src/azas_motion/azas_motion/tumbler_shake_sequence_node.py \
+  src/azas_motion/azas_motion/m0609_shake_joint_state_node.py \
+  src/azas_bringup/launch/tumbler_shake_sequence.launch.py \
+  tools/run/robot_pipeline_control_server.py \
+  tools/smoke/fake_hardware_services.py
+
+source /opt/ros/humble/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
+colcon build --packages-select azas_dispenser azas_motion azas_bringup --symlink-install
+
+ROS_DOMAIN_ID=87 SERVICE_PREFIX=azas_fake_shake_<pid> \
+  tools/smoke/smoke_tumbler_shake_sequence.sh
+```
+
+Shake smoke confirmed:
+
+- `joint_shake_safe_ready` is `[0.0, -35.0, 50.0, 0.0, 70.0, 0.0]`.
+- `j5_j6_plus` is `[0.0, -35.0, 50.0, -18.0, 100.0, 36.0]`.
+- `j5_j6_minus` is `[0.0, -35.0, 50.0, 18.0, 40.0, -36.0]`.
+- Unsafe joint_1 shake plan fails closed.
+
+Additional no-motion dispenser press validation passed against fake services:
+
+- `move to HOME` executed first.
+- RG2 set_width close command accepted with `width_m=0.000`, `force_n=12.0`.
+- `lift to transit height` preserved current RPY `[89.8, 179.9, 120.3]`.
+- `align above dispenser` and press steps used taught green RPY `[168.569, -117.133, -149.816]`.
+- `press dispenser pump` reached fake target.
+- HOME return executed.
+
+Panel server was restarted. `/api/steps` resolved commands now show:
+
+- `press_dispenser_2`: HOME → full-close in node → taught POSX press → HOME.
+- `shake_closed_cup`: J3 fixed positive at `50.0`, J3 min `0.0`, J5 range `40..100`.
+
+## 2026-05-19 update — restore PR #3 press path, keep cup-place/HOME/close order
+
+The user clarified that the merged `feature/dispenser` / PR #3 press path was already working and should not have been changed. The press path was therefore restored to the PR-compatible taught-POSX sequence:
+
+1. `lift to transit height` at current XY.
+2. `align above dispenser`.
+3. `descend to approach`.
+4. `move to dispenser top`.
+5. `press dispenser pump`.
+6. `retreat above dispenser`.
+7. `lift to return transit height`.
+
+The required higher-level flow is now:
+
+- `move_to_dispenser_*`: move cup under dispenser and then RG2 full-open to release cup.
+- `press_dispenser_*`: move HOME, full-close gripper, execute original PR #3 taught-POSX press path, then HOME return.
+
+Important details:
+
+- `strict_pose_verification` default is `false`, matching PR #3 behavior where pose error is logged but does not abort each step.
+- TCP guard remains: if `GripperDA_v1_jarvis` is already active, `tcp/set_current_tcp` is skipped; otherwise it tries to set/verify TCP.
+- Panel command no longer uses external pre-close and no longer sets `transit_height:=0.0`.
+
+Validation, no real robot motion:
+
+```bash
+python3 -m py_compile src/azas_dispenser/azas_dispenser/dispenser_press_node.py tools/run/robot_pipeline_control_server.py
+colcon build --packages-select azas_dispenser --symlink-install
+```
+
+Fake press validation confirmed:
+
+- HOME `move_joint`.
+- RG2 full-close via `/jarvis/rg2/set_width`.
+- 7 PR-compatible MoveLine steps including `z=579.151` transit.
+- press down at `z=339.151`.
+- HOME return.
+
+Panel server restarted and `/api/steps` confirmed:
+
+- `move_to_dispenser_1`: measured front hold + `tools/run/rg2_full_open_verify.sh`.
+- `press_dispenser_1`: PR-compatible path with `move_home_first:=true`, `close_gripper_at_home:=true`, `strict_pose_verification:=false`.

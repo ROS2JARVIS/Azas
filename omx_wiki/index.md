@@ -1,6 +1,6 @@
 # Wiki Index
 
-> 1 pages | Last updated: 2026-05-18T10:06:59.397Z
+> 1 pages | Last updated: 2026-05-19T13:27:29+09:00
 
 ## session-log
 

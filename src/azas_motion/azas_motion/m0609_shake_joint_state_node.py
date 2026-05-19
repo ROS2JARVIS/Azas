@@ -14,11 +14,11 @@ class M0609ShakeJointStateNode(Node):
     def __init__(self) -> None:
         super().__init__("m0609_shake_joint_state_node")
         self.declare_parameter("publish_rate", 30.0)
-        self.declare_parameter("shake_cycles_per_second", 4.0)
+        self.declare_parameter("shake_cycles_per_second", 3.2)
         self.declare_parameter("preview_mode", "shake")
         self.declare_parameter(
             "home_joints_rad",
-            [0.0, math.radians(-35.0), math.radians(-55.0), 0.0, math.radians(70.0), 0.0],
+            [0.0, math.radians(-35.0), math.radians(50.0), 0.0, math.radians(70.0), 0.0],
         )
 
         self.publisher = self.create_publisher(JointState, "/joint_states", 10)
@@ -64,7 +64,7 @@ class M0609ShakeJointStateNode(Node):
             home[0],
             home[1],
             home[2],
-            home[3] + math.radians(24.0) * wrist_counter,
+            home[3] + math.radians(18.0) * wrist_counter,
             home[4] + math.radians(30.0) * j5_swing,
             home[5] + math.radians(36.0) * wrist_counter + math.radians(8.0) * wrist_snap,
         ]

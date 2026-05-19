@@ -56,6 +56,8 @@ def generate_launch_description():
     joint_shake_j1_max_deg = LaunchConfiguration("joint_shake_j1_max_deg")
     joint_shake_j2_min_deg = LaunchConfiguration("joint_shake_j2_min_deg")
     joint_shake_j2_max_deg = LaunchConfiguration("joint_shake_j2_max_deg")
+    joint_shake_j3_min_deg = LaunchConfiguration("joint_shake_j3_min_deg")
+    joint_shake_j3_max_deg = LaunchConfiguration("joint_shake_j3_max_deg")
     joint_shake_max_single_delta_deg = LaunchConfiguration("joint_shake_max_single_delta_deg")
     approach_joint_velocity = LaunchConfiguration("approach_joint_velocity")
     approach_joint_acceleration = LaunchConfiguration("approach_joint_acceleration")
@@ -170,6 +172,8 @@ def generate_launch_description():
         "joint_shake_j1_max_deg": ParameterValue(joint_shake_j1_max_deg, value_type=float),
         "joint_shake_j2_min_deg": ParameterValue(joint_shake_j2_min_deg, value_type=float),
         "joint_shake_j2_max_deg": ParameterValue(joint_shake_j2_max_deg, value_type=float),
+        "joint_shake_j3_min_deg": ParameterValue(joint_shake_j3_min_deg, value_type=float),
+        "joint_shake_j3_max_deg": ParameterValue(joint_shake_j3_max_deg, value_type=float),
         "joint_shake_max_single_delta_deg": ParameterValue(
             joint_shake_max_single_delta_deg, value_type=float
         ),
@@ -229,25 +233,27 @@ def generate_launch_description():
             DeclareLaunchArgument("wrist_max_deg", default_value="135.0"),
             DeclareLaunchArgument("joint_shake_base_j1_deg", default_value="0.0"),
             DeclareLaunchArgument("joint_shake_base_j2_deg", default_value="-35.0"),
-            DeclareLaunchArgument("joint_shake_base_j3_deg", default_value="-55.0"),
+            DeclareLaunchArgument("joint_shake_base_j3_deg", default_value="50.0"),
             DeclareLaunchArgument("joint_shake_base_j4_deg", default_value="0.0"),
             DeclareLaunchArgument("joint_shake_base_j5_deg", default_value="70.0"),
             DeclareLaunchArgument("joint_shake_base_j6_deg", default_value="0.0"),
             DeclareLaunchArgument("joint_shake_j3_amplitude_deg", default_value="0.0"),
-            DeclareLaunchArgument("joint_shake_j4_amplitude_deg", default_value="24.0"),
+            DeclareLaunchArgument("joint_shake_j4_amplitude_deg", default_value="18.0"),
             DeclareLaunchArgument("joint_shake_j5_amplitude_deg", default_value="30.0"),
             DeclareLaunchArgument("joint_shake_j6_amplitude_deg", default_value="36.0"),
             DeclareLaunchArgument("joint_shake_j1_min_deg", default_value="-20.0"),
             DeclareLaunchArgument("joint_shake_j1_max_deg", default_value="5.0"),
             DeclareLaunchArgument("joint_shake_j2_min_deg", default_value="-80.0"),
             DeclareLaunchArgument("joint_shake_j2_max_deg", default_value="5.0"),
+            DeclareLaunchArgument("joint_shake_j3_min_deg", default_value="0.0"),
+            DeclareLaunchArgument("joint_shake_j3_max_deg", default_value="135.0"),
             DeclareLaunchArgument("joint_shake_max_single_delta_deg", default_value="75.0"),
             DeclareLaunchArgument("approach_joint_velocity", default_value="18.0"),
             DeclareLaunchArgument("approach_joint_acceleration", default_value="22.0"),
             DeclareLaunchArgument("approach_joint_time", default_value="2.6"),
-            DeclareLaunchArgument("shake_joint_velocity", default_value="115.0"),
-            DeclareLaunchArgument("shake_joint_acceleration", default_value="180.0"),
-            DeclareLaunchArgument("shake_joint_time", default_value="0.26"),
+            DeclareLaunchArgument("shake_joint_velocity", default_value="95.0"),
+            DeclareLaunchArgument("shake_joint_acceleration", default_value="150.0"),
+            DeclareLaunchArgument("shake_joint_time", default_value="0.32"),
             DeclareLaunchArgument("require_state_validity_for_joint_shake", default_value="false"),
             DeclareLaunchArgument("state_validity_service", default_value="/check_state_validity"),
             DeclareLaunchArgument("planning_group", default_value="manipulator"),

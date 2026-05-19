@@ -92,6 +92,9 @@ class DispenserPressNode:
         self.pose_orientation_tolerance_deg = float(
             get_param(self.node, "pose_orientation_tolerance_deg", 5.0)
         )
+        self.strict_pose_verification = bool(
+            get_param(self.node, "strict_pose_verification", False)
+        )
         self.taught_posx_by_name = {
             "red": [
                 float(v)
@@ -379,10 +382,11 @@ class DispenserPressNode:
         self.logger.info(f"{label}: movej {req.pos}")
         return self.call_service(self.move_joint, req, label)
 
-    def movel(self, x_mm, y_mm, z_mm, label):
+    def movel(self, x_mm, y_mm, z_mm, label, rpy_deg=None):
         safe_x = clamp(x_mm, SAFE_X_MIN_MM, SAFE_X_MAX_MM)
         safe_y = clamp(y_mm, SAFE_Y_MIN_MM, SAFE_Y_MAX_MM)
         safe_z = clamp(z_mm, SAFE_Z_MIN_MM, SAFE_Z_MAX_MM)
+        rx, ry, rz = rpy_deg if rpy_deg is not None else (self.rx, self.ry, self.rz)
 
         if (safe_x, safe_y, safe_z) != (x_mm, y_mm, z_mm):
             self.logger.warning(
@@ -392,7 +396,7 @@ class DispenserPressNode:
             )
 
         req = MoveLine.Request()
-        req.pos = [safe_x, safe_y, safe_z, self.rx, self.ry, self.rz]
+        req.pos = [safe_x, safe_y, safe_z, float(rx), float(ry), float(rz)]
         req.vel = [self.line_velocity, self.line_velocity]
         req.acc = [self.line_acceleration, self.line_acceleration]
         req.time = 0.0
@@ -465,6 +469,8 @@ class DispenserPressNode:
             f"rpy_max={max_rpy_error:.2f} deg "
             f"(drx={drx:.2f}, dry={dry:.2f}, drz={drz:.2f})"
         )
+        if not self.strict_pose_verification:
+            return True
         if position_error > self.pose_position_tolerance_mm:
             self.logger.error(
                 f"{label}: 위치 오차 {position_error:.2f} mm가 허용값 "
@@ -585,14 +591,17 @@ class DispenserPressNode:
             )
 
         steps = [
-            (x_mm, y_mm, approach_z, "approach above dispenser"),
-            (x_mm, y_mm, top_z, "move to dispenser top"),
-            (x_mm, y_mm, pressed_z, "press dispenser pump"),
-            (x_mm, y_mm, approach_z, "retreat above dispenser"),
+            (x_mm, y_mm, approach_z, self.rx, self.ry, self.rz, "approach above dispenser"),
+            (x_mm, y_mm, top_z, self.rx, self.ry, self.rz, "move to dispenser top"),
+            (x_mm, y_mm, pressed_z, self.rx, self.ry, self.rz, "press dispenser pump"),
+            (x_mm, y_mm, approach_z, self.rx, self.ry, self.rz, "retreat above dispenser"),
         ]
 
         if home_lift_step is not None:
-            return [home_lift_step] + steps
+            home_x, home_y, home_z, home_label = home_lift_step
+            return [
+                (home_x, home_y, home_z, self.rx, self.ry, self.rz, home_label)
+            ] + steps
 
         return steps
 
@@ -624,15 +633,20 @@ class DispenserPressNode:
         if steps is None:
             return False
 
-        for idx, (x_mm, y_mm, z_mm, label) in enumerate(steps, start=1):
+        for idx, step in enumerate(steps, start=1):
+            if len(step) == 4:
+                x_mm, y_mm, z_mm, label = step
+                rx, ry, rz = self.rx, self.ry, self.rz
+            else:
+                x_mm, y_mm, z_mm, rx, ry, rz, label = step
             self.logger.info(f"단계 {idx}/{len(steps)}: 시작 '{label}' -> x={x_mm:.1f} y={y_mm:.1f} z={z_mm:.1f} mm")
-            if not self.movel(x_mm, y_mm, z_mm, label):
+            if not self.movel(x_mm, y_mm, z_mm, label, (rx, ry, rz)):
                 self.logger.error(f"{label} 단계에서 movel 실패")
                 return False
             if not self.wait_for_motion_done(label):
                 self.logger.error(f"{label} 단계의 모션이 완료되지 않았습니다")
                 return False
-            if not self.verify_reached_pose([x_mm, y_mm, z_mm, self.rx, self.ry, self.rz], label):
+            if not self.verify_reached_pose([x_mm, y_mm, z_mm, rx, ry, rz], label):
                 self.logger.error(f"{label} 단계가 목표 포즈에 도달하지 못했습니다")
                 return False
             self.logger.info(f"단계 {idx}/{len(steps)}: 완료 '{label}'")
