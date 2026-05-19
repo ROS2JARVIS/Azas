@@ -27,3 +27,17 @@
 ## [2026-05-19T14:49:21+09:00] update
 - **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
 - **Summary:** Recorded more dynamic joint-space cocktail shake pattern, updated panel defaults, and fake-hardware/dry-run validation evidence.
+
+## [2026-05-19T15:34:58+09:00] update
+- **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
+- **Summary:** Recorded panel UI/UX compact three-pane redesign, collapsed commands, fixed log pane, selection/result persistence, and no-motion validation evidence.
+
+
+## [2026-05-19T15:45:47+09:00] update
+- **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
+- **Summary:** Recorded correction from cramped three-pane panel to wide board, sticky execution bar, collapsible settings, and bottom log drawer after readability feedback.
+
+
+## [2026-05-19T15:51:41+09:00] update
+- **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
+- **Summary:** Recorded user-requested switch from collapsible bottom log to always-visible right-side sticky log while keeping the wide pipeline board and collapsed settings.
