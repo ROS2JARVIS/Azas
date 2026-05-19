@@ -65,6 +65,9 @@ def generate_launch_description():
     shake_joint_velocity = LaunchConfiguration("shake_joint_velocity")
     shake_joint_acceleration = LaunchConfiguration("shake_joint_acceleration")
     shake_joint_time = LaunchConfiguration("shake_joint_time")
+    joint_shake_peak_velocity_limit_deg_s = LaunchConfiguration(
+        "joint_shake_peak_velocity_limit_deg_s"
+    )
     verify_joint_targets = LaunchConfiguration("verify_joint_targets")
     joint_target_tolerance_deg = LaunchConfiguration("joint_target_tolerance_deg")
     joint_target_wait_extra_sec = LaunchConfiguration("joint_target_wait_extra_sec")
@@ -189,6 +192,10 @@ def generate_launch_description():
         "shake_joint_velocity": ParameterValue(shake_joint_velocity, value_type=float),
         "shake_joint_acceleration": ParameterValue(shake_joint_acceleration, value_type=float),
         "shake_joint_time": ParameterValue(shake_joint_time, value_type=float),
+        "joint_shake_peak_velocity_limit_deg_s": ParameterValue(
+            joint_shake_peak_velocity_limit_deg_s,
+            value_type=float,
+        ),
         "verify_joint_targets": ParameterValue(verify_joint_targets, value_type=bool),
         "joint_target_tolerance_deg": ParameterValue(
             joint_target_tolerance_deg,
@@ -267,7 +274,8 @@ def generate_launch_description():
             DeclareLaunchArgument("approach_joint_time", default_value="2.6"),
             DeclareLaunchArgument("shake_joint_velocity", default_value="125.0"),
             DeclareLaunchArgument("shake_joint_acceleration", default_value="190.0"),
-            DeclareLaunchArgument("shake_joint_time", default_value="0.24"),
+            DeclareLaunchArgument("shake_joint_time", default_value="0.0"),
+            DeclareLaunchArgument("joint_shake_peak_velocity_limit_deg_s", default_value="225.0"),
             DeclareLaunchArgument("verify_joint_targets", default_value="true"),
             DeclareLaunchArgument("joint_target_tolerance_deg", default_value="8.0"),
             DeclareLaunchArgument("joint_target_wait_extra_sec", default_value="3.0"),

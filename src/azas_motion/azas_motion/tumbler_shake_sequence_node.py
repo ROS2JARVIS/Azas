@@ -171,7 +171,8 @@ class TumblerShakeSequenceNode(Node):
         self.declare_parameter("approach_joint_time", 2.6)
         self.declare_parameter("shake_joint_velocity", 125.0)
         self.declare_parameter("shake_joint_acceleration", 190.0)
-        self.declare_parameter("shake_joint_time", 0.24)
+        self.declare_parameter("shake_joint_time", 0.0)
+        self.declare_parameter("joint_shake_peak_velocity_limit_deg_s", 225.0)
         self.declare_parameter("verify_joint_targets", True)
         self.declare_parameter("joint_target_tolerance_deg", 8.0)
         self.declare_parameter("joint_target_wait_extra_sec", 3.0)
@@ -505,6 +506,9 @@ class TumblerShakeSequenceNode(Node):
         j3_lower = float(self.get_parameter("joint_shake_j3_min_deg").value)
         j3_upper = float(self.get_parameter("joint_shake_j3_max_deg").value)
         max_delta = float(self.get_parameter("joint_shake_max_single_delta_deg").value)
+        peak_velocity_limit = float(
+            self.get_parameter("joint_shake_peak_velocity_limit_deg_s").value
+        )
 
         previous: JointSequenceStep | None = None
         for step in steps:
@@ -548,6 +552,17 @@ class TumblerShakeSequenceNode(Node):
                         f"{step.label}: largest joint step is {largest:.1f} deg, "
                         f"above joint_shake_max_single_delta_deg={max_delta:.1f}"
                     )
+                step_time = self._joint_time_for_step(step)
+                if step_time > 0.0 and peak_velocity_limit > 0.0:
+                    estimated_peak_velocity = (2.0 * largest) / step_time
+                    if estimated_peak_velocity > peak_velocity_limit:
+                        raise RuntimeError(
+                            f"{step.label}: final-time joint step would require peak velocity "
+                            f"{estimated_peak_velocity:.1f} deg/s, above "
+                            f"joint_shake_peak_velocity_limit_deg_s="
+                            f"{peak_velocity_limit:.1f} deg/s. Increase shake_joint_time "
+                            "or set shake_joint_time=0.0 to use velocity/acceleration mode."
+                        )
             previous = step
 
         self.get_logger().info(
@@ -556,7 +571,8 @@ class TumblerShakeSequenceNode(Node):
             f"joint_2 range=[{j2_lower:.1f}, {j2_upper:.1f}], "
             f"joint_3 range=[{j3_lower:.1f}, {j3_upper:.1f}], "
             f"joint_5 range=[{joint5_lower:.1f}, {joint5_upper:.1f}], "
-            f"max_single_delta={max_delta:.1f}"
+            f"max_single_delta={max_delta:.1f}, "
+            f"peak_velocity_limit={peak_velocity_limit:.1f}"
         )
 
     def publish_joint_plan(self) -> None:

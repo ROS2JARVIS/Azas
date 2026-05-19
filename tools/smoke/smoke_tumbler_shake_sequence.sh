@@ -62,6 +62,14 @@ cleanup() {
     kill "${BAD_STATUS_PID}" 2>/dev/null || true
     wait "${BAD_STATUS_PID}" 2>/dev/null || true
   fi
+  if [[ -n "${FAST_TIME_LAUNCH_PID:-}" ]] && kill -0 "${FAST_TIME_LAUNCH_PID}" 2>/dev/null; then
+    kill "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+    wait "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${FAST_TIME_STATUS_PID:-}" ]] && kill -0 "${FAST_TIME_STATUS_PID}" 2>/dev/null; then
+    kill "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+    wait "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -185,6 +193,42 @@ wait "${STATUS_PID}" 2>/dev/null || true
 
 BAD_LOG_FILE="${BAD_LOG_FILE:-/tmp/azas_smoke_tumbler_shake_bad_launch.log}"
 BAD_STATUS_FILE="${BAD_STATUS_FILE:-/tmp/azas_smoke_tumbler_shake_bad_status.txt}"
+FAST_TIME_LOG_FILE="${FAST_TIME_LOG_FILE:-/tmp/azas_smoke_tumbler_shake_fast_time_launch.log}"
+FAST_TIME_STATUS_FILE="${FAST_TIME_STATUS_FILE:-/tmp/azas_smoke_tumbler_shake_fast_time_status.txt}"
+rm -f "${FAST_TIME_LOG_FILE}" "${FAST_TIME_STATUS_FILE}"
+
+echo "[Azas] Checking that over-limit final-time shake fails closed"
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
+  use_visualizer:=false \
+  shake_control_mode:=joint \
+  shake_joint_time:=0.24 \
+  joint_shake_peak_velocity_limit_deg_s:=225.0 \
+  >"${FAST_TIME_LOG_FILE}" 2>&1 &
+FAST_TIME_LAUNCH_PID=$!
+
+timeout 12s ros2 topic echo /jarvis/tumbler_shake_sequence/status --field data --no-daemon >"${FAST_TIME_STATUS_FILE}" 2>/tmp/azas_smoke_tumbler_shake_fast_time_topic.err &
+FAST_TIME_STATUS_PID=$!
+
+for _ in {1..24}; do
+  if grep -q "FAILED" "${FAST_TIME_STATUS_FILE}" 2>/dev/null || grep -q "tumbler_shake_sequence_node.*FAILED" "${FAST_TIME_LOG_FILE}" 2>/dev/null; then
+    assert_log_contains "${FAST_TIME_LOG_FILE}" "final-time joint step would require peak velocity" "over-limit final-time shake plan fails closed"
+    echo "[OK] over-limit final-time shake was rejected"
+    break
+  fi
+  sleep 0.5
+done
+
+if ! grep -q "FAILED" "${FAST_TIME_STATUS_FILE}" 2>/dev/null && ! grep -q "tumbler_shake_sequence_node.*FAILED" "${FAST_TIME_LOG_FILE}" 2>/dev/null; then
+  echo "[FAIL] over-limit final-time shake did not fail closed"
+  sed -n '1,180p' "${FAST_TIME_LOG_FILE}" 2>/dev/null || true
+  exit 1
+fi
+
+kill "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+wait "${FAST_TIME_LAUNCH_PID}" 2>/dev/null || true
+kill "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+wait "${FAST_TIME_STATUS_PID}" 2>/dev/null || true
+
 rm -f "${BAD_LOG_FILE}" "${BAD_STATUS_FILE}"
 
 echo "[Azas] Checking that unsafe shake space fails closed"
