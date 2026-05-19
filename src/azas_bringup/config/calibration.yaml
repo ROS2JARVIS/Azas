@@ -54,6 +54,25 @@ dispenser_outlets:
     press_pose_rpy_rad: null
     clearance_m: null
 
+cup_holder:
+  parent_frame: base_link
+  # Measured with the active Doosan TCP placed in the holder hole.
+  bottom_insert_center_pose_xyz_m: [0.429831, 0.220885, 0.017898]
+  bottom_insert_center_pose_rpy_rad: [2.513735, -3.122200, 3.038293]
+  top_center_estimated_xyz_m: [0.429831, 0.220885, 0.079500]
+  radius_m: 0.045
+  height_m: 0.062
+  side_grip_place:
+    pre_place_pose_xyz_m: [0.425545, 0.251832, 0.167371]
+    pre_place_pose_rpy_rad: [1.600936, 1.622299, 2.132633]
+    place_final_pose_xyz_m: [0.425545, 0.251832, 0.117371]
+    place_final_pose_rpy_rad: [1.600936, 1.622299, 2.132633]
+    retreat_pose_xyz_m: [0.415096, 0.189680, 0.113925]
+    retreat_pose_rpy_rad: [1.608926, 1.585807, 2.146282]
+    approach_lift_m: 0.050
+    solution_space: 2.0
+    status: measured_draft
+
 # Dry-run-only example values.
 # These values document the shape of a temporary static TF for simulation or
 # TF debugging. They are not calibration data and must not be copied into the
