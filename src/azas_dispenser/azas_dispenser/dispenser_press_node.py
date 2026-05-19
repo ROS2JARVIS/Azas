@@ -183,6 +183,36 @@ class DispenserPressNode:
         self.travel_line_acceleration = float(
             get_param(self.node, "travel_line_acceleration", self.line_acceleration)
         )
+        self.pre_home_retreat_before_home = bool(
+            get_param(self.node, "pre_home_retreat_before_home", False)
+        )
+        # Press starts are often requested while the gripper is still near the cup/
+        # dispenser handoff area.  A direct HOME movej from there can sweep the
+        # gripper through the cup.  Default direction is -X in base coordinates:
+        # dispenser taught poses are near x~=730 mm and HOME is near x~=370 mm, so
+        # this pulls back toward the robot before the joint HOME transition.
+        self.pre_home_retreat_dx_mm = float(
+            get_param(self.node, "pre_home_retreat_dx_mm", -120.0)
+        )
+        self.pre_home_retreat_dy_mm = float(
+            get_param(self.node, "pre_home_retreat_dy_mm", 0.0)
+        )
+        self.pre_home_retreat_min_z_mm = float(
+            get_param(self.node, "pre_home_retreat_min_z_mm", 0.0)
+        )
+        self.pre_home_retreat_min_current_x_mm = float(
+            get_param(self.node, "pre_home_retreat_min_current_x_mm", 450.0)
+        )
+        self.pre_home_retreat_velocity = float(
+            get_param(self.node, "pre_home_retreat_velocity", min(self.travel_line_velocity, 25.0))
+        )
+        self.pre_home_retreat_acceleration = float(
+            get_param(
+                self.node,
+                "pre_home_retreat_acceleration",
+                min(self.travel_line_acceleration, 30.0),
+            )
+        )
 
         self.move_joint = self.node.create_client(
             MoveJoint,
@@ -422,6 +452,51 @@ class DispenserPressNode:
         self.logger.info(f"{label}: 모션 완료 대기 중")
         return self.call_service(self.move_wait, req, f"{label} wait")
 
+    def movel_checked_no_clamp(
+        self,
+        x_mm,
+        y_mm,
+        z_mm,
+        label,
+        rpy_deg,
+        velocity,
+        acceleration,
+        z_min_mm=50.0,
+    ):
+        if not (SAFE_X_MIN_MM <= x_mm <= SAFE_X_MAX_MM):
+            self.logger.error(
+                f"{label}: x={x_mm:.1f} mm가 허용 범위 "
+                f"[{SAFE_X_MIN_MM:.1f}, {SAFE_X_MAX_MM:.1f}] mm 밖입니다."
+            )
+            return False
+        if not (SAFE_Y_MIN_MM <= y_mm <= SAFE_Y_MAX_MM):
+            self.logger.error(
+                f"{label}: y={y_mm:.1f} mm가 허용 범위 "
+                f"[{SAFE_Y_MIN_MM:.1f}, {SAFE_Y_MAX_MM:.1f}] mm 밖입니다."
+            )
+            return False
+        if not (z_min_mm <= z_mm <= SAFE_Z_MAX_MM):
+            self.logger.error(
+                f"{label}: z={z_mm:.1f} mm가 허용 범위 "
+                f"[{z_min_mm:.1f}, {SAFE_Z_MAX_MM:.1f}] mm 밖입니다."
+            )
+            return False
+
+        rx, ry, rz = rpy_deg
+        req = MoveLine.Request()
+        req.pos = [float(x_mm), float(y_mm), float(z_mm), float(rx), float(ry), float(rz)]
+        req.vel = [float(velocity), float(velocity)]
+        req.acc = [float(acceleration), float(acceleration)]
+        req.time = 0.0
+        req.radius = 0.0
+        req.ref = DR_BASE
+        req.mode = MOVE_MODE_ABSOLUTE
+        req.blend_type = BLENDING_SPEED_TYPE_DUPLICATE
+        req.sync_type = SYNC
+
+        self.logger.info(f"{label}: checked movel(no clamp) {req.pos}")
+        return self.call_service(self.move_line, req, label)
+
     def read_current_posx(self):
         req = GetCurrentPosx.Request()
         req.ref = DR_BASE
@@ -490,6 +565,65 @@ class DispenserPressNode:
                 f"{label}: 자세 오차 {max_rpy_error:.2f} deg가 허용값 "
                 f"{self.pose_orientation_tolerance_deg:.2f} deg를 초과했습니다."
             )
+            return False
+        return True
+
+    def retreat_before_home_if_needed(self):
+        if not self.pre_home_retreat_before_home:
+            return True
+
+        current_pose = self.read_current_posx()
+        if current_pose is None:
+            return False
+
+        current_x = current_pose[0]
+        if current_x < self.pre_home_retreat_min_current_x_mm:
+            self.logger.info(
+                "pre-HOME retreat 생략: 현재 TCP x="
+                f"{current_x:.1f} mm 가 기준 "
+                f"{self.pre_home_retreat_min_current_x_mm:.1f} mm 보다 작아 "
+                "이미 HOME/로봇 쪽 안전 영역에 있다고 판단했습니다."
+            )
+            return True
+
+        target_x = current_pose[0] + self.pre_home_retreat_dx_mm
+        target_y = current_pose[1] + self.pre_home_retreat_dy_mm
+        target_z = max(current_pose[2], self.pre_home_retreat_min_z_mm)
+        target_rpy = current_pose[3:6]
+        label = "pre-HOME retreat away from cup"
+
+        self.logger.info(
+            "HOME movej 전에 컵/디스펜서 충돌 회피용 후퇴를 수행합니다: "
+            f"dx={self.pre_home_retreat_dx_mm:.1f} mm, "
+            f"dy={self.pre_home_retreat_dy_mm:.1f} mm, "
+            f"target_z={target_z:.1f} mm, rpy 유지="
+            f"({target_rpy[0]:.1f}, {target_rpy[1]:.1f}, {target_rpy[2]:.1f})"
+        )
+        if not self.movel_checked_no_clamp(
+            target_x,
+            target_y,
+            target_z,
+            label,
+            target_rpy,
+            self.pre_home_retreat_velocity,
+            self.pre_home_retreat_acceleration,
+        ):
+            self.logger.error("pre-HOME retreat movel 실패")
+            return False
+        if not self.wait_for_motion_done(label):
+            self.logger.error("pre-HOME retreat 모션이 완료되지 않았습니다")
+            return False
+
+        clamped_target = [
+            target_x,
+            target_y,
+            target_z,
+            target_rpy[0],
+            target_rpy[1],
+            target_rpy[2],
+        ]
+        if not self.verify_reached_pose(clamped_target, label):
+            self.logger.error("pre-HOME retreat 목표 포즈 확인 실패")
             return False
         return True
 
@@ -624,6 +758,8 @@ class DispenserPressNode:
             return False
 
         if self.move_home_first:
+            if not self.retreat_before_home_if_needed():
+                return False
             if not self.movej(self.home_joints_deg, "move to HOME"):
                 return False
             if not self.wait_for_motion_done("move to HOME"):

@@ -361,3 +361,50 @@ Validation:
 - Panel server restarted and `/api/steps` returned 27 steps.
 
 No real robot motion was executed for this validation.
+
+## 2026-05-19 update — press pre-HOME retreat to avoid cup sweep
+
+User observed that `press_dispenser_*` starts by moving HOME, and that direct joint-space HOME can sweep through the cup after the cup has been released under the dispenser.
+
+### Fix applied
+
+- `src/azas_dispenser/azas_dispenser/dispenser_press_node.py`
+  - Added optional `pre_home_retreat_before_home`.
+  - When enabled, the node reads the current Doosan TCP pose before `move to HOME`.
+  - If current TCP `x >= 450 mm`, it performs one checked MoveLine retreat before HOME:
+    - default/panel direction: `dx=-140 mm`, `dy=0`.
+    - preserves current RPY.
+    - keeps current Z by default (`pre_home_retreat_min_z_mm=0.0`) instead of forcing a vertical lift.
+    - uses checked/no-clamp bounds and aborts before HOME if the retreat target is outside allowed range.
+  - Then the existing PR #3-compatible flow continues unchanged:
+    - `move HOME` → RG2 full-close → taught POSX press path → HOME return.
+
+- `tools/run/robot_pipeline_control_server.py`
+  - Panel `press_dispenser_1..4` commands now pass:
+
+```bash
+-p pre_home_retreat_before_home:=true \
+-p pre_home_retreat_dx_mm:=-140.0 \
+-p pre_home_retreat_dy_mm:=0.0 \
+-p pre_home_retreat_min_z_mm:=0.0 \
+-p pre_home_retreat_min_current_x_mm:=450.0 \
+-p pre_home_retreat_velocity:=25.0 \
+-p pre_home_retreat_acceleration:=35.0
+```
+
+### Validation, no real robot motion
+
+```bash
+python3 -m py_compile src/azas_dispenser/azas_dispenser/dispenser_press_node.py tools/run/robot_pipeline_control_server.py
+colcon build --packages-select azas_dispenser --symlink-install
+curl -s http://127.0.0.1:8765/api/steps
+```
+
+Evidence:
+
+- `py_compile` passed.
+- `azas_dispenser` build passed.
+- Panel server restarted.
+- `/api/steps` confirmed all four `press_dispenser_*` resolved commands include `pre_home_retreat_before_home:=true`.
+
+No real robot motion was executed for this validation.

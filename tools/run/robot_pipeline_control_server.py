@@ -143,7 +143,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=red",
         True,
         True,
-        "feature/dispenser 원본 taught posx red 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx red 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_2",
@@ -152,7 +152,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=green",
         True,
         True,
-        "feature/dispenser 원본 taught posx green 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx green 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_3",
@@ -161,7 +161,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=yellow",
         True,
         True,
-        "feature/dispenser 원본 taught posx yellow 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx yellow 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step(
         "press_dispenser_4",
@@ -170,11 +170,19 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=blue",
         True,
         True,
-        "feature/dispenser 원본 taught posx blue 경로 사용: 컵 놓기 후 HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "feature/dispenser 원본 taught posx blue 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
-    Step("place_cup_holder", "컵을 컵홀더에 놓기", "blocked", "", False, True, "컵홀더 좌표 필요"),
+    Step(
+        "place_cup_holder",
+        "컵을 컵홀더에 놓기 / side grip",
+        "run",
+        "tools/run/place_side_grip_cup_in_holder.py",
+        True,
+        True,
+        "실제모션 후보: 측정된 side_grip_place pre_place→place_final→RG2 full-open→retreat",
+    ),
     Step("attach_lid", "뚜껑을 컵에 끼우기", "blocked", "", False, True, "뚜껑 체결 동작 미구현"),
     Step(
         "shake_rviz_preview",
@@ -591,6 +599,15 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/tcp/set_current_tcp",
             f"/{clean}/tcp/get_current_tcp",
         ]
+    if step.key == "place_cup_holder":
+        return [
+            "/jarvis/rg2/set_width",
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
+            f"/{clean}/aux_control/get_current_posx",
+        ]
     if step.key == "shake_closed_cup":
         return [
             f"/{clean}/motion/move_joint",
@@ -611,7 +628,11 @@ def required_service_wait_timeout(step: Step) -> float:
     same services appear a few seconds later.
     """
 
-    if step.key.startswith("move_to_dispenser_") or step.key.startswith("press_dispenser_"):
+    if (
+        step.key.startswith("move_to_dispenser_")
+        or step.key.startswith("press_dispenser_")
+        or step.key == "place_cup_holder"
+    ):
         return 35.0
     if step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}:
         return 30.0
@@ -731,6 +752,7 @@ def requires_doosan_motion(step: Step) -> bool:
         step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}
         or step.key.startswith("move_to_dispenser_")
         or step.key.startswith("press_dispenser_")
+        or step.key == "place_cup_holder"
     )
 
 
@@ -847,6 +869,12 @@ def wait_for_xyz_target(
 
 def target_xyz_for_step(step_key: str) -> list[float] | None:
     return None
+
+
+def run_timeout_for_step(step: Step) -> float:
+    if step.key == "place_cup_holder":
+        return 240.0
+    return 180.0
 
 
 def shell_env(payload: dict[str, Any]) -> dict[str, str]:
@@ -992,6 +1020,13 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "-p require_tcp_for_taught_posx:=true "
             f"-p target_dispenser:={shlex.quote(target)} "
             "-p move_home_first:=true "
+            "-p pre_home_retreat_before_home:=true "
+            "-p pre_home_retreat_dx_mm:=-140.0 "
+            "-p pre_home_retreat_dy_mm:=0.0 "
+            "-p pre_home_retreat_min_z_mm:=0.0 "
+            "-p pre_home_retreat_min_current_x_mm:=450.0 "
+            "-p pre_home_retreat_velocity:=25.0 "
+            "-p pre_home_retreat_acceleration:=35.0 "
             "-p return_home:=true "
             "-p close_gripper_at_home:=true "
             "-p gripper_service:=/jarvis/rg2/set_width "
@@ -1008,6 +1043,17 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "-p travel_line_acceleration:=70.0 "
             "-p joint_velocity:=40.0 "
             "-p joint_acceleration:=50.0"
+        )
+    if step.key == "place_cup_holder":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/place_side_grip_cup_in_holder.py "
+            f"--service-prefix {service_prefix} "
+            "--config /home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/calibration.yaml "
+            "--approach-velocity 15.0 --approach-acceleration 20.0 "
+            "--place-velocity 6.0 --place-acceleration 10.0 "
+            "--retreat-velocity 12.0 --retreat-acceleration 16.0 "
+            "--target-tolerance-mm 12.0 --verify-timeout-sec 35.0 "
+            "--execute --confirm ENABLE_CUP_HOLDER_PLACE"
         )
     if step.key == "shake_closed_cup":
         return (
@@ -1264,7 +1310,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=180,
+            timeout=run_timeout_for_step(step),
             check=False,
         )
         output = completed.stdout

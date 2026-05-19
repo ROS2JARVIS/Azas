@@ -19,3 +19,7 @@
 ## [2026-05-19T13:54:12+09:00] update
 - **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
 - **Summary:** Recorded panel Doosan service startup race diagnosis and service-wait gating fix for move_to_dispenser/press steps.
+
+## [2026-05-19T14:25:15+09:00] update
+- **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
+- **Summary:** Recorded press pre-HOME retreat addition to pull back from the cup before the initial HOME movej, plus validation evidence.
