@@ -6,7 +6,6 @@
   <maintainer email="team@example.com">Azas Team</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
   <depend>rclpy</depend>
   <depend>azas_gripper</depend>
   <depend>cv_bridge</depend>
