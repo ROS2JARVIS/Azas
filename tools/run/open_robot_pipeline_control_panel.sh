@@ -35,6 +35,31 @@ panel_ready() {
   curl -fsS --max-time 1 "$URL" >/dev/null 2>&1
 }
 
+ensure_workspace_built() {
+  if [[ ! -f "/opt/ros/humble/setup.bash" ]]; then
+    cat >&2 <<'MSG'
+[Azas] /opt/ros/humble/setup.bash가 없습니다.
+이 PC에 ROS 2 Humble 설치가 먼저 필요합니다.
+MSG
+    exit 1
+  fi
+  if [[ ! -f "$ROOT/install/local_setup.bash" ]]; then
+    cat >&2 <<MSG
+[Azas] install/local_setup.bash가 없습니다. 이 PC에서 아직 빌드되지 않았습니다.
+먼저 실행하세요:
+  cd $ROOT
+  bash tools/setup/bootstrap_local_workspace.sh
+
+수동으로 하려면:
+  source /opt/ros/humble/setup.bash
+  rosdep install --from-paths src --ignore-src -r -y
+  colcon build --symlink-install
+  source install/local_setup.bash
+MSG
+    exit 1
+  fi
+}
+
 start_panel_server() {
   cd "$ROOT"
   setsid env AZAS_ROOT="$ROOT" bash -lc '
@@ -62,6 +87,7 @@ open_browser() {
 }
 
 install_command_symlink
+ensure_workspace_built
 
 if ! panel_ready; then
   echo "[Azas] 패널 서버 시작 중..."

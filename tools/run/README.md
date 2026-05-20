@@ -9,6 +9,24 @@
 - MoveIt 플래닝 실패 시 Doosan 직접 명령으로 폴백 절대 금지
 - 그리퍼 명령은 관측 모션과 분리하여 명시적으로 처리
 
+
+## 패널 실행 전 로컬 빌드
+
+처음 받은 PC에서 `install/local_setup.bash`가 없다면 패널을 열기 전에 아래 명령을 한 번 실행합니다.
+
+```bash
+cd /home/ssu/Azas
+bash tools/setup/bootstrap_local_workspace.sh
+```
+
+그 다음 패널을 엽니다.
+
+```bash
+bash tools/run/open_robot_pipeline_control_panel.sh
+```
+
+`install/`은 Git에 올리지 않고 각 PC에서 최신 소스로 재생성합니다.
+
 ## 현장 투입 순서
 
 ```
