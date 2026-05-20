@@ -37,6 +37,9 @@ source install/local_setup.bash
 처음 읽는 개발자는 먼저 **[docs/repository_file_map.md](docs/repository_file_map.md)** 를 보세요.
 각 폴더·파일의 역할, 운영/검증/실험 구분, 실제 로봇이 움직이지 않는 이유가 정리되어 있습니다.
 
+수정 위치가 헷갈리면 **[docs/collaboration_edit_map.md](docs/collaboration_edit_map.md)** 를 보세요.
+목적별로 `src/`, `tools/`, `docs/` 중 어디를 고쳐야 하는지 정리되어 있습니다.
+
 실제 로봇 테스트는 **[docs/real_robot_test_ladder.md](docs/real_robot_test_ladder.md)** 의 staged ladder를 따릅니다.
 
 ---
