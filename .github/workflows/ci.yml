@@ -19,9 +19,10 @@ jobs:
       - name: Install package dependencies
         run: |
           sudo apt-get update
+          sudo apt-get install -y python3-colcon-common-extensions python3-colcon-ros ros-humble-ament-cmake-python
           rosdep update
           rosdep install --from-paths src --ignore-src --rosdistro humble -y \
-            --skip-keys "moveit_py dsr_description2 dsr_moveit_config_m0609 dsr_msgs2"
+            --skip-keys "ament_python moveit_py dsr_description2 dsr_moveit_config_m0609 dsr_msgs2"
 
       - name: Build
         run: |
