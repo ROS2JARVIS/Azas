@@ -8,15 +8,20 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
+from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseStamped
+from moveit_msgs.msg import CollisionObject
 from rcl_interfaces.msg import ParameterDescriptor
 from moveit.core.robot_state import RobotState
 from moveit.planning import MoveItPy, PlanRequestParameters
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
+from shape_msgs.msg import SolidPrimitive
 from ultralytics import YOLO
 
 from azas_gripper.onrobot import RG
@@ -91,6 +96,20 @@ def make_pose(x, y, z, ori=None):
     return pose
 
 
+def make_pose_from_xyz_quat(xyz, quat_xyzw):
+    return make_pose(
+        xyz[0],
+        xyz[1],
+        xyz[2],
+        {
+            "x": quat_xyzw[0],
+            "y": quat_xyzw[1],
+            "z": quat_xyzw[2],
+            "w": quat_xyzw[3],
+        },
+    )
+
+
 def parse_bool(value):
     if isinstance(value, bool):
         return value
@@ -161,16 +180,17 @@ class YoloCupPickNode(Node):
         self.declare_parameter("min_depth_valid_ratio", 0.03)
         self.declare_parameter("min_depth_m", 0.15)
         self.declare_parameter("max_depth_m", 1.20)
-        self.declare_parameter("redetect_on_approach", True)
+        self.declare_parameter("redetect_on_approach", False)
         self.declare_parameter("redetect_settle_sec", 0.5)
         self.declare_parameter("grasp_mode", "side")
         dynamic_param = ParameterDescriptor(dynamic_typing=True)
         self.declare_parameter("side_grasp_axis", "y_axis", dynamic_param)
+        self.declare_parameter("auto_side_grasp_direction", True)
         self.declare_parameter("side_grasp_direction", -1.0)
         self.declare_parameter("side_approach_offset", 0.12)
         self.declare_parameter("side_staging_offset", 0.24)
         self.declare_parameter("side_grasp_offset", 0.035)
-        self.declare_parameter("side_grasp_z_offset", 0.05)
+        self.declare_parameter("side_grasp_z_offset", 0.02)
         self.declare_parameter("side_orientation_mode", "approach")
         self.declare_parameter("side_tool_roll_deg", 0.0)
         self.declare_parameter("side_roll_deg", 0.0)
@@ -189,7 +209,12 @@ class YoloCupPickNode(Node):
         self.declare_parameter("camera_home_z", 0.62)
         self.declare_parameter("place_x", 0.45)
         self.declare_parameter("place_y", 0.0)
-        self.declare_parameter("place_z", 0.30)
+        self.declare_parameter("place_z", 0.12)
+        self.declare_parameter("dispenser_config_path", "")
+        self.declare_parameter("selected_dispenser_id", "dispenser_1")
+        self.declare_parameter("use_measured_front_hold_pose", True)
+        self.declare_parameter("publish_dispenser_collision_objects", True)
+        self.declare_parameter("collision_object_publish_repeats", 3)
 
         self.model_path = self.get_parameter("model_path").value
         self.conf = float(self.get_parameter("conf").value)
@@ -211,6 +236,9 @@ class YoloCupPickNode(Node):
         self.redetect_settle_sec = float(self.get_parameter("redetect_settle_sec").value)
         self.grasp_mode = str(self.get_parameter("grasp_mode").value).strip().lower()
         self.side_grasp_axis = parse_axis(self.get_parameter("side_grasp_axis").value)
+        self.auto_side_grasp_direction = parse_bool(
+            self.get_parameter("auto_side_grasp_direction").value
+        )
         self.side_grasp_direction = float(
             self.get_parameter("side_grasp_direction").value
         )
@@ -253,6 +281,21 @@ class YoloCupPickNode(Node):
         self.place_x = float(self.get_parameter("place_x").value)
         self.place_y = float(self.get_parameter("place_y").value)
         self.place_z = float(self.get_parameter("place_z").value)
+        self.dispenser_config_path = str(
+            self.get_parameter("dispenser_config_path").value
+        ).strip()
+        self.selected_dispenser_id = str(
+            self.get_parameter("selected_dispenser_id").value
+        ).strip()
+        self.use_measured_front_hold_pose = parse_bool(
+            self.get_parameter("use_measured_front_hold_pose").value
+        )
+        self.publish_dispenser_collision_objects_enabled = parse_bool(
+            self.get_parameter("publish_dispenser_collision_objects").value
+        )
+        self.collision_object_publish_repeats = int(
+            self.get_parameter("collision_object_publish_repeats").value
+        )
 
         model_file = Path(self.model_path).expanduser()
         if not model_file.exists():
@@ -291,6 +334,8 @@ class YoloCupPickNode(Node):
         self.has_picked_once = False
         self.last_pick_time = 0.0
         self.last_status = "waiting for command"
+        self.dispenser_config = self.load_dispenser_config()
+        self.selected_front_hold_pose = self.resolve_front_hold_pose()
 
         calib_file = (
             Path(get_package_share_directory("azas_perception"))
@@ -308,6 +353,18 @@ class YoloCupPickNode(Node):
         self.arm = self.robot.get_planning_component(GROUP_NAME)
         self.robot_model = self.robot.get_robot_model()
         self.get_logger().info("MoveItPy initialized")
+
+        collision_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.collision_object_pub = self.create_publisher(
+            CollisionObject,
+            "/collision_object",
+            collision_qos,
+        )
 
         self.ompl_params = PlanRequestParameters(self.robot)
         self.ompl_params.planning_pipeline = "ompl"
@@ -343,6 +400,160 @@ class YoloCupPickNode(Node):
             self._depth_callback,
             10,
         )
+
+        if self.publish_dispenser_collision_objects_enabled:
+            self.publish_dispenser_collision_objects()
+
+    def load_dispenser_config(self):
+        log = self.get_logger()
+        config_path = self.dispenser_config_path
+        if not config_path:
+            config_path = str(
+                Path(get_package_share_directory("azas_perception"))
+                / "config"
+                / "measured_dispenser_collision.yaml"
+            )
+
+        path = Path(config_path).expanduser()
+        if not path.exists():
+            log.warning(f"Dispenser measured config not found: {path}")
+            return {}
+
+        with path.open("r", encoding="utf-8") as stream:
+            data = yaml.safe_load(stream) or {}
+
+        metadata = data.get("metadata", {})
+        log.info(
+            "Loaded dispenser measured config "
+            f"{path} status={metadata.get('status', 'unknown')}"
+        )
+        return data
+
+    def resolve_front_hold_pose(self):
+        log = self.get_logger()
+        if not self.use_measured_front_hold_pose:
+            return None
+
+        poses = self.dispenser_config.get("front_hold_poses", {})
+        pose_data = poses.get(self.selected_dispenser_id)
+        if pose_data is None:
+            log.warning(
+                f"No front_hold_pose for selected_dispenser_id="
+                f"{self.selected_dispenser_id}; using place_x/y/z parameters."
+            )
+            return None
+
+        xyz = pose_data.get("position_xyz_m")
+        quat = pose_data.get("quaternion_xyzw")
+        if not xyz or not quat or len(xyz) != 3 or len(quat) != 4:
+            log.warning(
+                f"Invalid front_hold_pose for {self.selected_dispenser_id}; "
+                "using place_x/y/z parameters."
+            )
+            return None
+
+        log.warning(
+            f"Using measured front_hold_pose for {self.selected_dispenser_id}. "
+            "This is a taught base_link->link_6 pose; verify TCP/gripper offset "
+            "and RViz clearance before real motion."
+        )
+        return {
+            "xyz": [float(value) for value in xyz],
+            "quat_xyzw": [float(value) for value in quat],
+        }
+
+    def make_place_pose(self, z=None, fallback_ori=None):
+        if self.selected_front_hold_pose is None:
+            pose_z = self.place_z if z is None else z
+            return make_pose(self.place_x, self.place_y, pose_z, fallback_ori)
+
+        xyz = list(self.selected_front_hold_pose["xyz"])
+        if z is not None:
+            xyz[2] = z
+        return make_pose_from_xyz_quat(
+            xyz,
+            self.selected_front_hold_pose["quat_xyzw"],
+        )
+
+    def publish_dispenser_collision_objects(self):
+        objects = self.dispenser_config.get("estimated_collision_objects", {})
+        if not objects:
+            self.get_logger().warning("No dispenser collision objects configured")
+            return
+
+        publish_count = 0
+        real_motion_enabled = []
+        repeats = max(1, self.collision_object_publish_repeats)
+        for _ in range(repeats):
+            for object_id, object_data in objects.items():
+                if not parse_bool(object_data.get("publish_to_planning_scene", False)):
+                    continue
+                if object_data.get("type") != "box":
+                    self.get_logger().warning(
+                        f"Skipping unsupported collision object {object_id}: "
+                        f"type={object_data.get('type')}"
+                    )
+                    continue
+
+                collision_object = self.build_box_collision_object(
+                    object_id,
+                    object_data,
+                )
+                if collision_object is None:
+                    continue
+
+                self.collision_object_pub.publish(collision_object)
+                publish_count += 1
+                if parse_bool(object_data.get("enabled_for_real_motion", False)):
+                    real_motion_enabled.append(object_id)
+
+        if real_motion_enabled:
+            self.get_logger().warning(
+                "Dispenser collision objects marked enabled_for_real_motion: "
+                f"{sorted(set(real_motion_enabled))}"
+            )
+        else:
+            self.get_logger().warning(
+                "Published dispenser collision boxes for planning/RViz only; "
+                "all enabled_for_real_motion flags are false."
+            )
+        self.get_logger().info(
+            f"Published {publish_count} dispenser collision object messages "
+            f"to /collision_object"
+        )
+
+    def build_box_collision_object(self, object_id, object_data):
+        try:
+            center = [float(value) for value in object_data["center_xyz_m"]]
+            size = [float(value) for value in object_data["size_xyz_m"]]
+            quat = [float(value) for value in object_data["orientation_xyzw"]]
+        except (KeyError, TypeError, ValueError) as exc:
+            self.get_logger().warning(
+                f"Invalid collision object {object_id}; skipping: {exc}"
+            )
+            return None
+
+        collision_object = CollisionObject()
+        collision_object.id = object_id
+        collision_object.header.frame_id = object_data.get("frame_id", BASE_FRAME)
+
+        primitive = SolidPrimitive()
+        primitive.type = SolidPrimitive.BOX
+        primitive.dimensions = size
+
+        pose = Pose()
+        pose.position.x = center[0]
+        pose.position.y = center[1]
+        pose.position.z = center[2]
+        pose.orientation.x = quat[0]
+        pose.orientation.y = quat[1]
+        pose.orientation.z = quat[2]
+        pose.orientation.w = quat[3]
+
+        collision_object.primitives.append(primitive)
+        collision_object.primitive_poses.append(pose)
+        collision_object.operation = CollisionObject.ADD
+        return collision_object
 
     def _camera_info_callback(self, msg):
         self.intrinsics = {
@@ -491,8 +702,15 @@ class YoloCupPickNode(Node):
     def wait_until_gripper_idle(self, timeout_sec=GRIPPER_OPEN_TIMEOUT_SEC):
         log = self.get_logger()
         start_time = time.time()
+        last_error = None
         while time.time() - start_time < timeout_sec:
-            status = self.gripper.get_status()
+            try:
+                status = self.gripper.get_status()
+            except Exception as exc:
+                last_error = exc
+                log.warning(f"Gripper status read failed: {exc}")
+                time.sleep(GRIPPER_STATUS_POLL_SEC)
+                continue
             busy = bool(status[0])
             if not busy:
                 try:
@@ -503,6 +721,8 @@ class YoloCupPickNode(Node):
                 return True
             time.sleep(GRIPPER_STATUS_POLL_SEC)
 
+        if last_error is not None:
+            log.warning(f"Last gripper status read error: {last_error}")
         log.warning("Timed out waiting for gripper to finish opening.")
         return False
 
@@ -511,9 +731,23 @@ class YoloCupPickNode(Node):
             f"Open gripper to max width={GRIPPER_OPEN_WIDTH} "
             f"({GRIPPER_OPEN_WIDTH / 10.0:.1f} mm)"
         )
-        self.gripper.move_gripper(GRIPPER_OPEN_WIDTH, GRIPPER_FORCE)
+        try:
+            self.gripper.move_gripper(GRIPPER_OPEN_WIDTH, GRIPPER_FORCE)
+        except Exception as exc:
+            self.get_logger().error(f"Gripper open command failed: {exc}")
+            return False
         if wait:
             return self.wait_until_gripper_idle()
+        return True
+
+    def close_gripper_for_pick(self):
+        self.get_logger().info("Close gripper for pick")
+        try:
+            self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
+        except Exception as exc:
+            self.get_logger().error(f"Gripper close command failed: {exc}")
+            return False
+        time.sleep(1.0)
         return True
 
     def detect_objects(self, image):
@@ -650,10 +884,17 @@ class YoloCupPickNode(Node):
         base2cam = base2ee @ self.gripper2cam
         return (base2cam @ coord)[:3]
 
-    def side_unit_vector(self):
+    def side_unit_vector(self, target_xy=None):
+        direction = self.side_grasp_direction
+        if self.auto_side_grasp_direction and target_xy is not None:
+            target_xy = np.asarray(target_xy, dtype=float)
+            axis_value = target_xy[0] if self.side_grasp_axis == "x" else target_xy[1]
+            if abs(axis_value) > 1e-6:
+                direction = -1.0 if axis_value > 0.0 else 1.0
+
         if self.side_grasp_axis == "x":
-            return np.array([self.side_grasp_direction, 0.0], dtype=float)
-        return np.array([0.0, self.side_grasp_direction], dtype=float)
+            return np.array([direction, 0.0], dtype=float)
+        return np.array([0.0, direction], dtype=float)
 
     def side_grasp_orientation(self, side_vec):
         if self.side_orientation_mode == "home":
@@ -766,7 +1007,8 @@ class YoloCupPickNode(Node):
     def pick_and_place_side(self, base_xyz):
         log = self.get_logger()
         bx, by, bz = [float(v) for v in base_xyz]
-        side_vec = self.side_unit_vector()
+        side_vec = self.side_unit_vector([bx, by])
+        side_direction = side_vec[0] if self.side_grasp_axis == "x" else side_vec[1]
         side_ori = self.side_grasp_orientation(side_vec)
         stage_xy = (
             np.array([bx, by], dtype=float) + side_vec * self.side_staging_offset
@@ -776,11 +1018,16 @@ class YoloCupPickNode(Node):
         grasp_z = max(bz + self.side_grasp_z_offset, self.min_motion_z)
         pre_z = grasp_z
         lift_z = max(grasp_z + self.approach_offset, self.safe_z)
-        place_approach_z = max(self.place_z + self.approach_offset, self.safe_z)
+        place_base_z = (
+            self.selected_front_hold_pose["xyz"][2]
+            if self.selected_front_hold_pose is not None
+            else self.place_z
+        )
+        place_approach_z = max(place_base_z + self.approach_offset, self.safe_z)
 
         log.info(
             f"Side grasp target base=({bx:.3f}, {by:.3f}, {bz:.3f}), "
-            f"axis={self.side_grasp_axis}, dir={self.side_grasp_direction:.0f}, "
+            f"axis={self.side_grasp_axis}, dir={side_direction:.0f}, "
             f"ori_mode={self.side_orientation_mode}, "
             f"tool_roll={self.side_tool_roll_deg:.1f}deg, "
             f"stage=({stage_xy[0]:.3f}, {stage_xy[1]:.3f}, {pre_z:.3f}), "
@@ -788,7 +1035,9 @@ class YoloCupPickNode(Node):
             f"grasp=({grasp_xy[0]:.3f}, {grasp_xy[1]:.3f}, {grasp_z:.3f})"
         )
 
-        self.open_gripper_max(wait=False)
+        if not self.open_gripper_max(wait=True):
+            log.error("Cannot start side pick because gripper did not open.")
+            return False
 
         steps = [
             (
@@ -808,9 +1057,6 @@ class YoloCupPickNode(Node):
             log.info(label)
             if not self.plan_and_execute(pose_goal=pose, params=self.pilz_params):
                 return False
-
-        if not self.wait_until_gripper_idle():
-            return False
 
         refined_base = self.refine_target_from_current_view(log)
         if refined_base is not None:
@@ -838,18 +1084,18 @@ class YoloCupPickNode(Node):
             return False
 
         log.info("close gripper for side grasp")
-        self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
-        time.sleep(1.0)
+        if not self.close_gripper_for_pick():
+            return False
 
         move_steps = [
             ("lift cup", make_pose(grasp_xy[0], grasp_xy[1], lift_z, side_ori)),
             (
                 "move above syrup pump front",
-                make_pose(self.place_x, self.place_y, place_approach_z, side_ori),
+                self.make_place_pose(place_approach_z, side_ori),
             ),
             (
                 "place cup",
-                make_pose(self.place_x, self.place_y, self.place_z, side_ori),
+                self.make_place_pose(fallback_ori=side_ori),
             ),
         ]
         for label, pose in move_steps:
@@ -858,12 +1104,12 @@ class YoloCupPickNode(Node):
                 return False
 
         log.info("open gripper")
-        self.open_gripper_max(wait=True)
+        if not self.open_gripper_max(wait=True):
+            return False
 
         log.info("retract")
         return self.plan_and_execute(
-            pose_goal=make_pose(self.place_x, self.place_y, place_approach_z,
-                                side_ori),
+            pose_goal=self.make_place_pose(place_approach_z, side_ori),
             params=self.pilz_params,
         )
 
@@ -872,14 +1118,21 @@ class YoloCupPickNode(Node):
         bx, by, bz = [float(v) for v in base_xyz]
         pick_z = bz + self.pick_z_offset
         approach_z = max(pick_z + self.approach_offset, self.safe_z)
-        place_approach_z = max(self.place_z + self.approach_offset, self.safe_z)
+        place_base_z = (
+            self.selected_front_hold_pose["xyz"][2]
+            if self.selected_front_hold_pose is not None
+            else self.place_z
+        )
+        place_approach_z = max(place_base_z + self.approach_offset, self.safe_z)
 
         log.info(
             f"Cup base point=({bx:.3f}, {by:.3f}, {bz:.3f}), "
             f"pick_z={pick_z:.3f}"
         )
 
-        self.open_gripper_max(wait=False)
+        if not self.open_gripper_max(wait=True):
+            log.error("Cannot start top pick because gripper did not open.")
+            return False
 
         steps = [
             ("move above cup", make_pose(bx, by, approach_z, self.home_ori)),
@@ -888,9 +1141,6 @@ class YoloCupPickNode(Node):
             log.info(label)
             if not self.plan_and_execute(pose_goal=pose, params=self.pilz_params):
                 return False
-
-        if not self.wait_until_gripper_idle():
-            return False
 
         refined_base = self.refine_target_from_current_view(log)
         if refined_base is not None:
@@ -915,18 +1165,18 @@ class YoloCupPickNode(Node):
             return False
 
         log.info("close gripper")
-        self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
-        time.sleep(1.0)
+        if not self.close_gripper_for_pick():
+            return False
 
         move_steps = [
             ("lift cup", make_pose(bx, by, approach_z, self.home_ori)),
             (
                 "move above syrup pump front",
-                make_pose(self.place_x, self.place_y, place_approach_z, self.home_ori),
+                self.make_place_pose(place_approach_z, self.home_ori),
             ),
             (
                 "place cup",
-                make_pose(self.place_x, self.place_y, self.place_z, self.home_ori),
+                self.make_place_pose(fallback_ori=self.home_ori),
             ),
         ]
         for label, pose in move_steps:
@@ -935,13 +1185,13 @@ class YoloCupPickNode(Node):
                 return False
 
         log.info("open gripper")
-        self.open_gripper_max(wait=True)
+        if not self.open_gripper_max(wait=True):
+            return False
         time.sleep(1.0)
 
         log.info("retract")
         return self.plan_and_execute(
-            pose_goal=make_pose(self.place_x, self.place_y, place_approach_z,
-                                self.home_ori),
+            pose_goal=self.make_place_pose(place_approach_z, self.home_ori),
             params=self.pilz_params,
         )
 

@@ -6,18 +6,20 @@
   <maintainer email="team@example.com">Azas Team</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
   <depend>rclpy</depend>
   <depend>ament_index_python</depend>
   <depend>azas_gripper</depend>
   <depend>geometry_msgs</depend>
   <depend>moveit_py</depend>
+  <depend>moveit_msgs</depend>
   <depend>rcl_interfaces</depend>
+  <depend>shape_msgs</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>azas_interfaces</depend>
+  <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
   <test_depend>python3-pytest</test_depend>
 
