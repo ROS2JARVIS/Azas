@@ -163,6 +163,39 @@
       color: #047857;
     }
     .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
+    .voice-recipe-panel {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) auto auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid #bfdbfe;
+      border-radius: 14px;
+      background: #eff6ff;
+    }
+    .voice-recipe-panel input {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 0 11px;
+      font-size: 14px;
+    }
+    .voice-recipe-panel button { min-height: 38px; }
+    .voice-recipe-help {
+      grid-column: 1 / -1;
+      color: #1e40af;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+    .voice-recipe-status {
+      grid-column: 1 / -1;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 800;
+      min-height: 18px;
+    }
 
     details.settings {
       border-top: 1px dashed var(--line);
@@ -541,6 +574,15 @@
         <button id="focusLog" class="plain-btn">로그로 이동</button>
       </div>
 
+      <div class="voice-recipe-panel" aria-label="voice recipe builder">
+        <input id="voiceRecipeText" type="text" placeholder="예: 블루 라군 만들어줘 / 빨강 파랑 초록 넣어줘 / 7번 레시피">
+        <button id="voiceListen" type="button" class="plain-btn">🎙 음성 받기</button>
+        <button id="voiceParse" type="button" class="plain-btn">디스펜서 해석</button>
+        <button id="voiceReplaceQueue" type="button" class="plain-btn">순서로 교체</button>
+        <div class="voice-recipe-help">브라우저 음성 또는 텍스트를 레시피/색상/번호로 해석해 디스펜서 조합을 만듭니다. 이 단계는 큐만 만들며 로봇은 움직이지 않습니다.</div>
+        <div id="voiceRecipeStatus" class="voice-recipe-status">대기: 말하거나 텍스트를 입력한 뒤 “디스펜서 해석”을 누르세요.</div>
+      </div>
+
       <details class="settings">
         <summary>설정 보기 / 숨기기</summary>
         <div class="field-grid">
@@ -641,6 +683,7 @@
 	    let itemStatuses = new Map();
 	    let isRunning = false;
 	    let nextQueueId = 1;
+        let lastVoiceDecision = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -967,6 +1010,80 @@
 	        : `칵테일 ${dispenserId} 블록 추가가 일부 실패했습니다: ${added}/${keys.length}`;
 	    }
 
+        function recipeQueueKeys(dispenserIds) {
+          const keys = ["start_collision_scene"];
+          for (const id of dispenserIds) {
+            keys.push(`move_to_dispenser_${id}`, `press_dispenser_${id}`, `pick_from_dispenser_${id}`);
+          }
+          return keys;
+        }
+
+        function setVoiceStatus(message, isError = false) {
+          const target = document.getElementById("voiceRecipeStatus");
+          target.textContent = message;
+          target.style.color = isError ? "#b91c1c" : "#334155";
+        }
+
+        async function parseVoiceRecipeText() {
+          const text = document.getElementById("voiceRecipeText").value.trim();
+          if (!text) {
+            setVoiceStatus("음성 또는 텍스트가 비어 있습니다.", true);
+            return null;
+          }
+          setVoiceStatus("레시피/디스펜서 조합 해석 중...");
+          const res = await fetch("/api/recipe/parse", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({text})
+          });
+          const data = await res.json();
+          lastVoiceDecision = data;
+          if (!data.valid || data.intent !== "make_cocktail" || !Array.isArray(data.dispenser_ids) || !data.dispenser_ids.length) {
+            setVoiceStatus(`해석 실패: ${data.error || data.confirmation || "디스펜서 조합을 찾지 못했습니다."}`, true);
+            log.textContent = JSON.stringify(data, null, 2);
+            return null;
+          }
+          const ids = data.dispenser_ids.map(String);
+          document.getElementById("recipeDispenserIds").value = ids.join(",");
+          setVoiceStatus(`${data.confirmation} → 실행 조합: ${ids.join(" → ")}`);
+          log.textContent = JSON.stringify({voice_recipe_decision: data, planned_queue: recipeQueueKeys(ids)}, null, 2);
+          return data;
+        }
+
+        async function replaceQueueFromVoiceRecipe() {
+          const data = lastVoiceDecision?.valid ? lastVoiceDecision : await parseVoiceRecipeText();
+          if (!data || !data.valid || data.intent !== "make_cocktail") return;
+          const ids = data.dispenser_ids.map(String);
+          const keys = recipeQueueKeys(ids);
+          selectedQueue = [];
+          itemStatuses = new Map();
+          addQueueItems(keys);
+          updateSelectedCount();
+          flowEl.closest(".flow-panel")?.scrollIntoView({behavior: "smooth", block: "start"});
+          setVoiceStatus(`선택 실행 순서를 교체했습니다: ${ids.join(" → ")}. 아직 실행하지 않았습니다.`);
+        }
+
+        function startBrowserSpeechRecognition() {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRecognition) {
+            setVoiceStatus("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 열거나 텍스트로 입력하세요.", true);
+            return;
+          }
+          const recognition = new SpeechRecognition();
+          recognition.lang = "ko-KR";
+          recognition.interimResults = false;
+          recognition.maxAlternatives = 1;
+          recognition.onstart = () => setVoiceStatus("듣는 중... 예: '블루 라군 만들어줘', '빨강 파랑 넣어줘'");
+          recognition.onerror = (event) => setVoiceStatus(`음성 인식 오류: ${event.error}`, true);
+          recognition.onresult = async (event) => {
+            const transcript = event.results?.[0]?.[0]?.transcript || "";
+            document.getElementById("voiceRecipeText").value = transcript;
+            setVoiceStatus(`인식됨: ${transcript}`);
+            await parseVoiceRecipeText();
+          };
+          recognition.start();
+        }
+
     function focusLog() {
       logPanel.scrollIntoView({behavior: "smooth", block: "nearest"});
     }
@@ -1069,6 +1186,12 @@
 	      if (mode) selectByMode(mode);
 	    });
     document.getElementById("focusLog").addEventListener("click", focusLog);
+    document.getElementById("voiceParse").addEventListener("click", parseVoiceRecipeText);
+    document.getElementById("voiceReplaceQueue").addEventListener("click", replaceQueueFromVoiceRecipe);
+    document.getElementById("voiceListen").addEventListener("click", startBrowserSpeechRecognition);
+    document.getElementById("voiceRecipeText").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") parseVoiceRecipeText();
+    });
 
 	    document.getElementById("run").addEventListener("click", async () => {
 	      const selected = withCollisionScenePrereq(selectedQueue);
