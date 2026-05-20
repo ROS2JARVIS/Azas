@@ -172,6 +172,11 @@ def generate_launch_description():
         description="Optional override path for measured dispenser collision YAML.",
     )
     auto_pick_arg = DeclareLaunchArgument("auto_pick", default_value="false")
+    exit_after_pick_attempt_arg = DeclareLaunchArgument(
+        "exit_after_pick_attempt",
+        default_value="false",
+        description="Exit the preview loop after one pick attempt finishes.",
+    )
     moveit_namespace_arg = DeclareLaunchArgument(
         "moveit_namespace",
         default_value="/dsr01",
@@ -232,6 +237,7 @@ def generate_launch_description():
             publish_dispenser_collision_objects_arg,
             dispenser_config_path_arg,
             auto_pick_arg,
+            exit_after_pick_attempt_arg,
             moveit_namespace_arg,
             controller_action_wait_sec_arg,
             controller_discovery_settle_sec_arg,
@@ -353,6 +359,9 @@ def generate_launch_description():
                             value_type=str,
                         ),
                         "auto_pick": LaunchConfiguration("auto_pick"),
+                        "exit_after_pick_attempt": LaunchConfiguration(
+                            "exit_after_pick_attempt"
+                        ),
                         "moveit_namespace": ParameterValue(
                             LaunchConfiguration("moveit_namespace"),
                             value_type=str,

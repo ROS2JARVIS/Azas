@@ -397,7 +397,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--joint1-clearance-deg", type=float, default=0.0)
     parser.add_argument("--joint1-clearance-velocity", type=float, default=20.0)
     parser.add_argument("--joint1-clearance-acceleration", type=float, default=25.0)
-    parser.add_argument("--x-min", type=float, default=0.45)
+    parser.add_argument("--x-min", type=float, default=0.10)
     parser.add_argument("--x-max", type=float, default=0.72)
     parser.add_argument("--y-min", type=float, default=-0.35)
     parser.add_argument("--y-max", type=float, default=0.15)

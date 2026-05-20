@@ -606,12 +606,10 @@
 
   <script>
     const core = new Set(["connect_robot", "status_check", "start_collision_scene"]);
-    const groupOrder = ["core", "camera", "grip", "teach", "move", "press", "shake", "blocked", "etc"];
+    const groupOrder = ["core", "grip", "move", "press", "shake", "blocked", "etc"];
     const groupLabels = {
       core: "연결/준비",
-      camera: "카메라/인식",
       grip: "그리퍼",
-      teach: "직접교시 등록",
       move: "컵 이동/배치",
       press: "디스펜서 프레스",
       shake: "쉐이킹",
