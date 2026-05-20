@@ -53,3 +53,17 @@ def test_cancel_intent():
     decision = parse_recipe_command("취소해줘")
     assert decision.valid
     assert decision.intent == "cancel"
+
+
+def test_recipe_display_name_maps_to_full_recipe_combination():
+    decision = parse_recipe_command("블루 라군 만들어줘")
+    assert decision.valid
+    assert decision.recipe_id == "recipe_02"
+    assert decision.dispenser_ids == ("3", "4")
+
+
+def test_recipe_name_color_word_does_not_truncate_recipe():
+    decision = parse_recipe_command("레드 펀치 만들어줘")
+    assert decision.valid
+    assert decision.recipe_id == "recipe_04"
+    assert decision.dispenser_ids == ("2", "3")

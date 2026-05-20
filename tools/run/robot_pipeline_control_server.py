@@ -9,6 +9,7 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +32,17 @@ FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
 RVIZ_PREVIEW_ROS_DOMAIN_ID = "79"
 BACKGROUND_LOG_DIR = ROOT / "log" / "panel"
+VOICE_SRC = ROOT / "src" / "azas_voice"
+if str(VOICE_SRC) not in sys.path:
+    sys.path.insert(0, str(VOICE_SRC))
+
+try:
+    from azas_voice.command_parser import parse_recipe_command
+except Exception as exc:  # pragma: no cover - panel still reports the import error.
+    parse_recipe_command = None
+    VOICE_PARSER_IMPORT_ERROR = str(exc)
+else:
+    VOICE_PARSER_IMPORT_ERROR = ""
 ROBOT_STATE_NAMES = {
     0: "STATE_INITIALIZING",
     1: "STATE_STANDBY",
@@ -113,8 +125,8 @@ STEPS = [
         "MoveLine IK 대신 실측 관절 자세 사용: joint_2=-5°, joint_3=50°, joint_5=135° 상한으로 테이블 보기",
     ),
     Step("detect_cup_lid", "YOLO 컵/텀블러 인식 시작", "background", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "카메라 토픽을 구독해 /azas/cup_detection을 publish"),
-    Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT/레시피 노드"),
-    Step("recipe_generate", "레시피 생성", "blocked", "", False, False, "음성/레시피 토픽 통합 버튼은 별도 연결 필요"),
+    Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py use_live_stt:=true", True, False, "헤드셋/마이크 STT를 /stt_result로 publish하고 레시피 노드가 디스펜서 조합을 결정"),
+    Step("recipe_generate", "레시피 생성", "run", "HTML 음성/텍스트 → /api/recipe/parse → 디스펜서 큐 추가", True, False, "로봇 무모션: 패널에서 말/텍스트를 디스펜서 번호 조합으로 해석하고 실행 큐만 구성"),
     Step("side_grip", "컵 잡기 side grip", "run", "tools/run/direct_movej_joints.py --j1 159 --j2 -43 --j3 -105 --j4 -81 --j5 85 --j6 31", True, True, "수동 테스트 전용: 불필요한 후퇴 모션을 막기 위해 핵심 자동선택에서는 제외"),
     Step("gripper_soft_grasp", "그리퍼 살짝 잡기", "run", "ros2 service call /jarvis/rg2/set_width azas_interfaces/srv/SetGripper", True, True, "큰 컵용: 완전 close 대신 폭 75mm/약한 힘으로 살짝 오므림"),
     Step("gripper_open", "그리퍼 full open / 컵 놓기 검증", "run", "tools/run/rg2_full_open_verify.sh", True, True, "컵을 배출구 아래에 둔 뒤 RG2 full-open 명령 success=True 검증"),
@@ -341,6 +353,41 @@ PANEL_PROTECTED_PATTERNS = (
     "robot_pipeline_control_server.py",
     "run_robot_pipeline_control_panel.sh",
 )
+
+
+def parse_recipe_text_for_panel(text: str) -> dict[str, Any]:
+    utterance = str(text or "").strip()
+    if not utterance:
+        return {"valid": False, "error": "empty utterance", "utterance": utterance}
+    if parse_recipe_command is None:
+        return {
+            "valid": False,
+            "error": f"azas_voice parser import failed: {VOICE_PARSER_IMPORT_ERROR}",
+            "utterance": utterance,
+        }
+
+    decision = parse_recipe_command(utterance)
+    data = decision.to_dict()
+    dispenser_ids = [str(item) for item in data.get("dispenser_ids") or []]
+    invalid = [item for item in dispenser_ids if item not in DISPENSER_PRESS_TARGETS]
+    if invalid:
+        data["valid"] = False
+        data["error"] = f"unsupported dispenser ids: {', '.join(invalid)}"
+        data["queue_keys"] = []
+        return data
+
+    queue_keys: list[str] = []
+    if data.get("valid") and data.get("intent") == "make_cocktail":
+        for dispenser_id in dispenser_ids:
+            queue_keys.extend(
+                [
+                    f"move_to_dispenser_{dispenser_id}",
+                    f"press_dispenser_{dispenser_id}",
+                    f"pick_from_dispenser_{dispenser_id}",
+                ]
+            )
+    data["queue_keys"] = queue_keys
+    return data
 
 
 def command_line(proc: Any) -> str:
@@ -1310,7 +1357,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
     if step.key == "voice_input":
-        return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py"
+        return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py use_live_stt:=true"
     if step.key == "side_grip":
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
@@ -1890,6 +1937,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/cleanup":
             self.send_json(cleanup_all_processes())
+            return
+        if path == "/api/recipe/parse":
+            self.send_json(parse_recipe_text_for_panel(str(payload.get("text") or "")))
             return
         self.send_json({"error": "not found"}, 404)
 

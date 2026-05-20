@@ -51,7 +51,9 @@ def _match_recipe(normalized: str) -> str | None:
     if "디스펜서" in normalized:
         return None
     for recipe_id, aliases in RECIPE_ALIASES.items():
-        if _contains_any(normalized, aliases):
+        display_name = RECIPE_DISPLAY_NAMES.get(recipe_id, "")
+        names = tuple(aliases) + ((display_name,) if display_name else ())
+        if _contains_any(normalized, names):
             return recipe_id
     return None
 
@@ -98,7 +100,7 @@ def parse_recipe_command(text: str) -> RecipeDecision:
         return RecipeDecision(True, utterance, normalized, "confirm", None, (), "선택한 칵테일 제조를 확인했습니다.")
 
     recipe_id = _match_recipe(normalized)
-    dispenser_ids = _match_colors(normalized)
+    dispenser_ids = RECIPE_DISPENSERS.get(recipe_id, ()) if recipe_id is not None else _match_colors(normalized)
 
     if recipe_id is None and not dispenser_ids and _is_random_recipe_request(normalized):
         return _random_recipe_decision(utterance, normalized)
@@ -117,8 +119,6 @@ def parse_recipe_command(text: str) -> RecipeDecision:
 
     if recipe_id is None:
         recipe_id = "custom_color_selection"
-    elif not dispenser_ids:
-        dispenser_ids = RECIPE_DISPENSERS.get(recipe_id, ())
 
     dispenser_text = ", ".join(dispenser_ids) if dispenser_ids else "configured recipe dispensers"
     confirmation = f"{_recipe_name(recipe_id)} 요청을 인식했습니다. 사용 디스펜서: {dispenser_text}. 진행할까요?"
