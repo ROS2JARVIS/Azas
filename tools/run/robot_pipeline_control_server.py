@@ -93,15 +93,6 @@ STEPS = [
         False,
         "디스펜서 박스와 감지 텀블러를 /collision_object로 publish; direct Doosan 명령은 아직 이 장면을 자동 회피에 쓰지 않음",
     ),
-    Step(
-        "start_camera",
-        "RealSense 카메라 시작 / color+aligned depth",
-        "background",
-        "ros2 launch realsense2_camera rs_launch.py",
-        True,
-        False,
-        "D435i 카메라 드라이버를 시작하고 /camera/camera/color/image_raw, aligned_depth, camera_info 샘플을 확인",
-    ),
     Step("home_robot", "로봇 원위치 / HOME", "run", "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 90 --j4 0 --j5 90 --j6 0", True, True, "실제모션 후보: HOME 관절값 [0, 0, 90, 0, 90, 0]"),
     Step(
         "lift_robot",
@@ -112,10 +103,17 @@ STEPS = [
         True,
         "MoveLine IK 대신 실측 관절 자세 사용: joint_2=-5°, joint_3=50°, joint_5=135° 상한으로 테이블 보기",
     ),
-    Step("detect_cup_lid", "YOLO 컵/텀블러 인식 시작", "background", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "카메라 토픽을 구독해 /azas/cup_detection을 publish"),
     Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT/레시피 노드"),
     Step("recipe_generate", "레시피 생성", "blocked", "", False, False, "음성/레시피 토픽 통합 버튼은 별도 연결 필요"),
-    Step("side_grip", "컵 잡기 side grip", "run", "tools/run/direct_movej_joints.py --j1 159 --j2 -43 --j3 -105 --j4 -81 --j5 85 --j6 31", True, True, "수동 테스트 전용: 불필요한 후퇴 모션을 막기 위해 핵심 자동선택에서는 제외"),
+    Step(
+        "side_grip",
+        "RealSense 컵 인식 후 side grip",
+        "run",
+        "ros2 launch azas_bringup yolo_cup_pick_node_legacy.launch.py auto_pick:=true grasp_mode:=side use_measured_front_hold_pose:=true",
+        True,
+        True,
+        "shining-b-02 merged side-grip flow: RealSense color+aligned depth로 cup 탐지 후 선택 디스펜서의 측정 front_hold pose로 place",
+    ),
     Step("gripper_soft_grasp", "그리퍼 살짝 잡기", "run", "ros2 service call /jarvis/rg2/set_width azas_interfaces/srv/SetGripper", True, True, "큰 컵용: 완전 close 대신 폭 75mm/약한 힘으로 살짝 오므림"),
     Step("gripper_open", "그리퍼 full open / 컵 놓기 검증", "run", "tools/run/rg2_full_open_verify.sh", True, True, "컵을 배출구 아래에 둔 뒤 RG2 full-open 명령 success=True 검증"),
     Step(
@@ -153,42 +151,6 @@ STEPS = [
         True,
         True,
         "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용; 이동/검증 성공 후 RG2 full-open success 검증",
-    ),
-    Step(
-        "teach_front_hold_1",
-        "직접교시 자세 등록: 디스펜서 1 front-hold",
-        "run",
-        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 1 --write",
-        True,
-        False,
-        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_1에 저장",
-    ),
-    Step(
-        "teach_front_hold_2",
-        "직접교시 자세 등록: 디스펜서 2 front-hold",
-        "run",
-        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 2 --write",
-        True,
-        False,
-        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_2에 저장",
-    ),
-    Step(
-        "teach_front_hold_3",
-        "직접교시 자세 등록: 디스펜서 3 front-hold",
-        "run",
-        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 3 --write",
-        True,
-        False,
-        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_3에 저장",
-    ),
-    Step(
-        "teach_front_hold_4",
-        "직접교시 자세 등록: 디스펜서 4 front-hold",
-        "run",
-        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 4 --write",
-        True,
-        False,
-        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_4에 저장",
     ),
     Step(
         "press_dispenser_1",
@@ -688,6 +650,14 @@ def run_output_failure(step: Step, output: str) -> str | None:
     return None
 
 
+def text_output(output: str | bytes | None) -> str:
+    if output is None:
+        return ""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output
+
+
 def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
     clean = service_prefix.strip("/") or "dsr01"
     if step.key == "gripper_open":
@@ -698,7 +668,14 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
         return [
             f"/{clean}/system/get_robot_state",
         ]
-    if step.key in {"home_robot", "lift_robot", "side_grip"}:
+    if step.key == "side_grip":
+        return [
+            f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
+            "/jarvis/rg2/set_width",
+        ]
+    if step.key in {"home_robot", "lift_robot"}:
         return [
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/check_motion",
@@ -1225,7 +1202,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
 
     def tumbler_scene_once(action: str, *, object_id: str = "carried_tumbler", dispenser_id: str = "1") -> str:
         return (
-            "timeout 5s ros2 run azas_motion tumbler_collision_scene_node --ros-args "
+            "timeout 5s python3 -m azas_motion.tumbler_collision_scene_node --ros-args "
             f"-p action:={shlex.quote(action)} "
             f"-p object_id:={shlex.quote(object_id)} "
             f"-p dispenser_id:={shlex.quote(dispenser_id)} "
@@ -1294,8 +1271,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
     if step.key == "start_collision_scene":
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
-            "ros2 run azas_motion measured_dispenser_collision_scene_node & "
-            "ros2 run azas_motion tumbler_collision_scene_node --ros-args "
+            "python3 -m azas_motion.measured_dispenser_collision_scene_node & "
+            "python3 -m azas_motion.tumbler_collision_scene_node --ros-args "
             "-p action:=publish_detected "
             "-p object_id:=detected_tumbler "
             "-p use_lidded_height:=true"
@@ -1312,11 +1289,35 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
     if step.key == "voice_input":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py"
     if step.key == "side_grip":
+        raw_dispenser_id = str(
+            payload.get("selected_dispenser_id")
+            or os.environ.get("SELECTED_DISPENSER_ID")
+            or "2"
+        ).strip()
+        selected_dispenser_id = (
+            raw_dispenser_id
+            if raw_dispenser_id.startswith("dispenser_")
+            else f"dispenser_{raw_dispenser_id}"
+        )
+        model_path = str(
+            payload.get("model_path")
+            or os.environ.get("MODEL_PATH")
+            or "/home/ssu/Downloads/로봇 데이터/best.pt"
+        )
         return (
-            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
-            f"--service-prefix {service_prefix} --j1 159 --j2 -43 --j3 -105 "
-            f"--j4 -81 --j5 85 --j6 31 --velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} "
-            "--execute --confirm ENABLE_DIRECT_MOVEJ"
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "DISPLAY=${DISPLAY:-:0} "
+            "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
+            "PYTHONPATH=/home/ssu/Azas/tools/run/python_compat:${PYTHONPATH:-} "
+            "ros2 launch azas_bringup yolo_cup_pick_node_legacy.launch.py "
+            f"model_path:={shlex.quote(model_path)} "
+            "auto_pick:=true "
+            "exit_after_pick_attempt:=true "
+            "grasp_mode:=side "
+            f"moveit_namespace:=/{shlex.quote(service_prefix.strip('/') or 'dsr01')} "
+            f"selected_dispenser_id:={shlex.quote(selected_dispenser_id)} "
+            "use_measured_front_hold_pose:=true "
+            "publish_dispenser_collision_objects:=true"
         )
     if step.key == "gripper_open":
         return (
@@ -1395,7 +1396,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "-p pre_home_retreat_dx_mm:=-180.0 "
             "-p pre_home_retreat_dy_mm:=0.0 "
             "-p pre_home_retreat_min_z_mm:=520.0 -p pre_home_retreat_lift_first:=true "
-            "-p pre_home_retreat_min_current_x_mm:=450.0 "
+            "-p pre_home_retreat_min_current_x_mm:=0.0 "
             "-p pre_home_retreat_velocity:=20.0 "
             "-p pre_home_retreat_acceleration:=25.0 "
             "-p joint1_clearance_before_home:=false "
@@ -1423,13 +1424,14 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/pick_from_measured_dispenser_front_hold.py "
             f"--service-prefix {service_prefix} --dispenser-id {shlex.quote(dispenser_id)} "
-            "--approach-velocity 15.0 --approach-acceleration 20.0 "
-            "--no-pregrasp-staging --pregrasp-offset-x-m 0.0 --pregrasp-offset-y-m 0.0 "
-            "--pregrasp-offset-z-m 0.0 --pregrasp-staging-velocity 12.0 "
-            "--pregrasp-staging-acceleration 16.0 --joint1-clearance-deg 0.0 "
-            "--lift-m 0.100 --lift-velocity 12.0 --lift-acceleration 16.0 "
+            "--approach-velocity 20.0 --approach-acceleration 25.0 "
+            "--pregrasp-staging --pregrasp-offset-x-m 0.0 --pregrasp-offset-y-m 0.0 "
+            "--pregrasp-offset-z-m 0.060 --pregrasp-staging-velocity 12.0 "
+            "--pregrasp-staging-acceleration 20.0 --joint1-clearance-deg 0.0 "
+            "--lift-m 0.100 --lift-velocity 18.0 --lift-acceleration 24.0 "
             "--timeout-sec 120 --wait-service-sec 8 --verify-timeout-sec 45 "
             "--target-tolerance-mm 15 --gripper-grasp-width-m 0.075 --gripper-force-n 25.0 "
+            "--x-min 0.10 "
             "--execute --confirm ENABLE_PICK_FROM_MEASURED_DISPENSER_FRONT_HOLD"
             f" && {tumbler_scene_once('remove_world', object_id=f'tumbler_at_dispenser_{dispenser_id}', dispenser_id=dispenser_id)}"
             f" && {tumbler_scene_once('attach', object_id='carried_tumbler', dispenser_id=dispenser_id)}"
@@ -1805,7 +1807,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
             "output": output,
         }
     except subprocess.TimeoutExpired as exc:
-        return {"key": step.key, "status": "timeout", "output": exc.stdout or ""}
+        return {"key": step.key, "status": "timeout", "output": text_output(exc.stdout)}
 
 
 def stop_all() -> dict[str, Any]:
