@@ -128,9 +128,23 @@ run_step "Rule-based high-shake fake hardware smoke" env SERVICE_PREFIX=azas_ver
 
 run_step "Cocktail dry-run sequence smoke" "${SMOKE_DIR}/smoke_cocktail_dryrun_sequence.sh"
 
+run_step "Guarded cup pick backoff regression" "${CHECKS_DIR}/check_guarded_cup_pick_backoff.py"
+
+run_step "Dispenser joint1 clearance regression" "${CHECKS_DIR}/check_dispenser_joint1_clearance.py"
+
+run_step "Tumbler collision scene regression" "${CHECKS_DIR}/check_tumbler_collision_scene.py"
+
 run_step "Full cocktail workflow plan gate" "${CHECKS_DIR}/check_cocktail_workflow_plan.py"
 
 run_step "Panel service discovery race regression" "${CHECKS_DIR}/check_panel_service_discovery_race.py"
+
+run_step "Panel Doosan readiness retry regression" "${CHECKS_DIR}/check_panel_doosan_ready_retry.py"
+
+run_step "Panel RG2 reconnect and force regression" "${CHECKS_DIR}/check_panel_gripper_reconnect_and_force.py"
+
+run_step "Panel dispenser re-grasp regression" "${CHECKS_DIR}/check_dispenser_regrasp_panel.py"
+
+run_step "Panel dispenser recipe sequence regression" "${CHECKS_DIR}/check_dispenser_recipe_sequence.py"
 
 run_step "Real-motion entrypoint fail-closed smoke" "${SMOKE_DIR}/smoke_real_motion_entrypoint_gates.sh"
 

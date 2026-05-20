@@ -157,6 +157,11 @@
       color: #475569;
       font-size: 13px;
     }
+    .quick-row .recipe-preset {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+      color: #047857;
+    }
     .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
 
     details.settings {
@@ -206,6 +211,13 @@
 	      box-shadow: var(--shadow);
 	      overflow: hidden;
 	    }
+	    .flow-panel.flash {
+	      animation: flowFlash 900ms ease-out;
+	    }
+	    @keyframes flowFlash {
+	      0% { box-shadow: 0 0 0 4px #bfdbfe, var(--shadow); }
+	      100% { box-shadow: var(--shadow); }
+	    }
 	    .flow-head {
 	      display: flex;
 	      justify-content: space-between;
@@ -235,6 +247,11 @@
 	      background: var(--soft);
 	      font-weight: 850;
 	    }
+	    .flow-strip.drop-empty .flow-empty {
+	      border-color: #93c5fd;
+	      background: #eff6ff;
+	      color: var(--blue-dark);
+	    }
 	    .flow-item {
 	      flex: 0 0 220px;
 	      display: grid;
@@ -250,6 +267,8 @@
 	      cursor: grab;
 	    }
 	    .flow-item.dragging { opacity: 0.55; cursor: grabbing; }
+	    .flow-item.drop-before { box-shadow: -5px 0 0 var(--blue), 0 8px 20px rgba(15, 23, 42, 0.08); }
+	    .flow-item.drop-after { box-shadow: 5px 0 0 var(--blue), 0 8px 20px rgba(15, 23, 42, 0.08); }
 	    .flow-item + .flow-item { margin-left: 42px; }
 	    .flow-item + .flow-item::before {
 	      content: "";
@@ -339,7 +358,7 @@
       font-weight: 950;
       letter-spacing: -0.01em;
     }
-    .step {
+	    .step {
       display: grid;
       grid-template-columns: 34px minmax(0, 1fr);
       gap: 12px;
@@ -349,8 +368,10 @@
       border-radius: 15px;
       padding: 13px;
       background: #fff;
-      cursor: pointer;
-    }
+	      cursor: pointer;
+	    }
+	    .step[draggable="true"] { cursor: grab; }
+	    .step.dragging { opacity: 0.55; }
     .step:hover { border-color: var(--line-strong); box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06); }
     .step input { width: 22px; height: 22px; margin-top: 2px; }
     .step-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
@@ -506,6 +527,10 @@
       </div>
 
       <div class="quick-row" aria-label="quick selection">
+        <button class="recipe-preset" data-recipe-preset="1">칵테일 1</button>
+        <button class="recipe-preset" data-recipe-preset="2">칵테일 2</button>
+        <button class="recipe-preset" data-recipe-preset="3">칵테일 3</button>
+        <button class="recipe-preset" data-recipe-preset="4">칵테일 4</button>
         <button data-select="core">연결/상태 선택</button>
         <button data-select="move">컵 이동 선택</button>
         <button data-select="press">프레스 선택</button>
@@ -536,6 +561,9 @@
           </label>
           <label class="field">DISPENSER_TCP_NAME
             <input id="dispenserTcpName" type="text" value="GripperDA_v1_jarvis" placeholder="Doosan controller TCP 이름">
+          </label>
+          <label class="field">RECIPE_DISPENSER_IDS
+            <input id="recipeDispenserIds" type="text" value="1,2,3,4" placeholder="예: 1,2,3 또는 4,2,1">
           </label>
         </div>
       </details>
@@ -577,11 +605,13 @@
   </main>
 
   <script>
-    const core = new Set(["connect_robot", "status_check"]);
-    const groupOrder = ["core", "grip", "move", "press", "shake", "blocked", "etc"];
+    const core = new Set(["connect_robot", "status_check", "start_collision_scene"]);
+    const groupOrder = ["core", "camera", "grip", "teach", "move", "press", "shake", "blocked", "etc"];
     const groupLabels = {
       core: "연결/준비",
+      camera: "카메라/인식",
       grip: "그리퍼",
+      teach: "직접교시 등록",
       move: "컵 이동/배치",
       press: "디스펜서 프레스",
       shake: "쉐이킹",
@@ -624,7 +654,11 @@
     function stepGroup(step) {
       const key = step.key || "";
       if (core.has(key)) return "core";
+      if (key === "start_camera" || key === "detect_cup_lid") return "camera";
       if (key.includes("gripper")) return "grip";
+      if (key.startsWith("teach_front_hold_")) return "teach";
+      if (key === "run_dispenser_recipe_sequence") return "press";
+      if (key === "start_collision_scene") return "core";
       if (key.startsWith("move_to_dispenser") || key.includes("cup") || key.includes("holder") || key.includes("side_grip") || key.includes("home") || key.includes("lift")) return "move";
       if (key.startsWith("press_dispenser")) return "press";
       if (key.includes("shake")) return "shake";
@@ -657,9 +691,24 @@
         rt_host: document.getElementById("rtHost").value.trim(),
         rg2_ip: document.getElementById("rg2Ip").value.trim(),
         dispenser_tcp_name: document.getElementById("dispenserTcpName").value.trim(),
+        recipe_dispenser_ids: document.getElementById("recipeDispenserIds").value.trim(),
         armed: document.getElementById("armed").checked,
         selected: selectedStepKeys()
       };
+    }
+
+    function needsCollisionScene(key) {
+      return key === "run_dispenser_recipe_sequence"
+        || key === "shake_closed_cup"
+        || key.startsWith("move_to_dispenser_")
+        || key.startsWith("pick_from_dispenser_");
+    }
+
+    function withCollisionScenePrereq(queue) {
+      const items = queue.map((item) => ({...item}));
+      if (!items.some((item) => needsCollisionScene(item.key))) return items;
+      const withoutScene = items.filter((item) => item.key !== "start_collision_scene");
+      return [{id: `q${nextQueueId++}`, key: "start_collision_scene", injected: true}, ...withoutScene];
     }
 
 	    function renderSummary() {
@@ -680,6 +729,22 @@
 	      selectedQueue.push({id: `q${nextQueueId++}`, key});
 	    }
 
+	    function addQueueItems(keys) {
+	      let added = 0;
+	      for (const key of keys) {
+	        if (!stepByKey(key)) continue;
+	        selectedQueue.push({id: `q${nextQueueId++}`, key});
+	        added += 1;
+	      }
+	      return added;
+	    }
+
+	    function insertQueueItem(key, index) {
+	      if (!stepByKey(key)) return;
+	      const safeIndex = Math.max(0, Math.min(index, selectedQueue.length));
+	      selectedQueue.splice(safeIndex, 0, {id: `q${nextQueueId++}`, key});
+	    }
+
 	    function removeQueueItem(id) {
 	      selectedQueue = selectedQueue.filter((item) => item.id !== id);
 	      itemStatuses.delete(id);
@@ -698,6 +763,32 @@
 	      for (const [id] of itemStatuses) {
 	        if (!selectedQueue.some((item) => item.id === id)) itemStatuses.delete(id);
 	      }
+	    }
+
+	    function clearDropMarkers() {
+	      for (const item of document.querySelectorAll(".flow-item.drop-before, .flow-item.drop-after")) {
+	        item.classList.remove("drop-before", "drop-after");
+	      }
+	    }
+
+	    function insertionIndexFromEvent(event) {
+	      const target = event.target.closest(".flow-item");
+	      if (!target) return selectedQueue.length;
+	      const rect = target.getBoundingClientRect();
+	      const targetIndex = selectedQueue.findIndex((item) => item.id === target.dataset.flowId);
+	      if (targetIndex < 0) return selectedQueue.length;
+	      const after = event.clientX > rect.left + rect.width / 2;
+	      return targetIndex + (after ? 1 : 0);
+	    }
+
+	    function markDropTarget(event) {
+	      clearDropMarkers();
+	      flowEl.classList.remove("drop-empty");
+	      const target = event.target.closest(".flow-item");
+	      if (!target) return;
+	      const rect = target.getBoundingClientRect();
+	      const after = event.clientX > rect.left + rect.width / 2;
+	      target.classList.add(after ? "drop-after" : "drop-before");
 	    }
 
     function statusBadgeClass(status) {
@@ -737,7 +828,7 @@
 	            ? `<span class="pill result-badge visible ${statusBadgeClass(status)}" data-result-for="${escapeHtml(step.key)}">${escapeHtml(statusLabels[status] || status)}</span>`
 	            : `<span class="pill result-badge" data-result-for="${escapeHtml(step.key)}"></span>`;
 	          parts.push(`
-	            <label class="step kind-${escapeHtml(step.kind)} ${statusClass} ${step.implemented ? "" : "unimplemented"}" data-step-key="${escapeHtml(step.key)}" data-group="${group}">
+	            <label class="step kind-${escapeHtml(step.kind)} ${statusClass} ${step.implemented ? "" : "unimplemented"}" draggable="true" data-step-key="${escapeHtml(step.key)}" data-group="${group}">
 	              <input class="step-check" type="checkbox" value="${escapeHtml(step.key)}" ${isQueued ? "checked" : ""}>
 	              <div>
                 <div class="step-top">
@@ -858,6 +949,24 @@
 	      updateSelectedCount();
 	    }
 
+	    function addRecipePreset(dispenserId) {
+	      const keys = [
+	        "start_collision_scene",
+	        `move_to_dispenser_${dispenserId}`,
+	        `press_dispenser_${dispenserId}`,
+	        `pick_from_dispenser_${dispenserId}`,
+	      ];
+	      const added = addQueueItems(keys);
+	      itemStatuses = new Map();
+	      updateSelectedCount();
+	      flowEl.closest(".flow-panel")?.scrollIntoView({behavior: "smooth", block: "start"});
+	      flowEl.closest(".flow-panel")?.classList.remove("flash");
+	      requestAnimationFrame(() => flowEl.closest(".flow-panel")?.classList.add("flash"));
+	      log.textContent = added === keys.length
+	        ? `칵테일 ${dispenserId} 블록 4개를 실행 큐에 추가했습니다. (충돌 장면 시작 포함)`
+	        : `칵테일 ${dispenserId} 블록 추가가 일부 실패했습니다: ${added}/${keys.length}`;
+	    }
+
     function focusLog() {
       logPanel.scrollIntoView({behavior: "smooth", block: "nearest"});
     }
@@ -896,42 +1005,73 @@
 	        updateSelectedCount();
 	      }
 	    });
-	    flowEl.addEventListener("dragstart", (event) => {
-	      const item = event.target.closest(".flow-item");
-	      if (!item) return;
-	      item.classList.add("dragging");
-	      event.dataTransfer.effectAllowed = "move";
-	      event.dataTransfer.setData("text/plain", item.dataset.flowId || "");
+	    stepsEl.addEventListener("dragstart", (event) => {
+	      const row = event.target.closest(".step");
+	      if (!row) return;
+	      row.classList.add("dragging");
+	      event.dataTransfer.effectAllowed = "copyMove";
+	      event.dataTransfer.setData("application/x-azas-step-key", row.dataset.stepKey || "");
 	    });
-	    flowEl.addEventListener("dragend", (event) => {
-	      event.target.closest(".flow-item")?.classList.remove("dragging");
+	    stepsEl.addEventListener("dragend", (event) => {
+	      event.target.closest(".step")?.classList.remove("dragging");
+	      clearDropMarkers();
 	    });
-	    flowEl.addEventListener("dragover", (event) => {
-	      event.preventDefault();
-	      event.dataTransfer.dropEffect = "move";
-	    });
-	    flowEl.addEventListener("drop", (event) => {
-	      event.preventDefault();
-	      const draggedId = event.dataTransfer.getData("text/plain");
-	      const target = event.target.closest(".flow-item");
-	      if (!draggedId || !target || target.dataset.flowId === draggedId) return;
-	      const from = selectedQueue.findIndex((item) => item.id === draggedId);
-	      const to = selectedQueue.findIndex((item) => item.id === target.dataset.flowId);
-	      if (from < 0 || to < 0) return;
-	      const [moved] = selectedQueue.splice(from, 1);
-	      selectedQueue.splice(to, 0, moved);
-	      updateSelectedCount();
-	    });
+		    flowEl.addEventListener("dragstart", (event) => {
+		      const item = event.target.closest(".flow-item");
+		      if (!item) return;
+		      item.classList.add("dragging");
+		      event.dataTransfer.effectAllowed = "move";
+		      event.dataTransfer.setData("application/x-azas-flow-id", item.dataset.flowId || "");
+		    });
+		    flowEl.addEventListener("dragend", (event) => {
+		      event.target.closest(".flow-item")?.classList.remove("dragging");
+		      clearDropMarkers();
+		    });
+		    flowEl.addEventListener("dragover", (event) => {
+		      event.preventDefault();
+		      markDropTarget(event);
+		      if (!event.target.closest(".flow-item")) flowEl.classList.add("drop-empty");
+		      event.dataTransfer.dropEffect = "move";
+		    });
+		    flowEl.addEventListener("dragleave", (event) => {
+		      if (!flowEl.contains(event.relatedTarget)) {
+		        clearDropMarkers();
+		        flowEl.classList.remove("drop-empty");
+		      }
+		    });
+		    flowEl.addEventListener("drop", (event) => {
+		      event.preventDefault();
+		      const draggedId = event.dataTransfer.getData("application/x-azas-flow-id");
+		      const draggedStepKey = event.dataTransfer.getData("application/x-azas-step-key");
+		      let insertAt = insertionIndexFromEvent(event);
+		      if (draggedId) {
+		        const from = selectedQueue.findIndex((item) => item.id === draggedId);
+		        if (from < 0) return;
+		        const [moved] = selectedQueue.splice(from, 1);
+		        if (from < insertAt) insertAt -= 1;
+		        selectedQueue.splice(Math.max(0, Math.min(insertAt, selectedQueue.length)), 0, moved);
+		      } else if (draggedStepKey) {
+		        insertQueueItem(draggedStepKey, insertAt);
+		      }
+		      clearDropMarkers();
+		      flowEl.classList.remove("drop-empty");
+		      updateSelectedCount();
+		    });
     document.getElementById("search").addEventListener("input", renderSteps);
     document.getElementById("refresh").addEventListener("click", loadSteps);
-    document.querySelector(".quick-row").addEventListener("click", (event) => {
-      const mode = event.target?.dataset?.select;
-      if (mode) selectByMode(mode);
-    });
+	    document.querySelector(".quick-row").addEventListener("click", (event) => {
+	      const preset = event.target?.dataset?.recipePreset;
+	      if (preset) {
+	        addRecipePreset(preset);
+	        return;
+	      }
+	      const mode = event.target?.dataset?.select;
+	      if (mode) selectByMode(mode);
+	    });
     document.getElementById("focusLog").addEventListener("click", focusLog);
 
 	    document.getElementById("run").addEventListener("click", async () => {
-	      const selected = selectedQueue.map((item) => ({...item}));
+	      const selected = withCollisionScenePrereq(selectedQueue);
 	      resetResultBadges();
 	      isRunning = Boolean(selected.length);
 	      renderFlow(selected[0]?.id || "");
@@ -952,10 +1092,28 @@
 	            body: JSON.stringify(body)
 	          });
 	          const data = await res.json();
-	          const result = (data.results || [])[0] || {key: item.key, status: "failed", output: "결과 없음"};
-	          results.push(result);
-	          setStepStatus(result.key || item.key, result.status, item.id);
-	          if (result.status === "failed" || result.status === "blocked" || result.status === "timeout") break;
+	          const returnedResults = Array.isArray(data.results) ? data.results : [];
+	          if (!returnedResults.length) {
+	            const fallback = {
+	              key: item.key,
+	              status: "failed",
+	              output: data.error ? `서버 오류: ${data.error}` : `결과 없음: ${JSON.stringify(data)}`
+	            };
+	            results.push(fallback);
+	            setStepStatus(item.key, fallback.status, item.id);
+	            break;
+	          }
+	          let shouldStop = false;
+	          for (const returned of returnedResults) {
+	            results.push(returned);
+	            const statusItemId = returned.key === item.key ? item.id : "";
+	            setStepStatus(returned.key || item.key, returned.status, statusItemId);
+	            if (returned.status === "failed" || returned.status === "blocked" || returned.status === "timeout") {
+	              shouldStop = true;
+	              break;
+	            }
+	          }
+	          if (shouldStop) break;
 	        }
 	        log.textContent = JSON.stringify({execution_order: selected.map((item) => item.key), results}, null, 2);
 	      } catch (err) {

@@ -84,6 +84,24 @@ STEPS = [
     ),
     Step("status_check", "연결 확인", "run", "ros2 service list | grep /dsr01/motion", True, False, "명령 후보만 있음: /dsr01/motion 서비스가 보여야 통과"),
     Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch jarvis rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
+    Step(
+        "start_collision_scene",
+        "MoveIt 충돌 장면 시작",
+        "background",
+        "measured_dispenser_collision_scene_node + tumbler_collision_scene_node",
+        True,
+        False,
+        "디스펜서 박스와 감지 텀블러를 /collision_object로 publish; direct Doosan 명령은 아직 이 장면을 자동 회피에 쓰지 않음",
+    ),
+    Step(
+        "start_camera",
+        "RealSense 카메라 시작 / color+aligned depth",
+        "background",
+        "ros2 launch realsense2_camera rs_launch.py",
+        True,
+        False,
+        "D435i 카메라 드라이버를 시작하고 /camera/camera/color/image_raw, aligned_depth, camera_info 샘플을 확인",
+    ),
     Step("home_robot", "로봇 원위치 / HOME", "run", "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 90 --j4 0 --j5 90 --j6 0", True, True, "실제모션 후보: HOME 관절값 [0, 0, 90, 0, 90, 0]"),
     Step(
         "lift_robot",
@@ -94,7 +112,7 @@ STEPS = [
         True,
         "MoveLine IK 대신 실측 관절 자세 사용: joint_2=-5°, joint_3=50°, joint_5=135° 상한으로 테이블 보기",
     ),
-    Step("detect_cup_lid", "컵/텀블러와 뚜껑 인식", "run", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "카메라가 있을 때만 의미 있음"),
+    Step("detect_cup_lid", "YOLO 컵/텀블러 인식 시작", "background", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "카메라 토픽을 구독해 /azas/cup_detection을 publish"),
     Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT/레시피 노드"),
     Step("recipe_generate", "레시피 생성", "blocked", "", False, False, "음성/레시피 토픽 통합 버튼은 별도 연결 필요"),
     Step("side_grip", "컵 잡기 side grip", "run", "tools/run/direct_movej_joints.py --j1 159 --j2 -43 --j3 -105 --j4 -81 --j5 85 --j6 31", True, True, "수동 테스트 전용: 불필요한 후퇴 모션을 막기 위해 핵심 자동선택에서는 제외"),
@@ -137,6 +155,42 @@ STEPS = [
         "실제모션 후보: front_hold_poses.dispenser_4 좌표 사용; 이동/검증 성공 후 RG2 full-open success 검증",
     ),
     Step(
+        "teach_front_hold_1",
+        "직접교시 자세 등록: 디스펜서 1 front-hold",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 1 --write",
+        True,
+        False,
+        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_1에 저장",
+    ),
+    Step(
+        "teach_front_hold_2",
+        "직접교시 자세 등록: 디스펜서 2 front-hold",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 2 --write",
+        True,
+        False,
+        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_2에 저장",
+    ),
+    Step(
+        "teach_front_hold_3",
+        "직접교시 자세 등록: 디스펜서 3 front-hold",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 3 --write",
+        True,
+        False,
+        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_3에 저장",
+    ),
+    Step(
+        "teach_front_hold_4",
+        "직접교시 자세 등록: 디스펜서 4 front-hold",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 4 --write",
+        True,
+        False,
+        "무모션 기록: 컵을 그리퍼에 든 채 원하는 디스펜서 앞 자세로 직접교시 후 현재 base_link→link_6 TF를 front_hold_poses.dispenser_4에 저장",
+    ),
+    Step(
         "press_dispenser_1",
         "디스펜서 1 누르기 / red",
         "run",
@@ -171,6 +225,51 @@ STEPS = [
         True,
         True,
         "feature/dispenser 원본 taught posx blue 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+    ),
+    Step(
+        "pick_from_dispenser_1",
+        "디스펜서 1 앞 컵 다시 잡기 / side grip",
+        "run",
+        "tools/run/pick_from_measured_dispenser_front_hold.py --dispenser-id 1",
+        True,
+        True,
+        "front_hold_poses.dispenser_1 재사용: RG2 open→측정 front-hold 접근→soft side-grip→수직 lift",
+    ),
+    Step(
+        "pick_from_dispenser_2",
+        "디스펜서 2 앞 컵 다시 잡기 / side grip",
+        "run",
+        "tools/run/pick_from_measured_dispenser_front_hold.py --dispenser-id 2",
+        True,
+        True,
+        "front_hold_poses.dispenser_2 재사용: RG2 open→측정 front-hold 접근→soft side-grip→수직 lift",
+    ),
+    Step(
+        "pick_from_dispenser_3",
+        "디스펜서 3 앞 컵 다시 잡기 / side grip",
+        "run",
+        "tools/run/pick_from_measured_dispenser_front_hold.py --dispenser-id 3",
+        True,
+        True,
+        "front_hold_poses.dispenser_3 재사용: RG2 open→측정 front-hold 접근→soft side-grip→수직 lift",
+    ),
+    Step(
+        "pick_from_dispenser_4",
+        "디스펜서 4 앞 컵 다시 잡기 / side grip",
+        "run",
+        "tools/run/pick_from_measured_dispenser_front_hold.py --dispenser-id 4",
+        True,
+        True,
+        "front_hold_poses.dispenser_4 재사용: RG2 open→측정 front-hold 접근→soft side-grip→수직 lift",
+    ),
+    Step(
+        "run_dispenser_recipe_sequence",
+        "레시피 디스펜서 반복 실행 / move→press→pick",
+        "run",
+        "tools/run/run_measured_dispenser_recipe_sequence.py --dispenser-ids 1,2,3,4",
+        True,
+        True,
+        "설정의 RECIPE_DISPENSER_IDS 순서대로 컵 이동/놓기→디스펜서 누르기→다시 side-grip 집기 반복",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
@@ -229,6 +328,13 @@ AUXILIARY_STACK_PATTERNS = (
     "tumbler_shake_sequence_node",
     "shake_visualizer_node",
     "m0609_shake_joint_state_node",
+    "measured_dispenser_collision_scene_node",
+    "tumbler_collision_scene_node",
+)
+
+RG2_STACK_PATTERNS = (
+    "rg2_trigger.launch.py",
+    "rg2_trigger_node",
 )
 
 PANEL_PROTECTED_PATTERNS = (
@@ -393,6 +499,23 @@ def cleanup_matching_processes(
         except psutil.Error as exc:
             events.append(f"{label}: kill failed pid={proc.pid}: {exc}")
 
+    return events
+
+
+def cleanup_rg2_stack(*, grace_sec: float = 2.0) -> list[str]:
+    """Best-effort cleanup of stale RG2 bridge nodes before reconnect.
+
+    `/jarvis/rg2/set_width` returning success only proves the ROS wrapper accepted
+    the request; the current RG2 bridge does not expose real finger feedback.  A
+    stale wrapper can therefore make panel steps look successful while the
+    physical gripper does not move.  Reconnecting the gripper step should always
+    replace old RG2 wrappers instead of trusting an existing service name.
+    """
+    events: list[str] = []
+    old = processes.pop("connect_gripper", None)
+    if old is not None:
+        events.extend(terminate_process_tree(old, label="stored connect_gripper", grace_sec=grace_sec))
+    events.extend(cleanup_matching_processes(RG2_STACK_PATTERNS, label="rg2 cleanup", grace_sec=grace_sec))
     return events
 
 
@@ -571,6 +694,10 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
         return ["/jarvis/rg2/set_width"]
     if step.key == "gripper_soft_grasp":
         return ["/jarvis/rg2/set_width"]
+    if step.key.startswith("teach_front_hold_"):
+        return [
+            f"/{clean}/system/get_robot_state",
+        ]
     if step.key in {"home_robot", "lift_robot", "side_grip"}:
         return [
             f"/{clean}/motion/move_joint",
@@ -598,6 +725,32 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/aux_control/get_current_posx",
             f"/{clean}/tcp/set_current_tcp",
             f"/{clean}/tcp/get_current_tcp",
+        ]
+    if step.key.startswith("pick_from_dispenser_"):
+        return [
+            "/jarvis/rg2/set_width",
+            f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/move_wait",
+            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
+            f"/{clean}/tcp/get_current_tcp",
+            f"/{clean}/aux_control/get_current_posj",
+            f"/{clean}/aux_control/get_current_posx",
+        ]
+    if step.key == "run_dispenser_recipe_sequence":
+        return [
+            "/jarvis/rg2/set_width",
+            f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/move_wait",
+            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
+            f"/{clean}/tcp/get_current_tcp",
+            f"/{clean}/tcp/set_current_tcp",
+            f"/{clean}/aux_control/get_current_posx",
         ]
     if step.key == "place_cup_holder":
         return [
@@ -632,6 +785,8 @@ def required_service_wait_timeout(step: Step) -> float:
     if (
         step.key.startswith("move_to_dispenser_")
         or step.key.startswith("press_dispenser_")
+        or step.key.startswith("pick_from_dispenser_")
+        or step.key == "run_dispenser_recipe_sequence"
         or step.key == "place_cup_holder"
     ):
         return 35.0
@@ -703,6 +858,116 @@ def wait_for_required_services(
     )
 
 
+
+def wait_for_collision_object_sample(
+    *,
+    env: dict[str, str],
+    timeout_sec: float = 10.0,
+    proc: subprocess.Popen[str] | None = None,
+) -> tuple[bool, str]:
+    """Wait until the MoveIt collision scene publisher emits at least one object."""
+    deadline = time.monotonic() + max(timeout_sec, 0.1)
+    last_output = ""
+    while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False, "collision scene process exited while waiting\n" + tail_file(process_logs.get("start_collision_scene"))
+        result = subprocess.run(
+            ["bash", "-lc", "timeout 2s ros2 topic echo /collision_object --once"],
+            cwd=str(ROOT),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=3.0,
+            check=False,
+        )
+        last_output = result.stdout[-2000:]
+        if result.returncode == 0 and "id:" in result.stdout:
+            return True, "collision object sample observed on /collision_object\n" + last_output
+        time.sleep(0.5)
+    return False, (
+        f"no collision object sample observed on /collision_object within {timeout_sec:.1f}s\n"
+        f"--- last output ---\n{last_output}"
+    )
+
+
+def wait_for_camera_topic_samples(
+    *,
+    env: dict[str, str],
+    timeout_sec: float = 15.0,
+    proc: subprocess.Popen[str] | None = None,
+) -> tuple[bool, str]:
+    topics = [
+        ("/camera/camera/color/image_raw", "color image"),
+        ("/camera/camera/aligned_depth_to_color/image_raw", "aligned depth"),
+        ("/camera/camera/color/camera_info", "camera info"),
+    ]
+    deadline = time.monotonic() + max(timeout_sec, 0.1)
+    seen: set[str] = set()
+    last_output = ""
+    while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False, "camera process exited while waiting\n" + tail_file(process_logs.get("start_camera"))
+        for topic, label in topics:
+            if topic in seen:
+                continue
+            result = subprocess.run(
+                ["bash", "-lc", f"timeout 2s ros2 topic echo {shlex.quote(topic)} --once"],
+                cwd=str(ROOT),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=3.0,
+                check=False,
+            )
+            last_output = result.stdout[-1200:]
+            if result.returncode == 0 and ("header:" in result.stdout or "height:" in result.stdout):
+                seen.add(topic)
+                last_output = f"{label} sample observed on {topic}\n" + last_output
+        if len(seen) == len(topics):
+            return True, "camera samples observed:\n" + "\n".join(f"- {topic}" for topic, _ in topics)
+        time.sleep(0.4)
+    missing = [topic for topic, _ in topics if topic not in seen]
+    return False, (
+        f"camera topics did not all publish within {timeout_sec:.1f}s\n"
+        f"seen: {', '.join(sorted(seen)) or '<none>'}\n"
+        f"missing: {', '.join(missing)}\n"
+        f"--- last output ---\n{last_output}"
+    )
+
+
+def wait_for_cup_detection_sample(
+    *,
+    env: dict[str, str],
+    timeout_sec: float = 10.0,
+    proc: subprocess.Popen[str] | None = None,
+) -> tuple[bool, str]:
+    deadline = time.monotonic() + max(timeout_sec, 0.1)
+    last_output = ""
+    while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False, "YOLO process exited while waiting\n" + tail_file(process_logs.get("detect_cup_lid"))
+        result = subprocess.run(
+            ["bash", "-lc", "timeout 2s ros2 topic echo /azas/cup_detection --once"],
+            cwd=str(ROOT),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=3.0,
+            check=False,
+        )
+        last_output = result.stdout[-2000:]
+        if result.returncode == 0 and ("status:" in result.stdout or "pose:" in result.stdout):
+            return True, "cup detection sample observed on /azas/cup_detection\n" + last_output
+        time.sleep(0.5)
+    return False, (
+        f"no cup detection sample observed on /azas/cup_detection within {timeout_sec:.1f}s\n"
+        "카메라 화면에 직립 텀블러/컵이 보이면 다시 확인하세요.\n"
+        f"--- last output ---\n{last_output}"
+    )
+
 def ensure_gripper_services(step: Step, payload: dict[str, Any], service_prefix: str) -> tuple[bool, str]:
     required = gripper_services_for_step(step, service_prefix)
     if not required:
@@ -760,18 +1025,36 @@ def requires_doosan_motion(step: Step) -> bool:
         step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}
         or step.key.startswith("move_to_dispenser_")
         or step.key.startswith("press_dispenser_")
+        or step.key.startswith("pick_from_dispenser_")
+        or step.key == "run_dispenser_recipe_sequence"
         or step.key == "place_cup_holder"
     )
 
 
 def doosan_robot_ready(service_prefix: str) -> tuple[bool, str]:
     clean = service_prefix.strip("/") or "dsr01"
-    state_rc, state_output = ros2_call(
-        f"ros2 service call /{clean}/system/get_robot_state dsr_msgs2/srv/GetRobotState '{{}}'",
-        timeout_sec=8.0,
-    )
+    state_output = ""
+    state_rc = 1
+    state_attempts: list[str] = []
+    for attempt in range(1, 4):
+        state_rc, state_output = ros2_call(
+            f"ros2 service call /{clean}/system/get_robot_state dsr_msgs2/srv/GetRobotState '{{}}'",
+            timeout_sec=8.0,
+        )
+        state_attempts.append(f"attempt {attempt}: rc={state_rc}\n{state_output}".rstrip())
+        if state_rc == 0:
+            break
+        # DDS/service discovery can briefly drop a direct service call right
+        # after long Doosan motions.  Re-sample the service graph before
+        # fail-closing so a transient hidden by `ros2 service list` does not
+        # abort the whole recipe sequence.
+        wait_for_required_services(
+            [f"/{clean}/system/get_robot_state", f"/{clean}/motion/check_motion"],
+            timeout_sec=6.0,
+        )
+        time.sleep(0.5)
     if state_rc != 0:
-        return False, "--- get_robot_state failed ---\n" + state_output
+        return False, "--- get_robot_state failed after retries ---\n" + "\n--- retry ---\n".join(state_attempts)
 
     state_id = parse_robot_state_id(state_output)
     if state_id is None:
@@ -790,12 +1073,24 @@ def doosan_robot_ready(service_prefix: str) -> tuple[bool, str]:
             "STATE_STANDBY(1); refusing motion.",
         )
 
-    motion_rc, motion_output = ros2_call(
-        f"ros2 service call /{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion '{{}}'",
-        timeout_sec=8.0,
-    )
+    motion_output = ""
+    motion_rc = 1
+    motion_attempts: list[str] = []
+    for attempt in range(1, 4):
+        motion_rc, motion_output = ros2_call(
+            f"ros2 service call /{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion '{{}}'",
+            timeout_sec=8.0,
+        )
+        motion_attempts.append(f"attempt {attempt}: rc={motion_rc}\n{motion_output}".rstrip())
+        if motion_rc == 0:
+            break
+        wait_for_required_services(
+            [f"/{clean}/system/get_robot_state", f"/{clean}/motion/check_motion"],
+            timeout_sec=6.0,
+        )
+        time.sleep(0.5)
     if motion_rc != 0:
-        return False, "--- check_motion failed ---\n" + motion_output
+        return False, "--- check_motion failed after retries ---\n" + "\n--- retry ---\n".join(motion_attempts)
 
     return True, "--- get_robot_state ---\n" + state_output + "\n--- check_motion ---\n" + motion_output
 
@@ -879,7 +1174,25 @@ def target_xyz_for_step(step_key: str) -> list[float] | None:
     return None
 
 
+
+
+def requires_collision_scene_step(key: str) -> bool:
+    return (
+        key == "run_dispenser_recipe_sequence"
+        or key == "shake_closed_cup"
+        or key.startswith("move_to_dispenser_")
+        or key.startswith("pick_from_dispenser_")
+    )
+
+
+def with_collision_scene_prereq(selected: list[str]) -> list[str]:
+    if not any(requires_collision_scene_step(key) for key in selected):
+        return selected
+    return ["start_collision_scene"] + [key for key in selected if key != "start_collision_scene"]
+
 def run_timeout_for_step(step: Step) -> float:
+    if step.key == "run_dispenser_recipe_sequence":
+        return 900.0
     if step.key == "place_cup_holder":
         return 240.0
     return 180.0
@@ -894,6 +1207,9 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["SELECTED_DISPENSER_ID"] = str(
         payload.get("selected_dispenser_id") or env.get("SELECTED_DISPENSER_ID") or "2"
     )
+    env["RECIPE_DISPENSER_IDS"] = str(
+        payload.get("recipe_dispenser_ids") or env.get("RECIPE_DISPENSER_IDS") or "1,2,3,4"
+    )
     env["RT_HOST"] = str(
         payload.get("rt_host")
         or env.get("RT_HOST")
@@ -906,6 +1222,16 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
 
 def command_for(step: Step, payload: dict[str, Any]) -> str:
     service_prefix = str(payload.get("service_prefix") or "dsr01")
+
+    def tumbler_scene_once(action: str, *, object_id: str = "carried_tumbler", dispenser_id: str = "1") -> str:
+        return (
+            "timeout 5s ros2 run azas_motion tumbler_collision_scene_node --ros-args "
+            f"-p action:={shlex.quote(action)} "
+            f"-p object_id:={shlex.quote(object_id)} "
+            f"-p dispenser_id:={shlex.quote(dispenser_id)} "
+            "-p publish_once:=true"
+        )
+
     if step.key == "connect_robot":
         robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
         robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
@@ -963,7 +1289,23 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
             f"ros2 launch jarvis rg2_trigger.launch.py ip:={shlex.quote(rg2_ip)} "
-            "port:=502 connect:=true open_width:=1100 close_width:=0 force:=120 settle_seconds:=0.4"
+            "port:=502 connect:=true open_width:=1100 close_width:=0 force:=300 settle_seconds:=0.6"
+        )
+    if step.key == "start_collision_scene":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "ros2 run azas_motion measured_dispenser_collision_scene_node & "
+            "ros2 run azas_motion tumbler_collision_scene_node --ros-args "
+            "-p action:=publish_detected "
+            "-p object_id:=detected_tumbler "
+            "-p use_lidded_height:=true"
+        )
+    if step.key == "start_camera":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "ros2 launch realsense2_camera rs_launch.py "
+            "camera_name:=camera "
+            "enable_color:=true enable_depth:=true align_depth.enable:=true"
         )
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
@@ -986,7 +1328,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"cd {ROOT} && {ROS_SETUP} && "
             "timeout 12s ros2 service call /jarvis/rg2/set_width "
             "azas_interfaces/srv/SetGripper "
-            "\"{command: 'grasp', width_m: 0.075, force_n: 12.0}\""
+            "\"{command: 'set_width', width_m: 0.075, force_n: 25.0}\""
         )
     if step.key == "shake_rviz_preview":
         return (
@@ -1000,16 +1342,36 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "APPROACH_LINE_TIME=3.5 SHAKE_LINE_TIME=0.40 MIN_SHAKE_Z=0.550 "
             "tools/run/run_cup_target_then_shake_rviz.sh"
         )
-    if step.key.startswith("move_to_dispenser_"):
+    if step.key.startswith("teach_front_hold_"):
         dispenser_id = step.key.rsplit("_", 1)[-1]
         return (
-            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/move_to_measured_dispenser_front_hold.py "
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "python3 tools/run/teach_measured_dispenser_front_hold.py "
+            f"--dispenser-id {shlex.quote(dispenser_id)} "
+            "--write --confirm ENABLE_TEACH_MEASURED_DISPENSER_FRONT_HOLD"
+        )
+    if step.key.startswith("move_to_dispenser_"):
+        dispenser_id = step.key.rsplit("_", 1)[-1]
+        move_front_hold_base = (
+            f"python3 tools/run/move_to_measured_dispenser_front_hold.py "
             f"--service-prefix {service_prefix} --dispenser-id {shlex.quote(dispenser_id)} "
-            f"--velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} --timeout-sec 180 "
-            "--verify-target --verify-timeout-sec 70 --target-tolerance-mm 15 "
-            "--compensate-current-tcp --verify-link6-target"
-            " --execute --confirm ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
+            "--timeout-sec 180 --verify-target --verify-timeout-sec 70 "
+            "--target-tolerance-mm 15 --compensate-current-tcp --verify-link6-target --no-moveit-planning-guard "
+        )
+        # Newly taught side-grip front-hold poses are the verified reachable poses.
+        # Do not synthesize an above/retreat pose here: for the current side-grip
+        # orientation, even +Z staging can be IK-infeasible.
+        final_stage = (
+            move_front_hold_base
+            + f"--velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} "
+            "--target-offset-x-m 0.0 --target-offset-y-m 0.0 --target-offset-z-m 0.0 "
+            "--execute --confirm ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
+        )
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && {final_stage}"
             " && tools/run/rg2_full_open_verify.sh"
+            f" && {tumbler_scene_once('detach', object_id='carried_tumbler', dispenser_id=dispenser_id)}"
+            f" && {tumbler_scene_once('add_dispenser', object_id=f'tumbler_at_dispenser_{dispenser_id}', dispenser_id=dispenser_id)}"
         )
     if step.key.startswith("press_dispenser_"):
         dispenser_id = step.key.rsplit("_", 1)[-1]
@@ -1025,21 +1387,25 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"-p service_prefix:={shlex.quote(service_prefix)} "
             "-p use_taught_posx:=true "
             f"-p tcp_name:={shlex.quote(tcp_name)} "
-            "-p require_tcp_for_taught_posx:=true "
+            "-p require_tcp_for_taught_posx:=false "
+            "-p allow_tcp_set_failure:=true "
             f"-p target_dispenser:={shlex.quote(target)} "
             "-p move_home_first:=true "
             "-p pre_home_retreat_before_home:=true "
-            "-p pre_home_retreat_dx_mm:=-140.0 "
+            "-p pre_home_retreat_dx_mm:=-180.0 "
             "-p pre_home_retreat_dy_mm:=0.0 "
-            "-p pre_home_retreat_min_z_mm:=0.0 "
+            "-p pre_home_retreat_min_z_mm:=520.0 -p pre_home_retreat_lift_first:=true "
             "-p pre_home_retreat_min_current_x_mm:=450.0 "
-            "-p pre_home_retreat_velocity:=25.0 "
-            "-p pre_home_retreat_acceleration:=35.0 "
+            "-p pre_home_retreat_velocity:=20.0 "
+            "-p pre_home_retreat_acceleration:=25.0 "
+            "-p joint1_clearance_before_home:=false "
+            "-p joint1_clearance_return_home:=false "
+            "-p joint1_clearance_offset_deg:=12.0 "
             "-p return_home:=true "
             "-p close_gripper_at_home:=true "
             "-p gripper_service:=/jarvis/rg2/set_width "
             "-p gripper_close_width:=0.0 "
-            "-p gripper_close_force:=12.0 "
+            "-p gripper_close_force:=30.0 "
             "-p gripper_wait_timeout:=12.0 "
             "-p strict_pose_verification:=false "
             "-p service_wait_timeout_sec:=10.0 "
@@ -1052,6 +1418,40 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "-p joint_velocity:=40.0 "
             "-p joint_acceleration:=50.0"
         )
+    if step.key.startswith("pick_from_dispenser_"):
+        dispenser_id = step.key.rsplit("_", 1)[-1]
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/pick_from_measured_dispenser_front_hold.py "
+            f"--service-prefix {service_prefix} --dispenser-id {shlex.quote(dispenser_id)} "
+            "--approach-velocity 15.0 --approach-acceleration 20.0 "
+            "--no-pregrasp-staging --pregrasp-offset-x-m 0.0 --pregrasp-offset-y-m 0.0 "
+            "--pregrasp-offset-z-m 0.0 --pregrasp-staging-velocity 12.0 "
+            "--pregrasp-staging-acceleration 16.0 --joint1-clearance-deg 0.0 "
+            "--lift-m 0.100 --lift-velocity 12.0 --lift-acceleration 16.0 "
+            "--timeout-sec 120 --wait-service-sec 8 --verify-timeout-sec 45 "
+            "--target-tolerance-mm 15 --gripper-grasp-width-m 0.075 --gripper-force-n 25.0 "
+            "--execute --confirm ENABLE_PICK_FROM_MEASURED_DISPENSER_FRONT_HOLD"
+            f" && {tumbler_scene_once('remove_world', object_id=f'tumbler_at_dispenser_{dispenser_id}', dispenser_id=dispenser_id)}"
+            f" && {tumbler_scene_once('attach', object_id='carried_tumbler', dispenser_id=dispenser_id)}"
+        )
+    if step.key == "run_dispenser_recipe_sequence":
+        recipe_ids = str(
+            payload.get("recipe_dispenser_ids")
+            or os.environ.get("RECIPE_DISPENSER_IDS")
+            or "1,2,3,4"
+        ).strip()
+        tcp_name = str(
+            payload.get("dispenser_tcp_name")
+            or os.environ.get("DISPENSER_TCP_NAME")
+            or DEFAULT_DISPENSER_TCP_NAME
+        ).strip()
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/run_measured_dispenser_recipe_sequence.py "
+            f"--service-prefix {service_prefix} "
+            f"--dispenser-ids {shlex.quote(recipe_ids)} "
+            f"--dispenser-tcp-name {shlex.quote(tcp_name)} "
+            "--execute --confirm ENABLE_MEASURED_DISPENSER_RECIPE_SEQUENCE"
+        )
     if step.key == "place_cup_holder":
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/place_side_grip_cup_in_holder.py "
@@ -1063,6 +1463,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
             "--z-max 0.28 "
             "--execute --confirm ENABLE_CUP_HOLDER_PLACE"
+            f" && {tumbler_scene_once('detach', object_id='carried_tumbler')}"
+            f" && {tumbler_scene_once('add_holder', object_id='tumbler_in_holder')}"
         )
     if step.key == "shake_closed_cup":
         return (
@@ -1230,6 +1632,11 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
             # Give DDS/service discovery a short moment to forget killed duplicate nodes.
             time.sleep(1.5)
             restart_output = "\n".join(cleanup_events)
+        elif step.key == "connect_gripper":
+            cleanup_events = cleanup_rg2_stack()
+            # DDS may keep stale service names briefly after a killed RG2 wrapper.
+            time.sleep(1.0)
+            restart_output = "\n".join(cleanup_events)
         else:
             old = processes.get(step.key)
             if old and old.poll() is None:
@@ -1302,6 +1709,40 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
             if restart_output:
                 output = f"{restart_output}\n--- start output ---\n{output}"
             return {"key": step.key, "status": "failed", "returncode": proc.returncode, "output": output}
+        if step.key == "connect_gripper":
+            required = ["/jarvis/rg2/open", "/jarvis/rg2/close", "/jarvis/rg2/set_width"]
+            ready, waited_output = wait_for_required_services(required, timeout_sec=12.0, proc=proc)
+            output = f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}"
+            if restart_output:
+                output = f"{restart_output}\n--- start command ---\n{output}"
+            if ready:
+                output += (
+                    "\n[Azas] RG2 ROS services are ready. Note: jarvis RG2 wrapper has no physical "
+                    "finger-position feedback, so movement still must be visually confirmed."
+                )
+                return {"key": step.key, "status": "started", "pid": proc.pid, "output": output}
+            output += "\n[Azas] RG2 bridge is still starting; retry gripper connection if services stay absent."
+            return {"key": step.key, "status": "starting", "pid": proc.pid, "output": output}
+        if step.key == "start_collision_scene":
+            ready, waited_output = wait_for_collision_object_sample(env=env, timeout_sec=10.0, proc=proc)
+            output = f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}"
+            if restart_output:
+                output = f"{restart_output}\n--- start command ---\n{output}"
+            if ready:
+                return {"key": step.key, "status": "started", "pid": proc.pid, "output": output}
+            return {"key": step.key, "status": "starting", "pid": proc.pid, "output": output}
+        if step.key == "start_camera":
+            ready, waited_output = wait_for_camera_topic_samples(env=env, timeout_sec=15.0, proc=proc)
+            output = f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}"
+            if ready:
+                return {"key": step.key, "status": "started", "pid": proc.pid, "output": output}
+            return {"key": step.key, "status": "starting", "pid": proc.pid, "output": output}
+        if step.key == "detect_cup_lid":
+            ready, waited_output = wait_for_cup_detection_sample(env=env, timeout_sec=10.0, proc=proc)
+            output = f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}"
+            if ready:
+                return {"key": step.key, "status": "started", "pid": proc.pid, "output": output}
+            return {"key": step.key, "status": "starting", "pid": proc.pid, "output": output}
         output = f"{cmd}\n--- log ---\n{log_path}"
         if restart_output:
             output = f"{restart_output}\n--- start command ---\n{cmd}"
@@ -1435,7 +1876,7 @@ class Handler(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(length) or b"{}")
         path = urlparse(self.path).path
         if path == "/api/run":
-            selected = [str(key) for key in payload.get("selected") or []]
+            selected = with_collision_scene_prereq([str(key) for key in payload.get("selected") or []])
             steps_by_key = {step.key: step for step in STEPS}
             results = [
                 run_step(steps_by_key[key], payload)

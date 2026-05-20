@@ -25,6 +25,7 @@ from dsr_msgs2.srv import ConfigCreateTcp, GetCurrentPosx, GetCurrentTcp, SetCur
 ROOT = Path("/home/ssu/Azas")
 DEFAULT_CONFIG = ROOT / "src" / "azas_bringup" / "config" / "measured_dispenser_collision.yaml"
 DIRECT_MOVEL = ROOT / "tools" / "run" / "direct_movel_xyz.py"
+MOVEIT_PLAN_GUARD = ROOT / "tools" / "run" / "check_link6_pose_moveit_plan.py"
 CONFIRM_PHRASE = "ENABLE_MEASURED_DISPENSER_FRONT_HOLD"
 DIRECT_CONFIRM_PHRASE = "ENABLE_DIRECT_MOVEL"
 
@@ -138,9 +139,12 @@ def transform_to_pose(transform: Any) -> Pose:
     )
 
 
-def load_pose(config_path: Path, dispenser_id: int) -> tuple[list[float], list[float], list[float], list[float], str]:
+def load_pose(
+    config_path: Path, dispenser_id: int
+) -> tuple[list[float], list[float], list[float], list[float], str, str]:
     data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     metadata = data.get("metadata") or {}
+    reference_frame = str(metadata.get("frame_id") or "base_link")
     target_frame = str(metadata.get("measured_target_frame") or "")
     poses = data.get("front_hold_poses") or {}
     key = f"dispenser_{dispenser_id}"
@@ -153,7 +157,7 @@ def load_pose(config_path: Path, dispenser_id: int) -> tuple[list[float], list[f
         block.get("quaternion_xyzw"), f"front_hold_poses.{key}.quaternion_xyzw", 4
     )
     doosan_zyz = quaternion_to_doosan_zyz_deg(quaternion)
-    return position, doosan_zyz, ros_rpy, quaternion, target_frame
+    return position, doosan_zyz, ros_rpy, quaternion, reference_frame, target_frame
 
 
 def parse_args() -> argparse.Namespace:
@@ -169,8 +173,49 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait-service-sec", type=float, default=8.0)
     parser.add_argument("--target-tolerance-mm", type=float, default=15.0)
     parser.add_argument("--verify-timeout-sec", type=float, default=70.0)
+    parser.add_argument(
+        "--target-offset-x-m",
+        type=float,
+        default=0.0,
+        help="Base-frame X offset added to the measured link_6 target; use only for derived staging poses.",
+    )
+    parser.add_argument(
+        "--target-offset-y-m",
+        type=float,
+        default=0.0,
+        help="Base-frame Y offset added to the measured link_6 target; use only for derived staging poses.",
+    )
+    parser.add_argument(
+        "--target-offset-z-m",
+        type=float,
+        default=0.0,
+        help="Base-frame Z offset added to the measured link_6 target; use only for derived staging poses.",
+    )
     parser.add_argument("--precheck-ikin", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--verify-target", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--moveit-planning-guard",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Before real direct MoveLine execution, require MoveItPy to find a "
+            "collision-scene-aware plan from the current state to the measured link_6 target. "
+            "Failure blocks the direct motion."
+        ),
+    )
+    parser.add_argument(
+        "--moveit-guard-frame-id",
+        default="",
+        help="Override the MoveIt target pose frame. Defaults to metadata.frame_id from the measured config.",
+    )
+    parser.add_argument("--moveit-guard-ee-link", default="link_6")
+    parser.add_argument("--moveit-guard-planning-group", default="manipulator")
+    parser.add_argument("--moveit-guard-robot-model", default="m0609")
+    parser.add_argument("--moveit-guard-config-package", default="dsr_moveit_config_m0609")
+    parser.add_argument("--moveit-guard-planning-pipeline", default="pilz_industrial_motion_planner")
+    parser.add_argument("--moveit-guard-planner-id", default="PTP")
+    parser.add_argument("--moveit-guard-timeout-sec", type=float, default=3.0)
+    parser.add_argument("--moveit-guard-attempts", type=int, default=1)
     parser.add_argument(
         "--compensate-current-tcp",
         action=argparse.BooleanOptionalAction,
@@ -449,6 +494,65 @@ def set_and_verify_current_tcp(
             rclpy.shutdown()
 
 
+def run_moveit_planning_guard(
+    *,
+    args: argparse.Namespace,
+    link6_position: list[float],
+    link6_quaternion_xyzw: list[float],
+    frame_id: str,
+) -> int:
+    """Require a MoveIt plan to the measured link_6 target before direct MoveLine."""
+    if not args.execute:
+        print(
+            "[DRY-RUN] MoveIt planning guard would check current state -> measured link_6 "
+            "front-hold target before direct MoveLine."
+        )
+        return 0
+    if not args.moveit_planning_guard:
+        print("[WARN] MoveIt planning guard disabled; direct MoveLine keeps only legacy local guards.")
+        return 0
+
+    cmd = [
+        sys.executable,
+        str(MOVEIT_PLAN_GUARD),
+        "--x",
+        f"{link6_position[0]:.6f}",
+        "--y",
+        f"{link6_position[1]:.6f}",
+        "--z",
+        f"{link6_position[2]:.6f}",
+        "--qx",
+        f"{link6_quaternion_xyzw[0]:.9f}",
+        "--qy",
+        f"{link6_quaternion_xyzw[1]:.9f}",
+        "--qz",
+        f"{link6_quaternion_xyzw[2]:.9f}",
+        "--qw",
+        f"{link6_quaternion_xyzw[3]:.9f}",
+        "--frame-id",
+        str(frame_id or args.moveit_guard_frame_id),
+        "--ee-link",
+        str(args.moveit_guard_ee_link),
+        "--planning-group",
+        str(args.moveit_guard_planning_group),
+        "--robot-model",
+        str(args.moveit_guard_robot_model),
+        "--moveit-config-package",
+        str(args.moveit_guard_config_package),
+        "--planning-pipeline",
+        str(args.moveit_guard_planning_pipeline),
+        "--planner-id",
+        str(args.moveit_guard_planner_id),
+        "--planning-timeout-sec",
+        f"{args.moveit_guard_timeout_sec:.6f}",
+        "--planning-attempts",
+        str(max(int(args.moveit_guard_attempts), 1)),
+    ]
+    print("[Azas] Running MoveIt planning guard before direct measured front-hold MoveLine")
+    sys.stdout.flush()
+    return subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
+
+
 def main() -> int:
     args = parse_args()
     if not args.config.is_file():
@@ -456,7 +560,7 @@ def main() -> int:
         return 2
 
     try:
-        position, doosan_zyz, ros_rpy, quaternion, target_frame = load_pose(
+        position, doosan_zyz, ros_rpy, quaternion, reference_frame, target_frame = load_pose(
             args.config, args.dispenser_id
         )
     except ValueError as exc:
@@ -466,7 +570,20 @@ def main() -> int:
     print("[Azas] Measured dispenser front-hold target")
     print(f"[Azas] config={args.config}")
     print(f"[Azas] dispenser_id={args.dispenser_id}")
+    print(f"[Azas] frame_id={reference_frame or '<unspecified>'}")
     print(f"[Azas] measured_target_frame={target_frame or '<unspecified>'}")
+    offset = [
+        float(args.target_offset_x_m),
+        float(args.target_offset_y_m),
+        float(args.target_offset_z_m),
+    ]
+    if any(abs(value) > 1e-9 for value in offset):
+        position = [position[index] + offset[index] for index in range(3)]
+        print(
+            "[Azas] derived staging offset_m="
+            f"[{offset[0]:.3f}, {offset[1]:.3f}, {offset[2]:.3f}] "
+            "applied to measured front_hold link_6 pose"
+        )
     print(
         "[Azas] xyz_m="
         f"[{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}] "
@@ -504,6 +621,15 @@ def main() -> int:
             "[Azas] Current Doosan TCP verified for link_6 measured target: "
             f"{tcp_output if tcp_output else '<empty/default>'}"
         )
+
+    guard_rc = run_moveit_planning_guard(
+        args=args,
+        link6_position=position,
+        link6_quaternion_xyzw=quaternion,
+        frame_id=str(args.moveit_guard_frame_id or reference_frame or "base_link"),
+    )
+    if guard_rc != 0:
+        return guard_rc
 
     move_position = position
     move_zyz = doosan_zyz

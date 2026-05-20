@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SERVICE="${RG2_SET_WIDTH_SERVICE:-/jarvis/rg2/set_width}"
 WIDTH_M="${RG2_FULL_CLOSE_WIDTH_M:-0.000}"
-FORCE_N="${RG2_CLOSE_FORCE_N:-12.0}"
+FORCE_N="${RG2_CLOSE_FORCE_N:-30.0}"
 TIMEOUT_SEC="${RG2_CLOSE_TIMEOUT_SEC:-12}"
 
 cd "${ROOT_DIR}"
@@ -23,9 +23,14 @@ echo "[Azas] service=${SERVICE}"
 echo "[Azas] command=close width_m=${WIDTH_M} force_n=${FORCE_N}"
 
 if ! output="$(
-  timeout "${TIMEOUT_SEC}s" \
-    ros2 service call "${SERVICE}" azas_interfaces/srv/SetGripper \
-      "{command: 'close', width_m: ${WIDTH_M}, force_n: ${FORCE_N}}" 2>&1
+  python3 tools/run/rg2_set_width_verify.py \
+    --service "${SERVICE}" \
+    --command close \
+    --width-m "${WIDTH_M}" \
+    --force-n "${FORCE_N}" \
+    --timeout-sec "${TIMEOUT_SEC}" \
+    --ready-timeout-sec "${RG2_READY_TIMEOUT_SEC:-18}" \
+    --rg2-ip "${RG2_IP:-192.168.1.1}" 2>&1
 )"; then
   echo "${output}"
   echo "[FAIL] RG2 full-close service call failed"

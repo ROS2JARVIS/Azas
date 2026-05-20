@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 URL="${AZAS_PANEL_URL:-http://127.0.0.1:8765/}"
 LOG_DIR="$ROOT/log/panel"
