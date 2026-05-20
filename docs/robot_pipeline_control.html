@@ -605,11 +605,13 @@
   </main>
 
   <script>
-    const core = new Set(["connect_robot", "status_check"]);
-    const groupOrder = ["core", "grip", "move", "press", "shake", "blocked", "etc"];
+    const core = new Set(["connect_robot", "status_check", "start_collision_scene"]);
+    const groupOrder = ["core", "camera", "grip", "teach", "move", "press", "shake", "blocked", "etc"];
     const groupLabels = {
       core: "연결/준비",
+      camera: "카메라/인식",
       grip: "그리퍼",
+      teach: "직접교시 등록",
       move: "컵 이동/배치",
       press: "디스펜서 프레스",
       shake: "쉐이킹",
@@ -652,8 +654,11 @@
     function stepGroup(step) {
       const key = step.key || "";
       if (core.has(key)) return "core";
+      if (key === "start_camera" || key === "detect_cup_lid") return "camera";
       if (key.includes("gripper")) return "grip";
+      if (key.startsWith("teach_front_hold_")) return "teach";
       if (key === "run_dispenser_recipe_sequence") return "press";
+      if (key === "start_collision_scene") return "core";
       if (key.startsWith("move_to_dispenser") || key.includes("cup") || key.includes("holder") || key.includes("side_grip") || key.includes("home") || key.includes("lift")) return "move";
       if (key.startsWith("press_dispenser")) return "press";
       if (key.includes("shake")) return "shake";
@@ -690,6 +695,20 @@
         armed: document.getElementById("armed").checked,
         selected: selectedStepKeys()
       };
+    }
+
+    function needsCollisionScene(key) {
+      return key === "run_dispenser_recipe_sequence"
+        || key === "shake_closed_cup"
+        || key.startsWith("move_to_dispenser_")
+        || key.startsWith("pick_from_dispenser_");
+    }
+
+    function withCollisionScenePrereq(queue) {
+      const items = queue.map((item) => ({...item}));
+      if (!items.some((item) => needsCollisionScene(item.key))) return items;
+      const withoutScene = items.filter((item) => item.key !== "start_collision_scene");
+      return [{id: `q${nextQueueId++}`, key: "start_collision_scene", injected: true}, ...withoutScene];
     }
 
 	    function renderSummary() {
@@ -932,6 +951,7 @@
 
 	    function addRecipePreset(dispenserId) {
 	      const keys = [
+	        "start_collision_scene",
 	        `move_to_dispenser_${dispenserId}`,
 	        `press_dispenser_${dispenserId}`,
 	        `pick_from_dispenser_${dispenserId}`,
@@ -943,7 +963,7 @@
 	      flowEl.closest(".flow-panel")?.classList.remove("flash");
 	      requestAnimationFrame(() => flowEl.closest(".flow-panel")?.classList.add("flash"));
 	      log.textContent = added === keys.length
-	        ? `칵테일 ${dispenserId} 블록 3개를 실행 큐에 추가했습니다.`
+	        ? `칵테일 ${dispenserId} 블록 4개를 실행 큐에 추가했습니다. (충돌 장면 시작 포함)`
 	        : `칵테일 ${dispenserId} 블록 추가가 일부 실패했습니다: ${added}/${keys.length}`;
 	    }
 
@@ -1051,7 +1071,7 @@
     document.getElementById("focusLog").addEventListener("click", focusLog);
 
 	    document.getElementById("run").addEventListener("click", async () => {
-	      const selected = selectedQueue.map((item) => ({...item}));
+	      const selected = withCollisionScenePrereq(selectedQueue);
 	      resetResultBadges();
 	      isRunning = Boolean(selected.length);
 	      renderFlow(selected[0]?.id || "");
@@ -1072,10 +1092,28 @@
 	            body: JSON.stringify(body)
 	          });
 	          const data = await res.json();
-	          const result = (data.results || [])[0] || {key: item.key, status: "failed", output: "결과 없음"};
-	          results.push(result);
-	          setStepStatus(result.key || item.key, result.status, item.id);
-	          if (result.status === "failed" || result.status === "blocked" || result.status === "timeout") break;
+	          const returnedResults = Array.isArray(data.results) ? data.results : [];
+	          if (!returnedResults.length) {
+	            const fallback = {
+	              key: item.key,
+	              status: "failed",
+	              output: data.error ? `서버 오류: ${data.error}` : `결과 없음: ${JSON.stringify(data)}`
+	            };
+	            results.push(fallback);
+	            setStepStatus(item.key, fallback.status, item.id);
+	            break;
+	          }
+	          let shouldStop = false;
+	          for (const returned of returnedResults) {
+	            results.push(returned);
+	            const statusItemId = returned.key === item.key ? item.id : "";
+	            setStepStatus(returned.key || item.key, returned.status, statusItemId);
+	            if (returned.status === "failed" || returned.status === "blocked" || returned.status === "timeout") {
+	              shouldStop = true;
+	              break;
+	            }
+	          }
+	          if (shouldStop) break;
 	        }
 	        log.textContent = JSON.stringify({execution_order: selected.map((item) => item.key), results}, null, 2);
 	      } catch (err) {

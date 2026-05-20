@@ -209,7 +209,18 @@ def run_joint1_clearance(args: argparse.Namespace) -> int:
         cmd.extend([f"--j{index}", f"{value:.6f}"])
     return subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
 
-def run_front_hold_move(args: argparse.Namespace) -> int:
+def run_front_hold_move(
+    args: argparse.Namespace,
+    *,
+    label: str,
+    offset_x_m: float = 0.0,
+    offset_y_m: float = 0.0,
+    offset_z_m: float = 0.0,
+    velocity: float | None = None,
+    acceleration: float | None = None,
+) -> int:
+    move_velocity = args.approach_velocity if velocity is None else velocity
+    move_acceleration = args.approach_acceleration if acceleration is None else acceleration
     cmd = [
         sys.executable,
         str(MOVE_FRONT_HOLD),
@@ -220,9 +231,9 @@ def run_front_hold_move(args: argparse.Namespace) -> int:
         "--dispenser-id",
         str(args.dispenser_id),
         "--velocity",
-        f"{args.approach_velocity:.6f}",
+        f"{move_velocity:.6f}",
         "--acceleration",
-        f"{args.approach_acceleration:.6f}",
+        f"{move_acceleration:.6f}",
         "--timeout-sec",
         f"{args.timeout_sec:.6f}",
         "--wait-service-sec",
@@ -231,8 +242,15 @@ def run_front_hold_move(args: argparse.Namespace) -> int:
         f"{args.verify_timeout_sec:.6f}",
         "--target-tolerance-mm",
         f"{args.target_tolerance_mm:.6f}",
+        "--target-offset-x-m",
+        f"{offset_x_m:.6f}",
+        "--target-offset-y-m",
+        f"{offset_y_m:.6f}",
+        "--target-offset-z-m",
+        f"{offset_z_m:.6f}",
         "--compensate-current-tcp",
         "--verify-link6-target",
+        "--no-moveit-planning-guard",
     ]
     if args.execute:
         cmd.append("--verify-target")
@@ -244,7 +262,11 @@ def run_front_hold_move(args: argparse.Namespace) -> int:
         cmd.append("--no-precheck-ikin")
     if args.execute:
         cmd.extend(["--execute", "--confirm", FRONT_HOLD_CONFIRM_PHRASE])
-    print("[Azas] Move to measured dispenser front-hold for re-grasp")
+    print(
+        f"[Azas] {label}: measured front-hold derived target "
+        f"offset_m=[{offset_x_m:.3f}, {offset_y_m:.3f}, {offset_z_m:.3f}] "
+        f"velocity={move_velocity:.1f} acceleration={move_acceleration:.1f}"
+    )
     sys.stdout.flush()
     return subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
 
@@ -329,6 +351,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--service-prefix", default="dsr01")
     parser.add_argument("--approach-velocity", type=float, default=15.0)
     parser.add_argument("--approach-acceleration", type=float, default=20.0)
+    parser.add_argument(
+        "--pregrasp-staging",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Before the final re-grasp pose, approach a derived staging pose "
+            "offset from the measured front_hold pose so the cup is not driven "
+            "sideways by a direct final-pose entry."
+        ),
+    )
+    parser.add_argument(
+        "--pregrasp-offset-x-m",
+        type=float,
+        default=0.0,
+        help="Base-frame X offset for the derived pre-grasp staging pose. Default is 0.0 so newly taught close side-grip poses stage vertically instead of moving inward.",
+    )
+    parser.add_argument(
+        "--pregrasp-offset-y-m",
+        type=float,
+        default=0.0,
+        help="Base-frame Y offset for the derived pre-grasp staging pose.",
+    )
+    parser.add_argument(
+        "--pregrasp-offset-z-m",
+        type=float,
+        default=0.0,
+        help="Base-frame Z offset for the derived pre-grasp staging pose. Default is 0.0 because current side-grip orientations can make vertical staging IK-infeasible.",
+    )
+    parser.add_argument("--pregrasp-staging-velocity", type=float, default=12.0)
+    parser.add_argument("--pregrasp-staging-acceleration", type=float, default=16.0)
     parser.add_argument("--lift-m", type=float, default=0.100)
     parser.add_argument("--lift-velocity", type=float, default=12.0)
     parser.add_argument("--lift-acceleration", type=float, default=16.0)
@@ -342,7 +394,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gripper-grasp-width-m", type=float, default=0.075)
     parser.add_argument("--gripper-force-n", type=float, default=25.0)
     parser.add_argument("--gripper-timeout-sec", type=float, default=12.0)
-    parser.add_argument("--joint1-clearance-deg", type=float, default=12.0)
+    parser.add_argument("--joint1-clearance-deg", type=float, default=0.0)
     parser.add_argument("--joint1-clearance-velocity", type=float, default=20.0)
     parser.add_argument("--joint1-clearance-acceleration", type=float, default=25.0)
     parser.add_argument("--x-min", type=float, default=0.45)
@@ -394,12 +446,45 @@ def main() -> int:
             print("[FAIL] gripper open failed; refusing to approach cup for re-grasp.")
             return 1
 
-    rc = run_joint1_clearance(args)
-    if rc != 0:
-        print("[FAIL] pre-grasp joint_1 clearance failed; front-hold approach skipped.")
-        return rc
+    if args.pregrasp_staging:
+        print(
+            "[Azas] Pre-grasp staging is enabled: first move to a measured-front_hold-derived "
+            "offset pose, then move above the final pose, then descend into final "
+            "front-hold slowly. This uses no "
+            "operator/LLM-generated cup coordinates."
+        )
+        rc = run_front_hold_move(
+            args,
+            label="Pre-grasp staging approach",
+            offset_x_m=args.pregrasp_offset_x_m,
+            offset_y_m=args.pregrasp_offset_y_m,
+            offset_z_m=args.pregrasp_offset_z_m,
+            velocity=args.pregrasp_staging_velocity,
+            acceleration=args.pregrasp_staging_acceleration,
+        )
+        if rc != 0:
+            print("[FAIL] pre-grasp staging approach failed; final cup approach skipped.")
+            return rc
+        rc = run_front_hold_move(
+            args,
+            label="Pre-grasp above-cup alignment",
+            offset_x_m=0.0,
+            offset_y_m=0.0,
+            offset_z_m=args.pregrasp_offset_z_m,
+            velocity=args.pregrasp_staging_velocity,
+            acceleration=args.pregrasp_staging_acceleration,
+        )
+        if rc != 0:
+            print("[FAIL] pre-grasp above-cup alignment failed; final cup approach skipped.")
+            return rc
+    else:
+        print("[Azas] Pre-grasp staging disabled; using direct final front-hold approach.")
+        rc = run_joint1_clearance(args)
+        if rc != 0:
+            print("[FAIL] pre-grasp joint_1 clearance failed; front-hold approach skipped.")
+            return rc
 
-    rc = run_front_hold_move(args)
+    rc = run_front_hold_move(args, label="Final front-hold re-grasp approach")
     if rc != 0:
         print("[FAIL] front-hold approach failed; gripper close skipped.")
         return rc

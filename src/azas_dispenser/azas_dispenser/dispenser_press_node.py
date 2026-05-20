@@ -25,6 +25,7 @@ SAFE_Y_MIN_MM = -300.0
 SAFE_Y_MAX_MM = 300.0
 SAFE_Z_MIN_MM = 270.0
 SAFE_Z_MAX_MM = 750.0
+PRE_HOME_RETREAT_SAFE_Z_MM = 520.0
 
 
 def clamp(value, lower, upper):
@@ -56,6 +57,7 @@ class DispenserPressNode:
         self.require_tcp_for_taught_posx = bool(
             get_param(self.node, "require_tcp_for_taught_posx", True)
         )
+        self.allow_tcp_set_failure = bool(get_param(self.node, "allow_tcp_set_failure", False))
         self.move_home_first = bool(get_param(self.node, "move_home_first", True))
         self.return_home = bool(get_param(self.node, "return_home", True))
         self.use_home_as_reference = bool(
@@ -199,7 +201,10 @@ class DispenserPressNode:
             get_param(self.node, "pre_home_retreat_dy_mm", 0.0)
         )
         self.pre_home_retreat_min_z_mm = float(
-            get_param(self.node, "pre_home_retreat_min_z_mm", 0.0)
+            get_param(self.node, "pre_home_retreat_min_z_mm", PRE_HOME_RETREAT_SAFE_Z_MM)
+        )
+        self.pre_home_retreat_lift_first = bool(
+            get_param(self.node, "pre_home_retreat_lift_first", True)
         )
         self.pre_home_retreat_min_current_x_mm = float(
             get_param(self.node, "pre_home_retreat_min_current_x_mm", 450.0)
@@ -215,10 +220,10 @@ class DispenserPressNode:
             )
         )
         self.joint1_clearance_before_home = bool(
-            get_param(self.node, "joint1_clearance_before_home", True)
+            get_param(self.node, "joint1_clearance_before_home", False)
         )
         self.joint1_clearance_return_home = bool(
-            get_param(self.node, "joint1_clearance_return_home", True)
+            get_param(self.node, "joint1_clearance_return_home", False)
         )
         self.joint1_clearance_offset_deg = float(
             get_param(self.node, "joint1_clearance_offset_deg", 12.0)
@@ -361,11 +366,18 @@ class DispenserPressNode:
             return True
 
         if not self.set_tcp_name(self.tcp_name, "tcp/set_current_tcp"):
-            self.logger.error(
+            message = (
                 f"Doosan controller가 TCP '{self.tcp_name}' 설정을 거부했습니다. "
                 "티치펜던트/컨트롤러에 해당 TCP가 등록되어 있는지 확인하세요."
             )
-            return False
+            if not self.allow_tcp_set_failure:
+                self.logger.error(message)
+                return False
+            self.logger.warning(
+                message + " allow_tcp_set_failure=true 이므로 현재 컨트롤러 TCP를 유지하고 계속합니다."
+            )
+            self.previous_tcp_name = None
+            return True
 
         current_name = self.current_tcp_name()
         if current_name is None:
@@ -638,10 +650,41 @@ class DispenserPressNode:
         target_y = current_pose[1] + self.pre_home_retreat_dy_mm
         target_z = max(current_pose[2], self.pre_home_retreat_min_z_mm)
         target_rpy = current_pose[3:6]
-        label = "pre-HOME retreat away from cup"
+        vertical_lift_completed = False
 
+        if self.pre_home_retreat_lift_first and current_pose[2] < target_z - 1.0:
+            lift_label = "pre-HOME vertical lift away from cup"
+            self.logger.info(
+                "HOME movej 전에 컵을 옆으로 치지 않도록 먼저 수직 상승합니다: "
+                f"z {current_pose[2]:.1f}->{target_z:.1f} mm, "
+                f"x/y/rpy 유지=({current_pose[0]:.1f}, {current_pose[1]:.1f}, "
+                f"{target_rpy[0]:.1f}, {target_rpy[1]:.1f}, {target_rpy[2]:.1f})"
+            )
+            if not self.movel_checked_no_clamp(
+                current_pose[0],
+                current_pose[1],
+                target_z,
+                lift_label,
+                target_rpy,
+                min(self.pre_home_retreat_velocity, 15.0),
+                min(self.pre_home_retreat_acceleration, 20.0),
+            ):
+                self.logger.error("pre-HOME vertical lift movel 실패")
+                return False
+            if not self.wait_for_motion_done(lift_label):
+                self.logger.error("pre-HOME vertical lift 모션이 완료되지 않았습니다")
+                return False
+            if not self.verify_reached_pose(
+                [current_pose[0], current_pose[1], target_z, target_rpy[0], target_rpy[1], target_rpy[2]],
+                lift_label,
+            ):
+                self.logger.error("pre-HOME vertical lift 목표 포즈 확인 실패")
+                return False
+            vertical_lift_completed = True
+
+        label = "pre-HOME retreat away from cup"
         self.logger.info(
-            "HOME movej 전에 컵/디스펜서 충돌 회피용 후퇴를 수행합니다: "
+            "수직 상승 후 HOME movej 전 컵/디스펜서 충돌 회피용 후퇴를 수행합니다: "
             f"dx={self.pre_home_retreat_dx_mm:.1f} mm, "
             f"dy={self.pre_home_retreat_dy_mm:.1f} mm, "
             f"target_z={target_z:.1f} mm, rpy 유지="
@@ -656,6 +699,12 @@ class DispenserPressNode:
             self.pre_home_retreat_velocity,
             self.pre_home_retreat_acceleration,
         ):
+            if vertical_lift_completed:
+                self.logger.warning(
+                    "pre-HOME horizontal retreat movel 실패: 이미 수직 상승으로 컵 높이에서 벗어났으므로 "
+                    "추가 가로 후퇴를 생략하고 HOME movej로 진행합니다."
+                )
+                return True
             self.logger.error("pre-HOME retreat movel 실패")
             return False
         if not self.wait_for_motion_done(label):

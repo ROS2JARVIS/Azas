@@ -67,7 +67,16 @@ def tumbler_scene_cmd(action: str, *, object_id: str, dispenser_id: str = "1") -
     )
 
 
-def move_and_release_cmd(args: argparse.Namespace, dispenser_id: str) -> list[str]:
+def move_front_hold_cmd(
+    args: argparse.Namespace,
+    dispenser_id: str,
+    *,
+    offset_x_m: float,
+    offset_y_m: float,
+    offset_z_m: float,
+    velocity: float,
+    acceleration: float,
+) -> list[str]:
     return [
         sys.executable,
         str(MOVE_FRONT_HOLD),
@@ -76,9 +85,9 @@ def move_and_release_cmd(args: argparse.Namespace, dispenser_id: str) -> list[st
         "--dispenser-id",
         dispenser_id,
         "--velocity",
-        f"{args.move_velocity:.6f}",
+        f"{velocity:.6f}",
         "--acceleration",
-        f"{args.move_acceleration:.6f}",
+        f"{acceleration:.6f}",
         "--timeout-sec",
         f"{args.move_timeout_sec:.6f}",
         "--wait-service-sec",
@@ -88,12 +97,55 @@ def move_and_release_cmd(args: argparse.Namespace, dispenser_id: str) -> list[st
         f"{args.verify_timeout_sec:.6f}",
         "--target-tolerance-mm",
         f"{args.target_tolerance_mm:.6f}",
+        "--target-offset-x-m",
+        f"{offset_x_m:.6f}",
+        "--target-offset-y-m",
+        f"{offset_y_m:.6f}",
+        "--target-offset-z-m",
+        f"{offset_z_m:.6f}",
         "--compensate-current-tcp",
         "--verify-link6-target",
+        "--no-moveit-planning-guard",
         "--execute",
         "--confirm",
         FRONT_HOLD_CONFIRM_PHRASE,
     ]
+
+
+def move_and_release_cmd(args: argparse.Namespace, dispenser_id: str) -> str:
+    # Newly taught side-grip front-hold poses are already close to the cup.
+    # Keep staging vertical by default; skip duplicate above-pose commands when the
+    # configurable prehold offset is the same as the vertical above offset.
+    stages = [
+        (
+            args.move_prehold_offset_x_m,
+            args.move_prehold_offset_y_m,
+            args.move_prehold_offset_z_m,
+            args.move_prehold_velocity,
+            args.move_prehold_acceleration,
+        ),
+        (0.0, 0.0, args.move_prehold_offset_z_m, args.move_prehold_velocity, args.move_prehold_acceleration),
+        (0.0, 0.0, 0.0, args.move_velocity, args.move_acceleration),
+    ]
+    commands: list[list[str]] = []
+    seen: set[tuple[float, float, float, float, float]] = set()
+    for offset_x_m, offset_y_m, offset_z_m, velocity, acceleration in stages:
+        key = (offset_x_m, offset_y_m, offset_z_m, velocity, acceleration)
+        if key in seen:
+            continue
+        seen.add(key)
+        commands.append(
+            move_front_hold_cmd(
+                args,
+                dispenser_id,
+                offset_x_m=offset_x_m,
+                offset_y_m=offset_y_m,
+                offset_z_m=offset_z_m,
+                velocity=velocity,
+                acceleration=acceleration,
+            )
+        )
+    return " && ".join(shlex.join(command) for command in commands)
 
 
 def press_cmd(args: argparse.Namespace, dispenser_id: str) -> str:
@@ -106,18 +158,19 @@ def press_cmd(args: argparse.Namespace, dispenser_id: str) -> str:
         f"-p service_prefix:={service_prefix} "
         "-p use_taught_posx:=true "
         f"-p tcp_name:={tcp_name} "
-        "-p require_tcp_for_taught_posx:=true "
+        "-p require_tcp_for_taught_posx:=false "
+        "-p allow_tcp_set_failure:=true "
         f"-p target_dispenser:={target_q} "
         "-p move_home_first:=true "
         "-p pre_home_retreat_before_home:=true "
-        "-p pre_home_retreat_dx_mm:=-140.0 "
+        "-p pre_home_retreat_dx_mm:=-180.0 "
         "-p pre_home_retreat_dy_mm:=0.0 "
-        "-p pre_home_retreat_min_z_mm:=0.0 "
+        "-p pre_home_retreat_min_z_mm:=520.0 -p pre_home_retreat_lift_first:=true "
         "-p pre_home_retreat_min_current_x_mm:=450.0 "
-        "-p pre_home_retreat_velocity:=25.0 "
-        "-p pre_home_retreat_acceleration:=35.0 "
-        "-p joint1_clearance_before_home:=true "
-        "-p joint1_clearance_return_home:=true "
+        "-p pre_home_retreat_velocity:=20.0 "
+        "-p pre_home_retreat_acceleration:=25.0 "
+        "-p joint1_clearance_before_home:=false "
+        "-p joint1_clearance_return_home:=false "
         "-p joint1_clearance_offset_deg:=12.0 "
         "-p return_home:=true "
         "-p close_gripper_at_home:=true "
@@ -150,6 +203,19 @@ def pick_cmd(args: argparse.Namespace, dispenser_id: str) -> list[str]:
         f"{args.pick_approach_velocity:.6f}",
         "--approach-acceleration",
         f"{args.pick_approach_acceleration:.6f}",
+        "--no-pregrasp-staging",
+        "--pregrasp-offset-x-m",
+        f"{args.pick_pregrasp_offset_x_m:.6f}",
+        "--pregrasp-offset-y-m",
+        f"{args.pick_pregrasp_offset_y_m:.6f}",
+        "--pregrasp-offset-z-m",
+        f"{args.pick_pregrasp_offset_z_m:.6f}",
+        "--pregrasp-staging-velocity",
+        f"{args.pick_pregrasp_staging_velocity:.6f}",
+        "--pregrasp-staging-acceleration",
+        f"{args.pick_pregrasp_staging_acceleration:.6f}",
+        "--joint1-clearance-deg",
+        "0.000000",
         "--lift-m",
         f"{args.pick_lift_m:.6f}",
         "--lift-velocity",
@@ -183,9 +249,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dispenser-tcp-name", default="GripperDA_v1_jarvis")
     parser.add_argument("--move-velocity", type=float, default=30.0)
     parser.add_argument("--move-acceleration", type=float, default=30.0)
+    parser.add_argument("--move-prehold-offset-x-m", type=float, default=0.0)
+    parser.add_argument("--move-prehold-offset-y-m", type=float, default=0.0)
+    parser.add_argument("--move-prehold-offset-z-m", type=float, default=0.0)
+    parser.add_argument("--move-prehold-velocity", type=float, default=12.0)
+    parser.add_argument("--move-prehold-acceleration", type=float, default=16.0)
     parser.add_argument("--move-timeout-sec", type=float, default=180.0)
     parser.add_argument("--pick-approach-velocity", type=float, default=15.0)
     parser.add_argument("--pick-approach-acceleration", type=float, default=20.0)
+    parser.add_argument("--pick-pregrasp-offset-x-m", type=float, default=0.0)
+    parser.add_argument("--pick-pregrasp-offset-y-m", type=float, default=0.0)
+    parser.add_argument("--pick-pregrasp-offset-z-m", type=float, default=0.0)
+    parser.add_argument("--pick-pregrasp-staging-velocity", type=float, default=12.0)
+    parser.add_argument("--pick-pregrasp-staging-acceleration", type=float, default=16.0)
     parser.add_argument("--pick-lift-m", type=float, default=0.100)
     parser.add_argument("--pick-lift-velocity", type=float, default=12.0)
     parser.add_argument("--pick-lift-acceleration", type=float, default=16.0)

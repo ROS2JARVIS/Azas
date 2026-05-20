@@ -31,13 +31,13 @@ front_hold_poses:
     quaternion_xyzw: [0.500394, 0.482826, 0.508624, 0.507727]
     rpy_deg: [88.110, -1.074, 89.062]
   dispenser_3:
-    position_xyz_m: [0.436445, -0.028198, 0.088599]
-    quaternion_xyzw: [0.526785, 0.467746, 0.481494, 0.521416]
-    rpy_deg: [89.575, -1.118, 84.331]
+    position_xyz_m: [0.527, -0.204, 0.107]
+    quaternion_xyzw: [0.274, 0.689, 0.642, 0.194]
+    rpy_deg: [95.793, -4.872, 141.013]
   dispenser_4:
-    position_xyz_m: [0.437010, -0.083524, 0.087128]
-    quaternion_xyzw: [0.509621, 0.485335, 0.481655, 0.522249]
-    rpy_deg: [89.457, 0.917, 86.277]
+    position_xyz_m: [0.517, -0.235, 0.109]
+    quaternion_xyzw: [0.290, 0.682, 0.636, 0.215]
+    rpy_deg: [95.681, -4.333, 137.869]
 
 raw_probe_poses:
   body_left_probe:

@@ -78,7 +78,7 @@ class TumblerCollisionSceneNode(Node):
         self.declare_parameter("tumbler_pose_topic", "/jarvis/tumbler_dispenser/tumbler_pose")
         self.declare_parameter("dispenser_config_path", str(DEFAULT_DISPENSER_CONFIG))
         self.declare_parameter("calibration_config_path", str(DEFAULT_CALIBRATION_CONFIG))
-        self.declare_parameter("dispenser_id", "1")
+        self.declare_parameter("dispenser_id", 1)
         self.declare_parameter("attached_link_name", "GripperDA_v1_jarvis")
         self.declare_parameter("touch_links", ["GripperDA_v1_jarvis", "link_6"])
         self.declare_parameter("publish_period_sec", 1.0)
@@ -168,8 +168,12 @@ class TumblerCollisionSceneNode(Node):
         pose.orientation.w = 1.0
         self.collision_pub.publish(self._collision_object(self.object_id, pose, CollisionObject.ADD))
 
+    def dispenser_id_text(self) -> str:
+        value = self.get_parameter("dispenser_id").value
+        return str(int(value)) if isinstance(value, int) else str(value)
+
     def _dispenser_station_pose(self) -> Pose:
-        dispenser_id = str(self.get_parameter("dispenser_id").value)
+        dispenser_id = self.dispenser_id_text()
         key = f"dispenser_{dispenser_id}"
         front_holds = self.dispenser_config.get("front_hold_poses", {})
         if key not in front_holds:
@@ -204,7 +208,7 @@ class TumblerCollisionSceneNode(Node):
 
     def _publish_action_once(self) -> None:
         if self.action == "add_dispenser":
-            object_id = f"tumbler_at_dispenser_{self.get_parameter('dispenser_id').value}"
+            object_id = f"tumbler_at_dispenser_{self.dispenser_id_text()}"
             self.collision_pub.publish(
                 self._collision_object(object_id, self._dispenser_station_pose(), CollisionObject.ADD)
             )
@@ -223,14 +227,19 @@ class TumblerCollisionSceneNode(Node):
         elif self.action == "detach":
             self.attached_pub.publish(self._attached_object(CollisionObject.REMOVE))
             self.get_logger().info(f"Detached collision object {self.object_id}")
-        if bool(self.get_parameter("publish_once").value):
-            self.create_timer(0.2, lambda: rclpy.shutdown())
+        # `main()` exits one-shot actions after a short DDS publish settle.
 
 
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
     node = TumblerCollisionSceneNode()
     try:
+        if node.action != "publish_detected" and bool(node.get_parameter("publish_once").value):
+            time_to_settle_sec = 0.35
+            import time
+
+            time.sleep(time_to_settle_sec)
+            return
         rclpy.spin(node)
     finally:
         node.destroy_node()
