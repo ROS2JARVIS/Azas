@@ -26,15 +26,27 @@
 
 ## 1. 환경 설정
 
+처음 받은 PC에서는 먼저 로컬 `install/`을 생성합니다.
+
 ```bash
-# ROS 2 Humble 소싱 (매 터미널 시작 시)
+cd /home/ssu/Azas
+git switch develop
+git pull origin develop
+bash tools/setup/bootstrap_local_workspace.sh
+```
+
+매 터미널 시작 시 필요한 기본 소싱:
+
+```bash
+# ROS 2 Humble 소싱
 source /opt/ros/humble/setup.bash
 
-# Azas 워크스페이스 소싱 (빌드 후)
+# Azas 워크스페이스 소싱 (bootstrap 또는 colcon build 후)
 source /home/ssu/Azas/install/local_setup.bash
 ```
 
 > **팁**: `~/.bashrc`에 `source /opt/ros/humble/setup.bash` 추가하면 편합니다.
+> `install/`은 Git에 올리지 않습니다. 각 PC에서 `bootstrap_local_workspace.sh` 또는 `colcon build --symlink-install`로 재생성합니다.
 
 ---
 
@@ -42,6 +54,9 @@ source /home/ssu/Azas/install/local_setup.bash
 
 ```bash
 cd /home/ssu/Azas
+
+# 처음 PC 또는 install 누락 시 권장
+bash tools/setup/bootstrap_local_workspace.sh
 
 # 전체 빌드
 colcon build --symlink-install

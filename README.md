@@ -7,11 +7,29 @@
 
 ## 빠른 시작
 
+처음 받은 PC에서는 `install/`을 Git에서 받는 것이 아니라, 로컬에서 한 번 빌드해 생성합니다.
+
+```bash
+cd /home/ssu/Azas
+git switch develop
+git pull origin develop
+bash tools/setup/bootstrap_local_workspace.sh
+```
+
+패널 실행:
+
+```bash
+bash tools/run/open_robot_pipeline_control_panel.sh
+```
+
+수동으로 빌드해야 할 때만 아래 순서를 사용합니다.
+
 ```bash
 source /opt/ros/humble/setup.bash
 cd /home/ssu/Azas
+rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
-source install/setup.bash
+source install/local_setup.bash
 ```
 
 전체 명령어 → **[COMMANDS.md](COMMANDS.md)** | 협업 가이드 → **[CONTRIBUTING.md](CONTRIBUTING.md)**
