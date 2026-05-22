@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = "azas_gripper"
@@ -8,6 +10,7 @@ setup(
     packages=find_packages(exclude=["test"]),
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
+        (f"share/{package_name}/launch", glob("launch/*.launch.py")),
         (f"share/{package_name}", ["package.xml"]),
     ],
     install_requires=["setuptools"],
@@ -22,4 +25,3 @@ setup(
         ],
     },
 )
-
