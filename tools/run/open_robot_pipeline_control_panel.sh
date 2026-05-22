@@ -40,6 +40,7 @@ start_panel_server() {
   setsid env AZAS_ROOT="$ROOT" bash -lc '
     cd "$AZAS_ROOT"
     source /opt/ros/humble/setup.bash
+    source /home/ssu/ros2_ws/install/setup.bash
     source "$AZAS_ROOT/install/local_setup.bash"
     exec python3 tools/run/robot_pipeline_control_server.py
   ' >> "$LOG_FILE" 2>&1 < /dev/null &

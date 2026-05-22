@@ -17,7 +17,8 @@ SHOW_ARGS_ONLY="${SHOW_ARGS_ONLY:-false}"
 if [[ "${SHOW_ARGS_ONLY}" == "true" ]]; then
   set +u
   source /opt/ros/humble/setup.bash
-  source /home/ssu/Azas/install/local_setup.bash
+  source /home/ssu/ros2_ws/install/setup.bash
+  source /home/ssu/Azas/install/setup.bash
   set -u
   exec ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py --show-args
 fi
@@ -45,7 +46,8 @@ fi
 
 set +u
 source /opt/ros/humble/setup.bash
-source /home/ssu/Azas/install/local_setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
 set -u
 
 echo "[Azas] Starting Doosan ${MODEL} real no-motion bringup"

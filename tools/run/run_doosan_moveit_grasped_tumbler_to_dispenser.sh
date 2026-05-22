@@ -52,6 +52,7 @@ unset GZ_SIM_SYSTEM_PLUGIN_PATH
 unset IGN_GAZEBO_RESOURCE_PATH
 unset IGN_GAZEBO_SYSTEM_PLUGIN_PATH
 source /opt/ros/humble/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
 source /home/ssu/Azas/install/local_setup.bash
 set -u
 

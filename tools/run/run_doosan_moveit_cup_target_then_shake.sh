@@ -33,6 +33,7 @@ unset CMAKE_PREFIX_PATH
 unset ROS_PACKAGE_PATH
 unset PYTHONPATH
 source /opt/ros/humble/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
 source /home/ssu/Azas/install/setup.bash
 set -u
 

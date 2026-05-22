@@ -116,8 +116,8 @@ fi
 
 set +u
 source /opt/ros/humble/setup.bash
-source "${ROOT_DIR}/install/setup.bash"
 source /home/ssu/ros2_ws/install/setup.bash
+source "${ROOT_DIR}/install/setup.bash"
 set -u
 
 parse_robot_state() {
