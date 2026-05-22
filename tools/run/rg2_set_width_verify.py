@@ -24,7 +24,8 @@ ROOT = Path("/home/ssu/Azas")
 LOG_DIR = ROOT / "log" / "panel"
 ROS_SETUP = (
     "source /opt/ros/humble/setup.bash && "
-    "source /home/ssu/Azas/install/local_setup.bash"
+    "source /home/ssu/ros2_ws/install/setup.bash && "
+    "source /home/ssu/Azas/install/setup.bash"
 )
 
 
@@ -60,7 +61,7 @@ def start_rg2_bridge(args: argparse.Namespace) -> Path:
     log_path = LOG_DIR / f"connect_gripper-autostart-{stamp}.log"
     cmd = (
         f"cd {ROOT} && {ROS_SETUP} && "
-        "ros2 launch jarvis rg2_trigger.launch.py "
+        "ros2 launch azas_gripper rg2_trigger.launch.py "
         f"ip:={args.rg2_ip} port:={args.rg2_port} connect:=true "
         "open_width:=1100 close_width:=0 force:=300 settle_seconds:=0.6"
     )

@@ -26,7 +26,7 @@ def generate_launch_description():
 
     rg2_trigger_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([FindPackageShare("jarvis"), "launch", "rg2_trigger.launch.py"])
+            PathJoinSubstitution([FindPackageShare("azas_gripper"), "launch", "rg2_trigger.launch.py"])
         ),
         launch_arguments={
             "ip": LaunchConfiguration("ip"),

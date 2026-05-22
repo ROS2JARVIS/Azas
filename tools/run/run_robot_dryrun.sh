@@ -37,8 +37,8 @@ CAMERA_BASE_TF_YAW="${CAMERA_BASE_TF_YAW:-0.0}"
 
 set +u
 source /opt/ros/humble/setup.bash
-source /home/ssu/Azas/install/setup.bash
 source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
 set -u
 
 echo "[Azas] Starting SAFE dry-run. Real robot motion is disabled."

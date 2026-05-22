@@ -142,6 +142,7 @@ rm -f "${OUTLET_HOLD_STATUS_FILE}" "${OUTLET_HOLD_LOG_FILE}" "${SHAKE_STATUS_FIL
 
 set +u
 source /opt/ros/humble/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
 source "${ROOT_DIR}/install/local_setup.bash"
 set -u
 

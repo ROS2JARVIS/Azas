@@ -24,7 +24,18 @@ except ImportError:  # pragma: no cover - local panel can still run without tree
 
 ROOT = Path(__file__).resolve().parents[2]
 HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
-ROS_SETUP = f"source /opt/ros/humble/setup.bash && source {shlex.quote(str(ROOT / 'install' / 'local_setup.bash'))}"
+ROS_SETUP = (
+    "source /opt/ros/humble/setup.bash && "
+    "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
+    "if [ -f /home/ssu/ros2_ws/install/setup.bash ]; then "
+    "source /home/ssu/ros2_ws/install/setup.bash; "
+    "fi && "
+    f"if [ -f {shlex.quote(str(ROOT / 'install' / 'setup.bash'))} ]; then "
+    f"source {shlex.quote(str(ROOT / 'install' / 'setup.bash'))}; "
+    "else "
+    f"source {shlex.quote(str(ROOT / 'install' / 'local_setup.bash'))}; "
+    "fi"
+)
 DEFAULT_ROBOT_HOST = "192.168.1.100"
 DEFAULT_DISPENSER_TCP_NAME = "GripperDA_v1_jarvis"
 FAST_MOVE_VELOCITY = "30"
@@ -83,7 +94,7 @@ STEPS = [
         "준비됨/시작중이면 유지하고, stale 상태일 때만 정리 후 시작",
     ),
     Step("status_check", "연결 확인", "run", "ros2 service list | grep /dsr01/motion", True, False, "명령 후보만 있음: /dsr01/motion 서비스가 보여야 통과"),
-    Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch jarvis rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
+    Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch azas_gripper rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
     Step(
         "start_collision_scene",
         "MoveIt 충돌 장면 시작",
@@ -531,26 +542,23 @@ def robot_graph_ready(service_prefix: str) -> bool:
     clean = service_prefix.strip("/") or "dsr01"
     state_service = f"/{clean}/system/get_robot_state"
     check_motion_service = f"/{clean}/motion/check_motion"
-    cmd = (
-        f"{ROS_SETUP} && "
-        f"timeout 6s ros2 service call {shlex.quote(state_service)} "
-        "dsr_msgs2/srv/GetRobotState '{}' && "
-        f"timeout 6s ros2 service call {shlex.quote(check_motion_service)} "
-        "dsr_msgs2/srv/CheckMotion '{}'"
+    state_rc, state_output = ros2_call_empty_service(
+        state_service,
+        "dsr_msgs2/srv/GetRobotState",
+        timeout_sec=6.0,
     )
-    try:
-        completed = subprocess.run(
-            ["bash", "-lc", cmd],
-            cwd=str(ROOT),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=14,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
+    if state_rc != 0:
         return False
-    return completed.returncode == 0 and "success=True" in completed.stdout
+    motion_rc, motion_output = ros2_call_empty_service(
+        check_motion_service,
+        "dsr_msgs2/srv/CheckMotion",
+        timeout_sec=6.0,
+    )
+    return (
+        motion_rc == 0
+        and "success=True" in state_output
+        and "success=True" in motion_output
+    )
 
 
 def ros2_call(command: str, timeout_sec: float = 8.0) -> tuple[int, str]:
@@ -565,6 +573,27 @@ def ros2_call(command: str, timeout_sec: float = 8.0) -> tuple[int, str]:
         check=False,
     )
     return completed.returncode, completed.stdout
+
+
+def ros2_call_empty_service(
+    service_name: str,
+    service_type: str,
+    *,
+    timeout_sec: float = 8.0,
+) -> tuple[int, str]:
+    """Call an empty ROS service without ros2cli .srv text parsing.
+
+    Some Doosan dsr_msgs2 installations ship generated .srv files with C++-style
+    comment headers. The Python service classes import and call correctly, but
+    `ros2 service call` can reject the service type while parsing the .srv text.
+    """
+    script = ROOT / "tools" / "run" / "ros_call_empty_service.py"
+    command = (
+        f"python3 {shlex.quote(str(script))} "
+        f"{shlex.quote(service_name)} {shlex.quote(service_type)} "
+        f"--timeout {max(timeout_sec, 0.1):.1f}"
+    )
+    return ros2_call(command, timeout_sec=timeout_sec + 1.0)
 
 
 def ros_service_names(timeout_sec: float = 6.0) -> tuple[set[str], str]:
@@ -1015,7 +1044,8 @@ def doosan_robot_ready(service_prefix: str) -> tuple[bool, str]:
     state_attempts: list[str] = []
     for attempt in range(1, 4):
         state_rc, state_output = ros2_call(
-            f"ros2 service call /{clean}/system/get_robot_state dsr_msgs2/srv/GetRobotState '{{}}'",
+            f"python3 {shlex.quote(str(ROOT / 'tools' / 'run' / 'ros_call_empty_service.py'))} "
+            f"/{clean}/system/get_robot_state dsr_msgs2/srv/GetRobotState --timeout 8.0",
             timeout_sec=8.0,
         )
         state_attempts.append(f"attempt {attempt}: rc={state_rc}\n{state_output}".rstrip())
@@ -1055,7 +1085,8 @@ def doosan_robot_ready(service_prefix: str) -> tuple[bool, str]:
     motion_attempts: list[str] = []
     for attempt in range(1, 4):
         motion_rc, motion_output = ros2_call(
-            f"ros2 service call /{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion '{{}}'",
+            f"python3 {shlex.quote(str(ROOT / 'tools' / 'run' / 'ros_call_empty_service.py'))} "
+            f"/{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion --timeout 8.0",
             timeout_sec=8.0,
         )
         motion_attempts.append(f"attempt {attempt}: rc={motion_rc}\n{motion_output}".rstrip())
@@ -1102,8 +1133,9 @@ def last_alarm(service_prefix: str) -> str:
 
 def motion_status(service_prefix: str) -> tuple[str, str]:
     clean = service_prefix.strip("/") or "dsr01"
-    rc, output = ros2_call(
-        f"ros2 service call /{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion '{{}}'"
+    rc, output = ros2_call_empty_service(
+        f"/{clean}/motion/check_motion",
+        "dsr_msgs2/srv/CheckMotion",
     )
     if rc != 0:
         return "unknown", output
@@ -1233,11 +1265,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"ros2 service type /{clean}/motion/move_line && "
             f"ros2 service type /{clean}/motion/move_joint && "
             "echo '--- robot state ---' && "
-            f"timeout 8s ros2 service call /{clean}/system/get_robot_state "
-            "dsr_msgs2/srv/GetRobotState '{}' && "
+            f"timeout 9s python3 {shlex.quote(str(ROOT / 'tools' / 'run' / 'ros_call_empty_service.py'))} "
+            f"/{clean}/system/get_robot_state dsr_msgs2/srv/GetRobotState --timeout 8.0 && "
             "echo '--- check motion ---' && "
-            f"timeout 8s ros2 service call /{clean}/motion/check_motion "
-            "dsr_msgs2/srv/CheckMotion '{}'"
+            f"timeout 9s python3 {shlex.quote(str(ROOT / 'tools' / 'run' / 'ros_call_empty_service.py'))} "
+            f"/{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion --timeout 8.0"
         )
     if step.key == "lift_robot":
         joints = {
@@ -1265,7 +1297,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         rg2_ip = str(payload.get("rg2_ip") or os.environ.get("RG2_IP") or "192.168.1.1")
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
-            f"ros2 launch jarvis rg2_trigger.launch.py ip:={shlex.quote(rg2_ip)} "
+            f"ros2 launch azas_gripper rg2_trigger.launch.py ip:={shlex.quote(rg2_ip)} "
             "port:=502 connect:=true open_width:=1100 close_width:=0 force:=300 settle_seconds:=0.6"
         )
     if step.key == "start_collision_scene":

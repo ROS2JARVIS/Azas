@@ -37,6 +37,7 @@ DISPENSER_KEEPOUT_RADIUS="${DISPENSER_KEEPOUT_RADIUS:-0.20}"
 
 set +u
 source /opt/ros/humble/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
 source /home/ssu/Azas/install/setup.bash
 set -u
 

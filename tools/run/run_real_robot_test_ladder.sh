@@ -57,6 +57,7 @@ EOF
 source_ros() {
   set +u
   source /opt/ros/humble/setup.bash
+  source /home/ssu/ros2_ws/install/setup.bash 2>/dev/null || true
   source "${ROOT_DIR}/install/local_setup.bash" 2>/dev/null || true
   set -u
 }

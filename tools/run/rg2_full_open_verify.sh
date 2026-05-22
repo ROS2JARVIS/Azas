@@ -17,6 +17,12 @@ TIMEOUT_SEC="${RG2_OPEN_TIMEOUT_SEC:-12}"
 
 cd "${ROOT_DIR}"
 
+set +u
+source /opt/ros/humble/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
+set -u
+
 echo "[Azas] RG2 full-open request"
 echo "[Azas] service=${SERVICE}"
 echo "[Azas] command=open width_m=${WIDTH_M} force_n=${FORCE_N}"
