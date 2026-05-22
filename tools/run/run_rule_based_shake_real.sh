@@ -75,6 +75,10 @@ REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE="${REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE
 STATE_VALIDITY_SERVICE="${STATE_VALIDITY_SERVICE:-/check_state_validity}"
 PLANNING_GROUP="${PLANNING_GROUP:-manipulator}"
 
+echo "[Azas] SHAKE START 설명: 컵홀더에 놓인 닫힌 컵을 side grip으로 다시 잡은 뒤 흔드는 단계입니다."
+echo "[Azas] 순서: 컵홀더 place 완료 확인 -> RG2가 컵 몸통/홀더 쪽을 안정적으로 잡은 상태 확인 -> 들어 올림/관절 쉐이킹 실행."
+echo "[Azas] 주의: 이 스크립트는 컵 좌표를 새로 만들지 않으며, GRASPED_CUP_TEST_MODE=true에서는 컵이 이미 잡힌 상태를 전제로 합니다."
+
 if [[ -f "${MOTION_HOLD_FILE}" ]]; then
   echo "[Azas] Refusing real robot shake: motion hold is active."
   echo "[Azas] Hold file: ${MOTION_HOLD_FILE}"
