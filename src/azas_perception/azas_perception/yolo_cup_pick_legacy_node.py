@@ -174,6 +174,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("device", "cpu")
         self.declare_parameter("target_class", "cup")
         self.declare_parameter("auto_pick", False)
+        self.declare_parameter("exit_after_pick_attempt", False)
         self.declare_parameter("auto_pick_interval", 3.0)
         self.declare_parameter("pick_depth_ratio", 0.55)
         self.declare_parameter("depth_patch_radius", 7)
@@ -225,6 +226,9 @@ class YoloCupPickNode(Node):
         self.device = self.get_parameter("device").value
         self.target_class = self.get_parameter("target_class").value
         self.auto_pick = parse_bool(self.get_parameter("auto_pick").value)
+        self.exit_after_pick_attempt = parse_bool(
+            self.get_parameter("exit_after_pick_attempt").value
+        )
         self.auto_pick_interval = float(self.get_parameter("auto_pick_interval").value)
         self.pick_depth_ratio = float(self.get_parameter("pick_depth_ratio").value)
         self.depth_patch_radius = int(self.get_parameter("depth_patch_radius").value)
@@ -1271,27 +1275,29 @@ class YoloCupPickNode(Node):
         if self.picking:
             log.warning("Already picking")
             self.last_status = "already picking"
-            return
+            return None
         if self.color_image is None or self.depth_image is None or self.intrinsics is None:
             log.warning("Waiting for color/depth/camera_info")
             self.last_status = "waiting for color/depth/camera_info"
-            return
+            return None
         if self.last_detection is None:
             log.warning(f"No {self.target_class} detection available")
             self.last_status = f"no {self.target_class} detection"
-            return
+            return None
 
         self.last_status = f"pick requested: {self.target_class}"
         base_xyz = self.base_from_detection(self.last_detection, "[initial]")
         if base_xyz is None:
             log.error(f"No valid depth around {self.target_class} bbox")
             self.last_status = f"no valid depth for {self.target_class}"
-            return
+            return False
 
         self.picking = True
         self.last_status = "moving robot"
+        task_ok = False
         try:
-            if self.pick_and_place(base_xyz):
+            task_ok = self.pick_and_place(base_xyz)
+            if task_ok:
                 self.has_picked_once = True
                 self.last_pick_time = time.time()
                 self.last_status = "pick finished"
@@ -1299,6 +1305,7 @@ class YoloCupPickNode(Node):
                 self.last_status = "pick failed"
         finally:
             self.picking = False
+        return task_ok
 
     def draw_detections(self, image, detections):
         for detection in detections:
@@ -1387,7 +1394,15 @@ class YoloCupPickNode(Node):
         self.open_gripper_max(wait=True)
 
         window = "YOLO Cup Pick - p pick, a auto, r reset, esc quit"
-        cv2.namedWindow(window)
+        log.info("Opening YOLO preview window")
+        cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(window, 960, 540)
+        cv2.moveWindow(window, 40, 40)
+        if hasattr(cv2, "WND_PROP_TOPMOST"):
+            try:
+                cv2.setWindowProperty(window, cv2.WND_PROP_TOPMOST, 1)
+            except cv2.error as exc:
+                log.warning(f"Unable to mark YOLO preview window topmost: {exc}")
 
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.01)
@@ -1408,14 +1423,26 @@ class YoloCupPickNode(Node):
                 and (now - self.last_pick_time) >= self.auto_pick_interval
             )
             if can_auto_pick:
-                self.start_pick_from_detection()
+                pick_result = self.start_pick_from_detection()
+                if self.exit_after_pick_attempt and pick_result is not None:
+                    log.info(
+                        "Exiting after one auto-pick attempt "
+                        f"(success={bool(pick_result)})"
+                    )
+                    break
 
             key = cv2.waitKey(1) & 0xFF
             if key == 27:
                 break
             if key in (ord("p"), ord("P")):
                 log.info("pick key pressed")
-                self.start_pick_from_detection()
+                pick_result = self.start_pick_from_detection()
+                if self.exit_after_pick_attempt and pick_result is not None:
+                    log.info(
+                        "Exiting after one manual pick attempt "
+                        f"(success={bool(pick_result)})"
+                    )
+                    break
             elif key in (ord("a"), ord("A")):
                 self.auto_pick = not self.auto_pick
                 self.last_pick_time = time.time()

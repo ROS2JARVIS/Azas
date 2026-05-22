@@ -637,18 +637,22 @@ class DispenserPressNode:
             return False
 
         current_x = current_pose[0]
-        if current_x < self.pre_home_retreat_min_current_x_mm:
+        target_z = max(current_pose[2], self.pre_home_retreat_min_z_mm)
+        if (
+            current_x < self.pre_home_retreat_min_current_x_mm
+            and current_pose[2] >= target_z - 1.0
+        ):
             self.logger.info(
                 "pre-HOME retreat 생략: 현재 TCP x="
                 f"{current_x:.1f} mm 가 기준 "
                 f"{self.pre_home_retreat_min_current_x_mm:.1f} mm 보다 작아 "
-                "이미 HOME/로봇 쪽 안전 영역에 있다고 판단했습니다."
+                f"이미 HOME/로봇 쪽 안전 영역이고 z={current_pose[2]:.1f} mm가 "
+                f"안전 높이 {target_z:.1f} mm 이상이라고 판단했습니다."
             )
             return True
 
         target_x = current_pose[0] + self.pre_home_retreat_dx_mm
         target_y = current_pose[1] + self.pre_home_retreat_dy_mm
-        target_z = max(current_pose[2], self.pre_home_retreat_min_z_mm)
         target_rpy = current_pose[3:6]
         vertical_lift_completed = False
 
