@@ -505,7 +505,7 @@
   <header class="topbar">
     <div class="title-wrap">
       <h1>Azas Robot Pipeline Control</h1>
-      <div class="subtitle">넓은 단계판 · 상단 고정 실행바 · 오른쪽 상시 로그</div>
+      <div class="subtitle">넓은 단계판 · 통합 디스펜서 루프 · 오른쪽 상시 로그</div>
     </div>
     <div class="header-meta">
       <span class="pill dark" id="loadedCount">단계 로드 전</span>
@@ -565,6 +565,9 @@
           <label class="field">RECIPE_DISPENSER_IDS
             <input id="recipeDispenserIds" type="text" value="1,2,3,4" placeholder="예: 1,2,3 또는 4,2,1">
           </label>
+          <label class="field">CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M
+            <input id="cupHolderPlaceFinalZOffsetM" type="text" value="0.0" placeholder="예: -0.010 (최종 Z 10mm 낮춤)">
+          </label>
         </div>
       </details>
 	    </section>
@@ -573,7 +576,7 @@
 	      <div class="flow-head">
 	        <div>
 	          <h2>선택 실행 순서</h2>
-	          <div class="flow-help">큐 순서대로 실행됩니다. 같은 단계는 여러 번 추가할 수 있고, 노드를 드래그해서 순서를 바꿀 수 있습니다.</div>
+	          <div class="flow-help">큐 순서대로 실행됩니다. 레시피 디스펜서 단계는 컵 놓기/프레스/다시 잡기를 통합 루프로 실행합니다.</div>
 	        </div>
 	        <span class="pill info" id="flowMode">대기</span>
 	      </div>
@@ -690,6 +693,7 @@
         rg2_ip: document.getElementById("rg2Ip").value.trim(),
         dispenser_tcp_name: document.getElementById("dispenserTcpName").value.trim(),
         recipe_dispenser_ids: document.getElementById("recipeDispenserIds").value.trim(),
+        cup_holder_place_final_z_offset_m: document.getElementById("cupHolderPlaceFinalZOffsetM").value.trim(),
         armed: document.getElementById("armed").checked,
         selected: selectedStepKeys()
       };

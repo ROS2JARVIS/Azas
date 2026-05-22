@@ -80,6 +80,12 @@ def load_sequence(config_path: Path) -> tuple[TargetPose, TargetPose, TargetPose
     return pre_place, place_final, retreat, approach_lift_m
 
 
+def offset_target_z(target: TargetPose, offset_m: float) -> TargetPose:
+    adjusted_xyz = list(target.xyz_m)
+    adjusted_xyz[2] += float(offset_m)
+    return TargetPose(target.label, adjusted_xyz, list(target.rpy_rad))
+
+
 def print_target(target: TargetPose) -> None:
     rx, ry, rz = target.rpy_deg
     x, y, z = target.xyz_m
@@ -173,6 +179,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--place-acceleration", type=float, default=10.0)
     parser.add_argument("--retreat-velocity", type=float, default=12.0)
     parser.add_argument("--retreat-acceleration", type=float, default=16.0)
+    parser.add_argument(
+        "--place-final-z-offset-m",
+        type=float,
+        default=0.0,
+        help=(
+            "Measured adjustment added only to place_final Z. Use a negative value "
+            "to lower the cup into the holder without rewriting calibration.yaml."
+        ),
+    )
     parser.add_argument("--timeout-sec", type=float, default=90.0)
     parser.add_argument("--wait-service-sec", type=float, default=8.0)
     parser.add_argument("--verify-timeout-sec", type=float, default=35.0)
@@ -207,6 +222,8 @@ def main() -> int:
 
     try:
         pre_place, place_final, retreat, approach_lift_m = load_sequence(args.config)
+        if abs(args.place_final_z_offset_m) > 1e-9:
+            place_final = offset_target_z(place_final, args.place_final_z_offset_m)
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"[FAIL] {exc}")
         return 2
@@ -215,6 +232,7 @@ def main() -> int:
     print(f"[Azas] config={args.config}")
     print(f"[Azas] service_prefix={args.service_prefix}")
     print(f"[Azas] approach_lift_m={approach_lift_m:.3f}")
+    print(f"[Azas] place_final_z_offset_m={args.place_final_z_offset_m:.4f}")
     print_target(pre_place)
     print_target(place_final)
     print_target(retreat)

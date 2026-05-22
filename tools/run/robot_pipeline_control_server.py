@@ -237,12 +237,12 @@ STEPS = [
     ),
     Step(
         "run_dispenser_recipe_sequence",
-        "레시피 디스펜서 반복 실행 / move→press→pick",
+        "레시피 디스펜서 통합 실행 / move→press→pick",
         "run",
         "tools/run/run_measured_dispenser_recipe_sequence.py --dispenser-ids 1,2,3,4",
         True,
         True,
-        "설정의 RECIPE_DISPENSER_IDS 순서대로 컵 이동/놓기→디스펜서 누르기→다시 side-grip 집기 반복",
+        "설정의 RECIPE_DISPENSER_IDS 순서대로 실행. 컵 이동/놓기와 다시 side-grip 집기는 통합 ROS 클라이언트로 처리해 반복 명령 실행 시간을 줄임",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
@@ -265,7 +265,7 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "닫힌 컵을 집어 들고 흔들기", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "실제모션 후보: J3 양수 고정, J4/J5/J6 트위스트 쉐이킹; MoveIt 자기충돌 검증 후 실행"),
+    Step("shake_closed_cup", "컵홀더 컵 다시 잡기 설명 후 쉐이킹", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 side grip으로 다시 잡은 상태/순서를 먼저 설명한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행"),
     Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
     Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
 ]
@@ -1219,6 +1219,11 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["RECIPE_DISPENSER_IDS"] = str(
         payload.get("recipe_dispenser_ids") or env.get("RECIPE_DISPENSER_IDS") or "1,2,3,4"
     )
+    env["CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M"] = str(
+        payload.get("cup_holder_place_final_z_offset_m")
+        or env.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
+        or "0.0"
+    )
     env["RT_HOST"] = str(
         payload.get("rt_host")
         or env.get("RT_HOST")
@@ -1487,11 +1492,17 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--execute --confirm ENABLE_MEASURED_DISPENSER_RECIPE_SEQUENCE"
         )
     if step.key == "place_cup_holder":
+        place_final_z_offset_m = str(
+            payload.get("cup_holder_place_final_z_offset_m")
+            or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
+            or "0.0"
+        ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/place_side_grip_cup_in_holder.py "
             f"--service-prefix {service_prefix} "
             "--config /home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/calibration.yaml "
             "--approach-velocity 15.0 --approach-acceleration 20.0 "
+            f"--place-final-z-offset-m {shlex.quote(place_final_z_offset_m)} "
             "--place-velocity 6.0 --place-acceleration 10.0 "
             "--retreat-velocity 12.0 --retreat-acceleration 16.0 "
             "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
@@ -1502,7 +1513,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key == "shake_closed_cup":
         return (
-            f"cd {ROOT} && SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
+            f"cd {ROOT} && "
+            "echo '[Azas] SHAKE START 설명: 컵홀더에 놓인 닫힌 컵을 side grip으로 다시 잡은 뒤 흔드는 단계입니다.' && "
+            "echo '[Azas] 순서: 컵홀더 place 완료 확인 -> RG2가 컵 몸통/홀더 쪽을 안정적으로 잡은 상태 확인 -> 들어 올림/관절 쉐이킹 실행.' && "
+            "echo '[Azas] 주의: 이 버튼은 컵 좌표를 새로 만들지 않으며, 컵이 이미 닫혀 있고 그리퍼에 잡힌 상태를 전제로 합니다.' && "
+            f"SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
             "REQUIRE_ROBOT_STANDBY=true SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
             "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
             "JOINT_SHAKE_BASE_J3_DEG=50.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
