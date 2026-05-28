@@ -12,6 +12,11 @@ LIVE_GATE_MAX_AGE_SEC="${LIVE_GATE_MAX_AGE_SEC:-600}"
 REAL_MOTION_CONFIG_CHECK="${REAL_MOTION_CONFIG_CHECK:-${CHECKS_DIR}/check_real_motion_config.sh}"
 MOTION_HOLD_FILE="${MOTION_HOLD_FILE:-/tmp/azas_motion_hold}"
 GRASPED_CUP_TEST_MODE="${GRASPED_CUP_TEST_MODE:-false}"
+SKIP_CUP_HOLDER_PICK="${SKIP_CUP_HOLDER_PICK:-false}"
+CUP_HOLDER_PICK_CONFIG="${CUP_HOLDER_PICK_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/calibration.yaml}"
+CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M="${CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M:-0.0}"
+CUP_HOLDER_PICK_WIDTH_M="${CUP_HOLDER_PICK_WIDTH_M:-0.075}"
+CUP_HOLDER_PICK_FORCE_N="${CUP_HOLDER_PICK_FORCE_N:-25.0}"
 USE_CURRENT_TCP_AS_SHAKE_CENTER="${USE_CURRENT_TCP_AS_SHAKE_CENTER:-false}"
 REQUIRE_JOINT_LIMITS="${REQUIRE_JOINT_LIMITS:-true}"
 REQUIRE_ROBOT_STANDBY="${REQUIRE_ROBOT_STANDBY:-true}"
@@ -76,8 +81,8 @@ STATE_VALIDITY_SERVICE="${STATE_VALIDITY_SERVICE:-/check_state_validity}"
 PLANNING_GROUP="${PLANNING_GROUP:-manipulator}"
 
 echo "[Azas] SHAKE START 설명: 컵홀더에 놓인 닫힌 컵을 side grip으로 다시 잡은 뒤 흔드는 단계입니다."
-echo "[Azas] 순서: 컵홀더 place 완료 확인 -> RG2가 컵 몸통/홀더 쪽을 안정적으로 잡은 상태 확인 -> 들어 올림/관절 쉐이킹 실행."
-echo "[Azas] 주의: 이 스크립트는 컵 좌표를 새로 만들지 않으며, GRASPED_CUP_TEST_MODE=true에서는 컵이 이미 잡힌 상태를 전제로 합니다."
+echo "[Azas] 순서: 컵홀더 place 완료 확인 -> 컵홀더 측정 pose로 RG2 side-grip 픽업 -> 들어 올림 -> 관절 쉐이킹 실행."
+echo "[Azas] 주의: 이 스크립트는 컵 좌표를 새로 만들지 않으며, calibration.yaml cup_holder.side_grip_place 측정값만 사용합니다."
 
 if [[ -f "${MOTION_HOLD_FILE}" ]]; then
   echo "[Azas] Refusing real robot shake: motion hold is active."
@@ -162,6 +167,26 @@ if [[ "${REQUIRE_ROBOT_STANDBY}" == "true" ]]; then
   fi
 fi
 
+if [[ "${SKIP_CUP_HOLDER_PICK}" != "true" ]]; then
+  echo "[Azas] Cup-holder pick is required before shake. Starting measured holder side-grip pickup."
+  python3 "${ROOT_DIR}/tools/run/pick_from_cup_holder_side_grip.py" \
+    --service-prefix "${SERVICE_PREFIX}" \
+    --config "${CUP_HOLDER_PICK_CONFIG}" \
+    --approach-velocity 12.0 --approach-acceleration 16.0 \
+    --descend-velocity 6.0 --descend-acceleration 10.0 \
+    --lift-velocity 12.0 --lift-acceleration 16.0 \
+    --place-final-z-offset-m "${CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M}" \
+    --timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 \
+    --ikin-timeout-sec 20.0 --ikin-retries 2 \
+    --gripper-grasp-width-m "${CUP_HOLDER_PICK_WIDTH_M}" \
+    --gripper-force-n "${CUP_HOLDER_PICK_FORCE_N}" \
+    --z-max 0.28 \
+    --execute --confirm ENABLE_CUP_HOLDER_PICK
+  echo "[Azas] Cup-holder pick completed; continuing to shake with grasped cup."
+else
+  echo "[Azas] Cup-holder pick skipped only because SKIP_CUP_HOLDER_PICK=true was set by a wrapper that already completed it."
+fi
+
 parse_first_array() {
   python3 -c '
 import re
@@ -240,7 +265,7 @@ else
   echo "[Azas] Strict live gate stamp: ${LIVE_GATE_STAMP} age=${age_sec}s"
 fi
 echo "[Azas] Continue only if ALL are true:"
-echo "  - cup is already grasped securely"
+echo "  - cup-holder pick completed and cup is grasped securely"
 echo "  - e-stop is reachable"
 echo "  - no person is inside the robot workspace"
 echo "  - dispenser, tumbler, cable, table, and camera mount collision risks were checked"

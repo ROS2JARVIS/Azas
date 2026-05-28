@@ -1637,7 +1637,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f" && {tumbler_scene_once('remove_world', object_id='tumbler_in_holder')}"
             f" && {tumbler_scene_once('attach', object_id='carried_tumbler')}"
             " && "
-            f"SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
+            f"SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true SKIP_CUP_HOLDER_PICK=true "
             "REQUIRE_ROBOT_STANDBY=true SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
             "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
             "JOINT_SHAKE_BASE_J3_DEG=50.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
