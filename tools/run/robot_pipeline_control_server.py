@@ -1309,6 +1309,15 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         or env.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
         or "0.0"
     )
+    # Operational-only offset for the pre-shake cup-holder re-grasp.
+    # This intentionally does not modify calibration.yaml and is separate from the
+    # cup-holder placement offset so lowering the shake pickup does not push the
+    # cup deeper during place_cup_holder.
+    env["CUP_HOLDER_PICK_Z_OFFSET_M"] = str(
+        payload.get("cup_holder_pick_z_offset_m")
+        or env.get("CUP_HOLDER_PICK_Z_OFFSET_M")
+        or "-0.010"
+    )
     env["RT_HOST"] = str(
         payload.get("rt_host")
         or env.get("RT_HOST")
@@ -1609,10 +1618,10 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f" && {tumbler_scene_once('add_holder', object_id='tumbler_in_holder')}"
         )
     if step.key == "shake_closed_cup":
-        place_final_z_offset_m = str(
-            payload.get("cup_holder_place_final_z_offset_m")
-            or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
-            or "0.0"
+        pick_z_offset_m = str(
+            payload.get("cup_holder_pick_z_offset_m")
+            or os.environ.get("CUP_HOLDER_PICK_Z_OFFSET_M")
+            or "-0.010"
         ).strip()
         holder_pick = (
             "python3 tools/run/pick_from_cup_holder_side_grip.py "
@@ -1621,9 +1630,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--approach-velocity 12.0 --approach-acceleration 16.0 "
             "--descend-velocity 6.0 --descend-acceleration 10.0 "
             "--lift-velocity 12.0 --lift-acceleration 16.0 "
-            f"--place-final-z-offset-m {shlex.quote(place_final_z_offset_m)} "
+            f"--place-final-z-offset-m {shlex.quote(pick_z_offset_m)} "
             "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
             "--ikin-timeout-sec 20.0 --ikin-retries 2 "
+            "--gripper-grasp-width-m 0.068 --gripper-force-n 35.0 "
+            "--post-grasp-settle-sec 0.8 "
             "--z-max 0.28 "
             "--execute --confirm ENABLE_CUP_HOLDER_PICK"
         )
@@ -1638,12 +1649,12 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f" && {tumbler_scene_once('attach', object_id='carried_tumbler')}"
             " && "
             f"SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true SKIP_CUP_HOLDER_PICK=true "
-            "REQUIRE_ROBOT_STANDBY=true SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
+            "REQUIRE_ROBOT_STANDBY=true SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=3 "
             "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
             "JOINT_SHAKE_BASE_J3_DEG=50.0 JOINT_SHAKE_BASE_J4_DEG=0.0 "
             "JOINT_SHAKE_BASE_J5_DEG=70.0 JOINT_SHAKE_BASE_J6_DEG=0.0 "
-            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=25.0 "
-            "JOINT_SHAKE_J5_AMPLITUDE_DEG=30.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=37.0 "
+            "JOINT_SHAKE_J3_AMPLITUDE_DEG=0.0 JOINT_SHAKE_J4_AMPLITUDE_DEG=18.0 "
+            "JOINT_SHAKE_J5_AMPLITUDE_DEG=20.0 JOINT_SHAKE_J6_AMPLITUDE_DEG=24.0 "
             "JOINT_SHAKE_J1_MIN_DEG=-20.0 JOINT_SHAKE_J1_MAX_DEG=5.0 "
             "JOINT_SHAKE_J2_MIN_DEG=-80.0 JOINT_SHAKE_J2_MAX_DEG=5.0 "
             "JOINT_SHAKE_J3_MIN_DEG=0.0 JOINT_SHAKE_J3_MAX_DEG=135.0 "
@@ -1651,9 +1662,9 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "ENFORCE_WRIST_JOINT_LIMITS=false WRIST_MIN_DEG=-135.0 WRIST_MAX_DEG=135.0 "
             "JOINT5_MIN_DEG=40.0 JOINT5_MAX_DEG=100.0 "
             "APPROACH_JOINT_VELOCITY=18.0 APPROACH_JOINT_ACCELERATION=22.0 "
-            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=180.0 "
-            "SHAKE_JOINT_ACCELERATION=260.0 SHAKE_JOINT_TIME=0.0 "
-            "JOINT_SHAKE_PEAK_VELOCITY_LIMIT_DEG_S=225.0 "
+            "APPROACH_JOINT_TIME=2.6 SHAKE_JOINT_VELOCITY=90.0 "
+            "SHAKE_JOINT_ACCELERATION=120.0 SHAKE_JOINT_TIME=0.0 "
+            "JOINT_SHAKE_PEAK_VELOCITY_LIMIT_DEG_S=130.0 "
             "VERIFY_JOINT_TARGETS=true JOINT_TARGET_TOLERANCE_DEG=8.0 "
             "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "

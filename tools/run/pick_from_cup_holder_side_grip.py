@@ -205,9 +205,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--z-max", type=float, default=0.28)
     parser.add_argument("--gripper-service", default="/jarvis/rg2/set_width")
     parser.add_argument("--gripper-open-width-m", type=float, default=0.110)
-    parser.add_argument("--gripper-grasp-width-m", type=float, default=0.075)
-    parser.add_argument("--gripper-force-n", type=float, default=25.0)
+    parser.add_argument("--gripper-grasp-width-m", type=float, default=0.068)
+    parser.add_argument("--gripper-force-n", type=float, default=35.0)
     parser.add_argument("--gripper-timeout-sec", type=float, default=12.0)
+    parser.add_argument("--post-grasp-settle-sec", type=float, default=0.8)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
         "--confirm",
@@ -274,6 +275,10 @@ def main() -> int:
     if rc != 0:
         print("[FAIL] gripper grasp failed; lift skipped to avoid dragging an unsecured cup.")
         return rc
+    if args.post_grasp_settle_sec > 0:
+        print(f"[Azas] post-grasp settle before lift: {args.post_grasp_settle_sec:.2f}s")
+        import time
+        time.sleep(args.post_grasp_settle_sec)
 
     rc = run_movel(
         pre_place,
