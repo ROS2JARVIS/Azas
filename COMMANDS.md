@@ -157,6 +157,54 @@ bash tools/checks/check_robot_detection.sh
 
 모션으로 이어지는 컵 탐지는 `/azas/cup_detection` status가 `detected:upright`로 시작해야 합니다. `detected:lid`는 lid 확인용이며 `/jarvis/tumbler_dispenser/tumbler_pose`의 컵 pose 계약을 만족하지 않습니다.
 
+컵 높이 기반 upright/lying threshold를 잡을 때는 작업대를 비운 뒤 30프레임 baseline을 먼저 저장합니다.
+
+legacy `move_camera_home()` 관측 자세만 분리해서 이동하려면 먼저 dry-run으로 target을 확인합니다.
+
+```bash
+tools/run/move_to_legacy_camera_home.py --dry-run
+```
+
+실제 이동은 로봇 주변 안전 확인 후 명시 confirm과 함께 실행합니다.
+
+```bash
+tools/run/move_to_legacy_camera_home.py \
+  --enable-real-motion \
+  --confirm I_UNDERSTAND_THIS_WILL_MOVE_THE_ROBOT
+```
+
+컵 탐지가 `unknown`, `no_tumbler_detection`, `invalid_depth` 등으로 실패하면 HOME으로
+복귀한 뒤 다시 OBSERVE 관측 자세로 이동시켜 재관측합니다. 기본 재시도는 2회이며,
+재확인 결과가 `upright`면 side-grab으로, `lying`이면 lying-upright flow로 넘깁니다.
+먼저 dry-run으로 확인합니다.
+
+```bash
+tools/run/recover_home_then_observe_on_cup_failure.py \
+  --dry-run \
+  --max-retries 2
+```
+
+실제 복귀 이동은 로봇 주변 안전 확인 후 명시 confirm과 함께 실행합니다.
+
+```bash
+tools/run/recover_home_then_observe_on_cup_failure.py \
+  --enable-real-motion \
+  --confirm I_UNDERSTAND_THIS_WILL_MOVE_THE_ROBOT \
+  --max-retries 2
+```
+
+복귀 helper의 종료 의미는 `0=upright/side-grab 가능`, `10=lying/세우기 flow로 전달`,
+`20=unknown 지속/operator 확인 필요`입니다.
+
+```bash
+ros2 launch azas_bringup yolo_perception.launch.py \
+  capture_empty_table_baseline:=true \
+  baseline_frame_count:=30 \
+  empty_table_baseline_path:=/tmp/azas_empty_table_depth_baseline.npy
+```
+
+로그에 `Empty-table depth baseline ready`가 뜬 뒤 컵 샘플을 놓고 `/azas/cup_detection`의 `table_height_m`, `height_median`, `height_p90`, `height_max`, `height_valid_ratio`, `bbox`, `orientation`을 기록합니다. 세부 절차는 [docs/cup_height_orientation_calibration.md](docs/cup_height_orientation_calibration.md)를 따릅니다.
+
 ---
 
 ## 6. 드라이런 (Dry-run)
