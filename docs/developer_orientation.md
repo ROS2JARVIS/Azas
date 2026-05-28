@@ -146,7 +146,7 @@ STT
 | `tumbler_floor_place_demo.launch.py` | 단독 sim | 컵 이동만 볼 때 |
 | `dispenser_press.launch.py` | 부분 구현 | 디스펜서 press 단독 테스트 |
 | `dispense_lid_sequence.launch.py` | 부분 구현 | 디스펜서 press + lid close fake/dry-run |
-| `rg2_trigger.launch.py` | real support | RG2 Trigger wrapper |
+| `robot_connection_control.launch.py` RG2 Node | real support | `azas_gripper/rg2_gripper_node` starts `/jarvis/rg2/*` compatibility services from inside `~/Azas` |
 | `tumbler_dispenser_gazebo.launch.py` | visual preview | Gazebo asset preview, full physics pipeline 아님 |
 
 ## launch 정리 판정
@@ -155,8 +155,8 @@ STT
 
 | launch | 판정 | 이유 | 권장 조치 |
 | --- | --- | --- | --- |
-| `mvp_bringup.launch.py` | 삭제 후보 | 오래된 MVP 골격입니다. 현재 컵 pose bridge, jarvis floor-place, real gate 흐름을 쓰지 않습니다. | `deprecated_mvp_bringup.launch.py`로 이름 변경 또는 제거 |
-| `hardware_free_demo.launch.py` | 통합 후보 | `tumbler_floor_place_demo.launch.py`와 역할이 겹칩니다. 다만 voice/LLM/demo pose까지 묶는 차이가 있습니다. | RViz demo는 jarvis 쪽으로 통일하고, voice demo만 남길지 결정 |
+| `mvp_bringup.launch.py` | 삭제 후보 | 오래된 MVP 골격입니다. 현재 컵 pose bridge, Azas RG2/floor-place, real gate 흐름을 쓰지 않습니다. | `deprecated_mvp_bringup.launch.py`로 이름 변경 또는 제거 |
+| `hardware_free_demo.launch.py` | 통합 후보 | `tumbler_floor_place_demo.launch.py`와 역할이 겹칩니다. 다만 voice/LLM/demo pose까지 묶는 차이가 있습니다. | RViz demo는 Azas 쪽으로 통일하고, voice demo만 남길지 결정 |
 | `simulated_cup_grasp_dryrun.launch.py` | 통합 후보 | simulated cup detection + floor-place dry-run입니다. fake/smoke 경로와 목적이 겹칩니다. | `tools/smoke` 또는 `tools/run` 진입점으로 흡수 |
 | `gpd_grasp_adapter.launch.py` | 실험 보존 | GPD 외부 grasp adapter 경계입니다. 현재 메인 파이프라인은 아니지만 독립 실험 가치가 있습니다. | `experimental_gpd_grasp_adapter.launch.py`로 이름 명확화 |
 | `tumbler_floor_place_demo.launch.py` | 유지 | 컵 이동 단독 RViz 확인용입니다. | 단독 stage demo로 유지 |

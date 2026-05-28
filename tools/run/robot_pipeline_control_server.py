@@ -37,6 +37,8 @@ ROS_SETUP = (
     "fi"
 )
 DEFAULT_ROBOT_HOST = "192.168.1.100"
+DEFAULT_ROS_DOMAIN_ID = "9"
+DEFAULT_YOLO_MODEL_PATH = ROOT / "local_models" / "best.pt"
 DEFAULT_DISPENSER_TCP_NAME = "GripperDA_v1_jarvis"
 FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
@@ -95,6 +97,9 @@ STEPS = [
     ),
     Step("status_check", "연결 확인", "run", "ros2 service list | grep /dsr01/motion", True, False, "명령 후보만 있음: /dsr01/motion 서비스가 보여야 통과"),
     Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch azas_gripper rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
+    Step("start_camera", "RealSense 카메라 시작", "background", "ros2 launch realsense2_camera rs_launch.py", True, False, "RealSense 드라이버와 color/aligned-depth 토픽 시작; 화면 창은 별도 버튼 사용"),
+    Step("start_camera_view", "RealSense 컬러 화면 보기", "background", "rqt_image_view /camera/camera/color/image_raw", True, False, "카메라 color image 토픽을 rqt_image_view 창으로 표시"),
+    Step("detect_cup_lid", "컵/뚜껑 탐지 토픽 시작", "background", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "YOLO 탐지 결과를 /azas/cup_detection으로 publish; 이 노드는 화면 창을 띄우지 않음"),
     Step(
         "start_collision_scene",
         "MoveIt 충돌 장면 시작",
@@ -291,7 +296,7 @@ DOOSAN_STACK_PATTERNS = (
 )
 
 AUXILIARY_STACK_PATTERNS = (
-    "rg2_trigger",
+    "rg2_gripper_node",
     "yolo_perception.launch.py",
     "azas_voice.launch.py",
     "run_rule_based_shake_real.sh",
@@ -306,8 +311,18 @@ AUXILIARY_STACK_PATTERNS = (
 )
 
 RG2_STACK_PATTERNS = (
-    "rg2_trigger.launch.py",
-    "rg2_trigger_node",
+    "rg2_gripper_node",
+)
+
+CAMERA_STACK_PATTERNS = (
+    "realsense2_camera rs_launch.py",
+    "realsense2_camera_node",
+)
+
+SIDE_GRIP_STACK_PATTERNS = (
+    "yolo_cup_pick_node_legacy.launch.py",
+    "yolo_cup_pick_legacy_node",
+    "joint_state_relay_legacy",
 )
 
 PANEL_PROTECTED_PATTERNS = (
@@ -492,6 +507,26 @@ def cleanup_rg2_stack(*, grace_sec: float = 2.0) -> list[str]:
     return events
 
 
+def cleanup_camera_stack(*, grace_sec: float = 2.0) -> list[str]:
+    """Best-effort cleanup of stale RealSense drivers before restart."""
+    events: list[str] = []
+    old = processes.pop("start_camera", None)
+    if old is not None:
+        events.extend(terminate_process_tree(old, label="stored start_camera", grace_sec=grace_sec))
+    events.extend(cleanup_matching_processes(CAMERA_STACK_PATTERNS, label="camera cleanup", grace_sec=grace_sec))
+    return events
+
+
+def cleanup_side_grip_stack(*, grace_sec: float = 2.0) -> list[str]:
+    """Best-effort cleanup of stale one-shot side-grip processes before retry."""
+    events: list[str] = []
+    old = processes.pop("side_grip", None)
+    if old is not None:
+        events.extend(terminate_process_tree(old, label="stored side_grip", grace_sec=grace_sec))
+    events.extend(cleanup_matching_processes(SIDE_GRIP_STACK_PATTERNS, label="side_grip cleanup", grace_sec=grace_sec))
+    return events
+
+
 def find_existing_doosan_launch() -> tuple[int | None, str]:
     """Return one existing Doosan launch PID/cmd if a bringup is already starting/running."""
     if psutil is None:
@@ -603,6 +638,28 @@ def ros_service_names(timeout_sec: float = 6.0) -> tuple[set[str], str]:
     return {line.strip() for line in output.splitlines() if line.strip().startswith("/")}, output
 
 
+def action_server_count(action_name: str, timeout_sec: float = 4.0) -> tuple[int, str]:
+    rc, output = ros2_call(f"ros2 action info {shlex.quote(action_name)}", timeout_sec=timeout_sec)
+    if rc != 0:
+        return 0, output
+    match = re.search(r"Action servers:\s*(\d+)", output)
+    return (int(match.group(1)) if match else 0), output
+
+
+def wait_for_action_server(action_name: str, *, timeout_sec: float = 15.0) -> tuple[bool, str]:
+    deadline = time.monotonic() + max(timeout_sec, 0.1)
+    last_output = ""
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        count, output = action_server_count(action_name)
+        last_output = output
+        if count > 0:
+            return True, f"action server became ready after {attempt} check(s): {action_name}\n{output}"
+        time.sleep(0.5)
+    return False, f"action server did not become ready within {timeout_sec:.1f}s: {action_name}\n{last_output}"
+
+
 def motion_services_ready(service_prefix: str) -> tuple[bool, str]:
     clean = service_prefix.strip("/") or "dsr01"
     required = {
@@ -659,12 +716,18 @@ def status_check_failure(output: str) -> str | None:
             f"[FAIL] robot_state={state_id}({robot_state_name(state_id)}) is not "
             "STATE_STANDBY(1). Robot is connected, but real motion is not ready."
         )
+    action_match = re.search(r"Action servers:\s*(\d+)", output)
+    if action_match is not None and int(action_match.group(1)) < 1:
+        return (
+            "[FAIL] MoveIt trajectory action server is not available: "
+            "/dsr01/dsr_moveit_controller/follow_joint_trajectory"
+        )
     return None
 
 
 def run_output_failure(step: Step, output: str) -> str | None:
-    if step.key == "shake_closed_cup":
-        failure_markers = (
+    if step.key in {"shake_closed_cup", "side_grip"}:
+        failure_markers = [
             "]: FAILED",
             " returned success=false",
             " Ikin returned success=false",
@@ -673,9 +736,21 @@ def run_output_failure(step: Step, output: str) -> str | None:
             "MoveIt state validity is invalid",
             "Hardware gates are incomplete",
             "enable_hardware was requested but hardware gates are incomplete",
-        )
+        ]
+        if step.key == "side_grip":
+            failure_markers.extend(
+                [
+                    "Action client not connected to action server",
+                    "Failed to send trajectory",
+                    "Completed trajectory execution with status ABORTED",
+                    "MoveIt execution did not reach the requested pose",
+                    "High camera home move failed",
+                    "No valid depth around cup bbox",
+                    "Exiting after one auto-pick attempt (success=False)",
+                ]
+            )
         if any(marker in output for marker in failure_markers):
-            return "[FAIL] shake node reported FAILED/success=false even though ros2 launch exited cleanly."
+            return f"[FAIL] {step.key} reported an internal failure even though ros2 launch exited cleanly."
     return None
 
 
@@ -702,7 +777,6 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/check_motion",
             f"/{clean}/system/get_robot_state",
-            "/jarvis/rg2/set_width",
         ]
     if step.key in {"home_robot", "lift_robot"}:
         return [
@@ -1209,6 +1283,13 @@ def run_timeout_for_step(step: Step) -> float:
 
 def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env = os.environ.copy()
+    env["ROS_DOMAIN_ID"] = str(
+        payload.get("ros_domain_id")
+        or env.get("AZAS_PANEL_ROS_DOMAIN_ID")
+        or env.get("ROS_DOMAIN_ID")
+        or DEFAULT_ROS_DOMAIN_ID
+    )
+    env["ROS_LOCALHOST_ONLY"] = str(env.get("ROS_LOCALHOST_ONLY") or "0")
     env["ROBOT_HOST"] = str(payload.get("robot_host") or env.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
     env["ROBOT_NAME"] = str(payload.get("robot_name") or env.get("ROBOT_NAME") or "dsr01")
     env["SERVICE_PREFIX"] = str(payload.get("service_prefix") or env.get("SERVICE_PREFIX") or "dsr01")
@@ -1274,7 +1355,9 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"/{clean}/system/get_robot_state dsr_msgs2/srv/GetRobotState --timeout 8.0 && "
             "echo '--- check motion ---' && "
             f"timeout 9s python3 {shlex.quote(str(ROOT / 'tools' / 'run' / 'ros_call_empty_service.py'))} "
-            f"/{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion --timeout 8.0"
+            f"/{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion --timeout 8.0 && "
+            "echo '--- trajectory action ---' && "
+            f"ros2 action info /{clean}/dsr_moveit_controller/follow_joint_trajectory"
         )
     if step.key == "lift_robot":
         joints = {
@@ -1321,6 +1404,13 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "camera_name:=camera "
             "enable_color:=true enable_depth:=true align_depth.enable:=true"
         )
+    if step.key == "start_camera_view":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "DISPLAY=${DISPLAY:-:0} "
+            "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
+            "ros2 run rqt_image_view rqt_image_view /camera/camera/color/image_raw"
+        )
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
     if step.key == "voice_input":
@@ -1339,7 +1429,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         model_path = str(
             payload.get("model_path")
             or os.environ.get("MODEL_PATH")
-            or "/home/ssu/Downloads/로봇 데이터/best.pt"
+            or DEFAULT_YOLO_MODEL_PATH
         )
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
@@ -1350,6 +1440,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"model_path:={shlex.quote(model_path)} "
             "auto_pick:=true "
             "exit_after_pick_attempt:=true "
+            "depth_patch_radius:=15 "
+            "min_depth_valid_ratio:=0.01 "
             "grasp_mode:=side "
             f"moveit_namespace:=/{shlex.quote(service_prefix.strip('/') or 'dsr01')} "
             f"selected_dispenser_id:={shlex.quote(selected_dispenser_id)} "
@@ -1585,6 +1677,20 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                         f"{ready_output}"
                     ),
                 }
+            if step.key == "side_grip":
+                clean = service_prefix.strip("/") or "dsr01"
+                action_name = f"/{clean}/dsr_moveit_controller/follow_joint_trajectory"
+                action_ready, action_output = wait_for_action_server(action_name, timeout_sec=15.0)
+                if not action_ready:
+                    return {
+                        "key": step.key,
+                        "status": "blocked",
+                        "output": (
+                            "MoveIt trajectory action server가 없어 side_grip 실제 동작을 막았습니다.\n"
+                            "로봇 연결을 다시 시작해서 dsr_moveit_controller action server가 뜨는지 확인하세요.\n"
+                            f"{action_output}"
+                        ),
+                    }
     if step.key == "connect_robot" and not (
         payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST
     ):
@@ -1686,6 +1792,16 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
             # DDS may keep stale service names briefly after a killed RG2 wrapper.
             time.sleep(1.0)
             restart_output = "\n".join(cleanup_events)
+        elif step.key == "start_camera":
+            cleanup_events = cleanup_camera_stack()
+            # Avoid duplicate /camera/camera nodes from previous panel attempts.
+            time.sleep(1.0)
+            restart_output = "\n".join(cleanup_events)
+        elif step.key == "side_grip":
+            cleanup_events = cleanup_side_grip_stack()
+            # Avoid two MoveItPy pick nodes commanding the same controller.
+            time.sleep(1.0)
+            restart_output = "\n".join(cleanup_events)
         else:
             old = processes.get(step.key)
             if old and old.poll() is None:
@@ -1766,7 +1882,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                 output = f"{restart_output}\n--- start command ---\n{output}"
             if ready:
                 output += (
-                    "\n[Azas] RG2 ROS services are ready. Note: jarvis RG2 wrapper has no physical "
+                    "\n[Azas] RG2 ROS services are ready. Note: azas_gripper RG2 wrapper has no physical "
                     "finger-position feedback, so movement still must be visually confirmed."
                 )
                 return {"key": step.key, "status": "started", "pid": proc.pid, "output": output}
