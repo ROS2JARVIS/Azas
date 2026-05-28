@@ -2,6 +2,7 @@ import rclpy
 from azas_interfaces.srv import SetGripper
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from std_srvs.srv import Trigger
 
 
 class RG2GripperNode(Node):
@@ -16,6 +17,9 @@ class RG2GripperNode(Node):
         self.declare_parameter("default_open_width_m", 0.110)
         self.declare_parameter("default_close_width_m", 0.0)
         self.declare_parameter("default_force_n", 40.0)
+        self.declare_parameter("open_service", "/jarvis/rg2/open")
+        self.declare_parameter("close_service", "/jarvis/rg2/close")
+        self.declare_parameter("set_width_service", "/jarvis/rg2/set_width")
 
         self.use_real_hardware = (
             self.get_parameter("use_real_hardware").get_parameter_value().bool_value
@@ -25,13 +29,28 @@ class RG2GripperNode(Node):
             self.gripper = self._connect_real_gripper()
 
         self.create_service(SetGripper, "/azas/gripper/open_close", self.on_set_gripper)
+        self.create_service(
+            Trigger,
+            self.get_parameter("open_service").get_parameter_value().string_value,
+            self.on_open,
+        )
+        self.create_service(
+            Trigger,
+            self.get_parameter("close_service").get_parameter_value().string_value,
+            self.on_close,
+        )
+        self.create_service(
+            SetGripper,
+            self.get_parameter("set_width_service").get_parameter_value().string_value,
+            self.on_set_gripper,
+        )
         if self.use_real_hardware:
             self.get_logger().info(
-                "RG2 hardware service ready on /azas/gripper/open_close"
+                "RG2 hardware services ready on /azas/gripper/open_close and /jarvis/rg2/*"
             )
         else:
             self.get_logger().warn(
-                "Dry-run gripper service ready on /azas/gripper/open_close; "
+                "Dry-run gripper services ready on /azas/gripper/open_close and /jarvis/rg2/*; "
                 "set use_real_hardware:=true to command the real RG2"
             )
 
@@ -54,7 +73,7 @@ class RG2GripperNode(Node):
 
     def on_set_gripper(self, request, response):
         command = request.command.lower()
-        if command not in {"open", "close", "set_width"}:
+        if command not in {"open", "close", "set_width", "preopen", "grasp"}:
             response.success = False
             response.message = f"unsupported command: {request.command}"
             return response
@@ -103,6 +122,28 @@ class RG2GripperNode(Node):
         response.message = (
             "accepted dry-run command; real RG2 was not commanded"
         )
+        return response
+
+    def on_open(self, _request, response):
+        req = SetGripper.Request()
+        req.command = "open"
+        req.width_m = self.get_parameter("default_open_width_m").get_parameter_value().double_value
+        req.force_n = self.get_parameter("default_force_n").get_parameter_value().double_value
+        set_response = SetGripper.Response()
+        self.on_set_gripper(req, set_response)
+        response.success = bool(set_response.success)
+        response.message = str(set_response.message)
+        return response
+
+    def on_close(self, _request, response):
+        req = SetGripper.Request()
+        req.command = "close"
+        req.width_m = self.get_parameter("default_close_width_m").get_parameter_value().double_value
+        req.force_n = self.get_parameter("default_force_n").get_parameter_value().double_value
+        set_response = SetGripper.Response()
+        self.on_set_gripper(req, set_response)
+        response.success = bool(set_response.success)
+        response.message = str(set_response.message)
         return response
 
 

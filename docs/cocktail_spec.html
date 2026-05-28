@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Azas 칵테일 명세서</title>
+  <style>
+    :root {
+      --bg: #0d0f14;
+      --surface: #161a22;
+      --border: #2a2f3d;
+      --text: #e2e8f0;
+      --muted: #8892a4;
+      --yellow: #f5c842;
+      --red: #e8455a;
+      --blue: #4a9eff;
+      --green: #3ecf72;
+      --accent: #7c6fff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+    header .badge {
+      display: inline-block;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      margin-bottom: 0.75rem;
+    }
+    header h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.4rem;
+    }
+    header p { color: var(--muted); font-size: 0.95rem; }
+
+    /* ── Section titles ── */
+    h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    h2::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Dispenser legend ── */
+    .dispensers {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 3rem;
+    }
+    .dispenser-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .dispenser-dot {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1rem;
+      color: #000;
+    }
+    .dot-yellow { background: var(--yellow); }
+    .dot-red    { background: var(--red); }
+    .dot-blue   { background: var(--blue); }
+    .dot-green  { background: var(--green); }
+
+    .dispenser-info .num  { font-weight: 700; font-size: 0.95rem; }
+    .dispenser-info .label { font-size: 0.8rem; color: var(--muted); margin-top: 0.1rem; }
+
+    /* ── Recipe grid ── */
+    .recipe-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+    .recipe-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem;
+      transition: border-color 0.2s, transform 0.15s;
+      cursor: default;
+    }
+    .recipe-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .recipe-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .recipe-num {
+      background: var(--border);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      flex-shrink: 0;
+    }
+    .recipe-name {
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .dispenser-strip {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.65rem;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.28rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .chip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .chip-yellow { background: rgba(245,200,66,.15); color: var(--yellow); border: 1px solid rgba(245,200,66,.3); }
+    .chip-red    { background: rgba(232,69,90,.15);  color: var(--red);    border: 1px solid rgba(232,69,90,.3); }
+    .chip-blue   { background: rgba(74,158,255,.15); color: var(--blue);   border: 1px solid rgba(74,158,255,.3); }
+    .chip-green  { background: rgba(62,207,114,.15); color: var(--green);  border: 1px solid rgba(62,207,114,.3); }
+
+    .recipe-aliases {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* ── Workflow ── */
+    .workflow { margin-bottom: 3rem; }
+    .phase-list { display: flex; flex-direction: column; gap: 0; }
+    .phase {
+      display: flex;
+      gap: 1.25rem;
+      position: relative;
+    }
+    .phase:not(:last-child) .phase-line {
+      position: absolute;
+      left: 17px;
+      top: 36px;
+      bottom: 0;
+      width: 2px;
+      background: var(--border);
+    }
+    .phase-icon {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--accent);
+      position: relative;
+      z-index: 1;
+    }
+    .phase-body {
+      padding-bottom: 1.5rem;
+      flex: 1;
+    }
+    .phase-title {
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(124,111,255,.1);
+      border: 1px solid rgba(124,111,255,.25);
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 6px;
+      margin-bottom: 0.3rem;
+    }
+    .phase-desc { font-size: 0.88rem; color: var(--text); margin-bottom: 0.35rem; }
+    .phase-meta { font-size: 0.78rem; color: var(--muted); }
+    .phase-gate {
+      display: inline-block;
+      margin-left: 0.5rem;
+      font-size: 0.72rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+    }
+    .gate-strict { background: rgba(232,69,90,.15); color: var(--red); border: 1px solid rgba(232,69,90,.3); }
+    .gate-config  { background: rgba(245,200,66,.15); color: var(--yellow); border: 1px solid rgba(245,200,66,.3); }
+    .gate-tf      { background: rgba(74,158,255,.15); color: var(--blue); border: 1px solid rgba(74,158,255,.3); }
+    .gate-no_motion { background: rgba(62,207,114,.15); color: var(--green); border: 1px solid rgba(62,207,114,.3); }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+      padding-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="badge">Azas Robot Project</div>
+    <h1>칵테일 명세서</h1>
+    <p>16가지 레시피 · 4색 디스펜서 · 로봇 자동화 워크플로우</p>
+  </header>
+
+  <!-- Dispensers -->
+  <h2>디스펜서 구성</h2>
+  <div class="dispensers">
+    <div class="dispenser-card">
+      <div class="dispenser-dot dot-yellow">1</div>
+      <div class="dispenser-info">
+        <div class="num">디스펜서 1 — Yellow</div>
+        <div class="label">노랑 · 노란색 · 옐로우 · yellow</div>
+      </div>
+    </div>
+    <div class="dispenser-card">
+      <div class="dispenser-dot dot-red">2</div>
+      <div class="dispenser-info">
+        <div class="num">디스펜서 2 — Red</div>
+        <div class="label">빨강 · 빨간색 · 레드 · red</div>
+      </div>
+    </div>
+    <div class="dispenser-card">
+      <div class="dispenser-dot dot-blue">3</div>
+      <div class="dispenser-info">
+        <div class="num">디스펜서 3 — Blue</div>
+        <div class="label">파랑 · 파란색 · 블루 · blue</div>
+      </div>
+    </div>
+    <div class="dispenser-card">
+      <div class="dispenser-dot dot-green">4</div>
+      <div class="dispenser-info">
+        <div class="num">디스펜서 4 — Green</div>
+        <div class="label">초록 · 초록색 · 그린 · green</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recipe catalog -->
+  <h2>레시피 카탈로그</h2>
+  <div class="recipe-grid">
+
+    <!-- 01 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_01</span>
+        <span class="recipe-name">선셋 믹스</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+      </div>
+      <div class="recipe-aliases">1번 · 일번 · 레시피1</div>
+    </div>
+
+    <!-- 02 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_02</span>
+        <span class="recipe-name">블루 라군</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+      </div>
+      <div class="recipe-aliases">2번 · 이번 · 레시피2</div>
+    </div>
+
+    <!-- 03 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_03</span>
+        <span class="recipe-name">그린 스파클</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+      </div>
+      <div class="recipe-aliases">3번 · 삼번 · 레시피3</div>
+    </div>
+
+    <!-- 04 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_04</span>
+        <span class="recipe-name">레드 펀치</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+      </div>
+      <div class="recipe-aliases">4번 · 사번 · 레시피4</div>
+    </div>
+
+    <!-- 05 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_05</span>
+        <span class="recipe-name">옐로우 브리즈</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+      </div>
+      <div class="recipe-aliases">5번 · 오번 · 레시피5</div>
+    </div>
+
+    <!-- 06 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_06</span>
+        <span class="recipe-name">시트러스 쿨러</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+      </div>
+      <div class="recipe-aliases">6번 · 육번 · 레시피6</div>
+    </div>
+
+    <!-- 07 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_07</span>
+        <span class="recipe-name">베리 블루</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+      </div>
+      <div class="recipe-aliases">7번 · 칠번 · 레시피7</div>
+    </div>
+
+    <!-- 08 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_08</span>
+        <span class="recipe-name">민트 선라이즈</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+      </div>
+      <div class="recipe-aliases">8번 · 팔번 · 레시피8</div>
+    </div>
+
+    <!-- 09 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_09</span>
+        <span class="recipe-name">트로피컬 무드</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+      </div>
+      <div class="recipe-aliases">9번 · 구번 · 레시피9</div>
+    </div>
+
+    <!-- 10 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_10</span>
+        <span class="recipe-name">라임 레드</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+      </div>
+      <div class="recipe-aliases">10번 · 십번 · 레시피10</div>
+    </div>
+
+    <!-- 11 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_11</span>
+        <span class="recipe-name">오션 옐로우</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+      </div>
+      <div class="recipe-aliases">11번 · 십일번 · 레시피11</div>
+    </div>
+
+    <!-- 12 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_12</span>
+        <span class="recipe-name">포레스트 펀치</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+      </div>
+      <div class="recipe-aliases">12번 · 십이번 · 레시피12</div>
+    </div>
+
+    <!-- 13 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_13</span>
+        <span class="recipe-name">스윗 밸런스</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+      </div>
+      <div class="recipe-aliases">13번 · 십삼번 · 레시피13</div>
+    </div>
+
+    <!-- 14 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_14</span>
+        <span class="recipe-name">프레시 믹스</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+      </div>
+      <div class="recipe-aliases">14번 · 십사번 · 레시피14</div>
+    </div>
+
+    <!-- 15 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_15</span>
+        <span class="recipe-name">파티 컬러</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+        <span class="chip chip-green"><span class="chip-dot" style="background:var(--green)"></span>Green (4)</span>
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+      </div>
+      <div class="recipe-aliases">15번 · 십오번 · 레시피15</div>
+    </div>
+
+    <!-- 16 -->
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-num">recipe_16</span>
+        <span class="recipe-name">랜덤 시그니처</span>
+      </div>
+      <div class="dispenser-strip">
+        <span class="chip chip-blue"><span class="chip-dot" style="background:var(--blue)"></span>Blue (3)</span>
+        <span class="chip chip-red"><span class="chip-dot" style="background:var(--red)"></span>Red (2)</span>
+        <span class="chip chip-yellow"><span class="chip-dot" style="background:var(--yellow)"></span>Yellow (1)</span>
+      </div>
+      <div class="recipe-aliases">16번 · 십육번 · 레시피16</div>
+    </div>
+
+  </div>
+
+  <!-- Workflow phases -->
+  <h2>자동화 워크플로우</h2>
+  <div class="workflow">
+    <div class="phase-list">
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">1</div>
+        <div class="phase-body">
+          <div class="phase-title">VERIFY_RECIPE</div>
+          <div class="phase-desc">음성 입력에서 레시피와 디스펜서 ID 순서를 파싱합니다.</div>
+          <div class="phase-meta">입력: /azas/voice/recipe_decision &nbsp;·&nbsp; 출력: ordered_dispenser_ids <span class="phase-gate gate-no_motion">no_motion</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">2</div>
+        <div class="phase-body">
+          <div class="phase-title">VERIFY_CUP_AND_LID_DETECTION</div>
+          <div class="phase-desc">컵과 뚜껑의 비전 감지 결과를 검증합니다.</div>
+          <div class="phase-meta">입력: /azas/cup_detection:cup &amp; :lid &nbsp;·&nbsp; 출력: cup_detection, lid_detection <span class="phase-gate gate-no_motion">no_motion</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">3</div>
+        <div class="phase-body">
+          <div class="phase-title">VERIFY_CALIBRATION</div>
+          <div class="phase-desc">calibration.yaml, safety.yaml, TF, TCP 오프셋, 디스펜서 아울렛 포즈를 모두 확인합니다.</div>
+          <div class="phase-meta">커맨드: check_real_motion_config.sh <span class="phase-gate gate-config">measured_config_required</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">4</div>
+        <div class="phase-body">
+          <div class="phase-title">TRANSFORM_CUP_TO_BASE</div>
+          <div class="phase-desc">카메라 프레임의 컵 포즈를 base_link 좌표계로 변환합니다.</div>
+          <div class="phase-meta">커맨드: cup_detection_pose_bridge_node <span class="phase-gate gate-tf">tf_required</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">5</div>
+        <div class="phase-body">
+          <div class="phase-title">PICK_CUP</div>
+          <div class="phase-desc">감지된 컵에 접근하고 RG2 그리퍼로 파지 후 이송 높이로 들어 올립니다.</div>
+          <div class="phase-meta">커맨드: MoveLine + /jarvis/rg2/close + lift <span class="phase-gate gate-strict">strict_live_gate</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">6</div>
+        <div class="phase-body">
+          <div class="phase-title">ALIGN_CUP_UNDER_DISPENSER × N</div>
+          <div class="phase-desc">레시피 순서대로 각 디스펜서 아울렛 아래로 컵을 이동합니다.</div>
+          <div class="phase-meta">커맨드: MoveLine &nbsp;·&nbsp; 파라미터: dispenser_id <span class="phase-gate gate-strict">strict_live_gate</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">7</div>
+        <div class="phase-body">
+          <div class="phase-title">PRESS_DISPENSER × N</div>
+          <div class="phase-desc">각 디스펜서를 눌러 음료가 컵 안으로 떨어지도록 합니다.</div>
+          <div class="phase-meta">커맨드: dispenser_press_node &nbsp;·&nbsp; extended_press_x = +0.08 m <span class="phase-gate gate-strict">strict_live_gate</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">8</div>
+        <div class="phase-body">
+          <div class="phase-title">PICK_LID</div>
+          <div class="phase-desc">분주 완료 후 뚜껑을 감지하고 파지합니다.</div>
+          <div class="phase-meta">커맨드: MoveLine + /jarvis/rg2/close <span class="phase-gate gate-strict">strict_live_gate</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">9</div>
+        <div class="phase-body">
+          <div class="phase-title">PLACE_AND_PRESS_LID</div>
+          <div class="phase-desc">컵 위에 뚜껑을 배치하고 설정된 힘/속도 한계 내에서 눌러 고정합니다.</div>
+          <div class="phase-meta">커맨드: MoveLine <span class="phase-gate gate-strict">strict_live_gate</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">10</div>
+        <div class="phase-body">
+          <div class="phase-title">SHAKE_CUP</div>
+          <div class="phase-desc">밀폐된 컵을 흔들어 칵테일을 혼합합니다.</div>
+          <div class="phase-meta">
+            center: (0.30, −0.28, 0.32) m &nbsp;·&nbsp;
+            amp X: ±35 mm &nbsp;·&nbsp; amp Y: ±20 mm &nbsp;·&nbsp;
+            cycles: 3 &nbsp;·&nbsp; keepout R: 0.20 m
+            <span class="phase-gate gate-strict">strict_live_gate</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-line"></div>
+        <div class="phase-icon">11</div>
+        <div class="phase-body">
+          <div class="phase-title">OPEN_LID</div>
+          <div class="phase-desc">쉐이킹 후 뚜껑을 제거하거나 열어 서빙을 준비합니다.</div>
+          <div class="phase-meta">커맨드: MoveLine + /jarvis/rg2/open <span class="phase-gate gate-strict">strict_live_gate</span></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-icon">12</div>
+        <div class="phase-body">
+          <div class="phase-title">POUR</div>
+          <div class="phase-desc">목표 컵의 포즈를 감지하고 검증한 뒤 칵테일을 따릅니다.</div>
+          <div class="phase-meta">커맨드: MoveLine pour primitive &nbsp;·&nbsp; 입력: cup_opened + target_cup_pose <span class="phase-gate gate-strict">strict_live_gate</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    <p>Azas Cocktail Robot · 소스: <code>recipes.yaml</code> · <code>recipe_catalog.py</code> · <code>cocktail_workflow_plan.py</code></p>
+  </footer>
+
+</div>
+</body>
+</html>

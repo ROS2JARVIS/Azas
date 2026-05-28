@@ -50,7 +50,7 @@ def generate_launch_description():
 
     model_path_arg = DeclareLaunchArgument(
         "model_path",
-        default_value="/home/ssu/ros2_ws/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
+        default_value="/home/ssu/Azas/data/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
         description="Path to trained cup YOLO weights.",
     )
     conf_arg = DeclareLaunchArgument("conf", default_value="0.35")
@@ -151,7 +151,32 @@ def generate_launch_description():
     place_x_arg = DeclareLaunchArgument("place_x", default_value="0.45")
     place_y_arg = DeclareLaunchArgument("place_y", default_value="0.0")
     place_z_arg = DeclareLaunchArgument("place_z", default_value="0.12")
+    selected_dispenser_id_arg = DeclareLaunchArgument(
+        "selected_dispenser_id",
+        default_value="dispenser_1",
+        description="Measured front-hold pose key from measured_dispenser_collision.yaml.",
+    )
+    use_measured_front_hold_pose_arg = DeclareLaunchArgument(
+        "use_measured_front_hold_pose",
+        default_value="true",
+        description="Use taught base_link->link_6 dispenser front-hold pose for placement.",
+    )
+    publish_dispenser_collision_objects_arg = DeclareLaunchArgument(
+        "publish_dispenser_collision_objects",
+        default_value="true",
+        description="Publish measured draft dispenser boxes to /collision_object.",
+    )
+    dispenser_config_path_arg = DeclareLaunchArgument(
+        "dispenser_config_path",
+        default_value="",
+        description="Optional override path for measured dispenser collision YAML.",
+    )
     auto_pick_arg = DeclareLaunchArgument("auto_pick", default_value="false")
+    exit_after_pick_attempt_arg = DeclareLaunchArgument(
+        "exit_after_pick_attempt",
+        default_value="false",
+        description="Exit the preview loop after one pick attempt finishes.",
+    )
     moveit_namespace_arg = DeclareLaunchArgument(
         "moveit_namespace",
         default_value="/dsr01",
@@ -207,7 +232,12 @@ def generate_launch_description():
             place_x_arg,
             place_y_arg,
             place_z_arg,
+            selected_dispenser_id_arg,
+            use_measured_front_hold_pose_arg,
+            publish_dispenser_collision_objects_arg,
+            dispenser_config_path_arg,
             auto_pick_arg,
+            exit_after_pick_attempt_arg,
             moveit_namespace_arg,
             controller_action_wait_sec_arg,
             controller_discovery_settle_sec_arg,
@@ -314,7 +344,24 @@ def generate_launch_description():
                         "place_x": LaunchConfiguration("place_x"),
                         "place_y": LaunchConfiguration("place_y"),
                         "place_z": LaunchConfiguration("place_z"),
+                        "selected_dispenser_id": ParameterValue(
+                            LaunchConfiguration("selected_dispenser_id"),
+                            value_type=str,
+                        ),
+                        "use_measured_front_hold_pose": LaunchConfiguration(
+                            "use_measured_front_hold_pose"
+                        ),
+                        "publish_dispenser_collision_objects": LaunchConfiguration(
+                            "publish_dispenser_collision_objects"
+                        ),
+                        "dispenser_config_path": ParameterValue(
+                            LaunchConfiguration("dispenser_config_path"),
+                            value_type=str,
+                        ),
                         "auto_pick": LaunchConfiguration("auto_pick"),
+                        "exit_after_pick_attempt": LaunchConfiguration(
+                            "exit_after_pick_attempt"
+                        ),
                         "moveit_namespace": ParameterValue(
                             LaunchConfiguration("moveit_namespace"),
                             value_type=str,

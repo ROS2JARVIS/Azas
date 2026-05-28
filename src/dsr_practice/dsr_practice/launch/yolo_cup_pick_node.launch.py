@@ -29,7 +29,7 @@ def generate_launch_description():
 
     model_path_arg = DeclareLaunchArgument(
         "model_path",
-        default_value="/home/ssu/ros2_ws/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
+        default_value="/home/ssu/Azas/data/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
         description="Path to trained cup YOLO weights.",
     )
     conf_arg = DeclareLaunchArgument("conf", default_value="0.35")

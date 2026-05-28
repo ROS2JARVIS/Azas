@@ -26,7 +26,7 @@ def generate_launch_description():
 
     rg2_trigger_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([FindPackageShare("jarvis"), "launch", "rg2_trigger.launch.py"])
+            PathJoinSubstitution([FindPackageShare("azas_gripper"), "launch", "rg2_trigger.launch.py"])
         ),
         launch_arguments={
             "ip": LaunchConfiguration("ip"),
@@ -59,6 +59,7 @@ def generate_launch_description():
             "allow_service_control_without_moveit": LaunchConfiguration("allow_service_control_without_moveit"),
             "service_prefix": LaunchConfiguration("service_prefix"),
             "execution_stage": LaunchConfiguration("execution_stage"),
+            "delivery_mode": LaunchConfiguration("delivery_mode"),
             "place_mouth_under_outlet": LaunchConfiguration("place_mouth_under_outlet"),
             "outlet_mouth_clearance": LaunchConfiguration("outlet_mouth_clearance"),
             "gripper_open_service": LaunchConfiguration("gripper_open_service"),
@@ -108,6 +109,7 @@ def generate_launch_description():
         DeclareLaunchArgument("allow_service_control_without_moveit", default_value="false"),
         DeclareLaunchArgument("service_prefix", default_value=""),
         DeclareLaunchArgument("execution_stage", default_value="full"),
+        DeclareLaunchArgument("delivery_mode", default_value="floor_place"),
         DeclareLaunchArgument("place_mouth_under_outlet", default_value="false"),
         DeclareLaunchArgument("outlet_mouth_clearance", default_value="0.0"),
         DeclareLaunchArgument("gripper_open_service", default_value="/jarvis/rg2/open"),

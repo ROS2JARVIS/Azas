@@ -7,7 +7,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     output_dir_arg = DeclareLaunchArgument(
         "output_dir",
-        default_value="/home/ssu/ros2_ws/realsense_dataset/raw",
+        default_value="/home/ssu/Azas/data/realsense_dataset/raw",
         description="Directory where color, depth, and metadata files are saved.",
     )
     save_interval_arg = DeclareLaunchArgument(

@@ -1,19 +1,21 @@
 # Azas Developer Orientation
 
+> 폐기 안내: 이 문서에는 예전 외부 워크스페이스 병행 구조 설명이 남아 있었습니다.
+> 현재 개발/실행 원칙은 `/home/ssu/Azas` 단일 워크스페이스입니다.
+
 이 문서는 신규 개발자가 프로젝트에 들어왔을 때 먼저 봐야 하는 지도입니다.
 목표는 모든 파일을 설명하는 것이 아니라, **어디를 수정하고 어떤 순서로 테스트해야 하는지**를 명확히 하는 것입니다.
 
-## 저장소가 둘로 보이는 이유
+## 저장소 구조
 
-현재 작업공간은 두 ROS 2 패키지 묶음이 같이 사용됩니다.
+현재 작업공간은 Azas 단일 ROS 2 워크스페이스를 기준으로 사용합니다.
 
 | 위치 | 역할 | 신규 개발자가 볼 우선순위 |
 | --- | --- | --- |
 | `/home/ssu/Azas` | 메인 Azas 프로젝트. voice, perception, task manager, bringup, safety gate, run/check/smoke 도구 | 1순위 |
-| `/home/ssu/ros2_ws/src/Azas` | `jarvis` 패키지. RViz/Gazebo 장면, M0609 URDF 표시, 컵 이동/쉐이킹/디스펜서 동작 노드 | 2순위 |
 
 운영 명령은 가능하면 `/home/ssu/Azas/tools/...`에서 실행합니다.  
-`jarvis`의 launch/node는 기능 구현체이고, Azas의 `tools/run`이 사용자용 진입점입니다.
+Azas의 `tools/run`이 사용자용 진입점입니다.
 
 ## 최상위 책임 경계
 
@@ -24,14 +26,13 @@
 | Task manager | `src/azas_task_manager` | 칵테일 단계 순서와 단계별 gate 정의 | 실제 모션 직접 실행 금지 |
 | Bringup | `src/azas_bringup/launch` | 카메라, perception, gripper, robot-control launch 조립 | launch가 많으므로 아래 표의 권장 진입점 우선 |
 | Motion helpers | `src/azas_motion`, `tools/pick` | 관측/정렬/픽 관련 실험 도구 | 실제 모션은 gate 없이 실행 금지 |
-| Jarvis motion nodes | `/home/ssu/ros2_ws/src/Azas/jarvis` | 컵 이동, 디스펜서, 뚜껑, 쉐이킹 노드 | real/fake/sim 모드 구분 필수 |
 | Operator tools | `tools/run` | 현장 실행 명령 | 신규 공개 명령은 여기 추가 |
 | Checks | `tools/checks` | 비-모션 점검 | 로봇/RG2 실제 동작 금지 |
 | Smoke | `tools/smoke` | fake hardware 자동 검증 | 실제 하드웨어 접촉 금지 |
 
 ## 왜 Python 파일이 많은가
 
-2026-05-13 기준으로 `src`, `tools`, `/home/ssu/ros2_ws/src/Azas` 아래 Python 파일은 총 79개입니다. 많은 이유는 세 가지입니다.
+2026-05-13 기준으로 `src`, `tools` 아래 Python 파일은 ROS 2 노드/launch/check/smoke 구조 때문에 많습니다. 많은 이유는 세 가지입니다.
 
 1. ROS 2는 실행 단위를 node로 쪼갭니다. 각 node는 `setup.py`의 `console_scripts`에 등록되는 Python 파일로 존재합니다.
 2. launch 파일도 Python입니다. `*.launch.py`는 일반 비즈니스 로직이 아니라 여러 node를 조립하는 실행 설정입니다.
@@ -41,7 +42,6 @@
 
 | 영역 | Python 수 | 성격 |
 | --- | ---: | --- |
-| `/home/ssu/ros2_ws/src/Azas` | 20 | jarvis motion node, launch, setup |
 | `src/azas_bringup` | 10 | bringup launch 중심 |
 | `src/azas_voice` | 10 | STT/recipe/LLM mapper, launch, test |
 | `src/azas_perception` | 7 | YOLO, pose bridge, simulated detection, GPD adapter |
@@ -57,7 +57,7 @@
 따라서 파일이 많은 것 자체는 ROS 2 로봇 프로젝트에서는 어느 정도 정상입니다. 다만 현재는 아래 두 가지가 정리 문제입니다.
 
 - node/launch/tool이 한눈에 “운영용, 검증용, 실험용, 레거시”로 구분되지 않습니다.
-- jarvis 쪽 motion node에 stage별 로직이 길게 들어 있어 새 개발자가 읽기 어렵습니다.
+- 일부 motion node에 stage별 로직이 길게 들어 있어 새 개발자가 읽기 어렵습니다.
 
 정리 방향은 Python 파일 수를 억지로 줄이는 것이 아니라, 공개 진입점과 내부 구현을 분리하는 것입니다.
 
@@ -119,7 +119,6 @@ STT
 
 - `src/azas_bringup/setup.py`가 `glob("launch/*.launch.py")`를 `share/azas_bringup/launch`에 설치합니다.
 - `src/azas_voice/setup.py`도 같은 방식으로 voice launch를 설치합니다.
-- `/home/ssu/ros2_ws/src/Azas/setup.py`는 `jarvis` launch, rviz, urdf, model, world asset을 `share/jarvis/...`에 설치합니다.
 
 따라서 `src` 아래에 launch `.py`가 있는 것 자체는 정상입니다. 문제는 launch가 많다는 사실이 아니라, `azas_bringup` 안에 권장/실험/레거시 launch가 섞여 있고 이름만 봐서는 상태를 알기 어렵다는 점입니다.
 
@@ -136,7 +135,7 @@ STT
 | `mvp_bringup.launch.py` | 레거시/확인 필요 | 현재 권장 진입점 아님 |
 | `gpd_grasp_adapter.launch.py` | 실험 | GPD grasp adapter 계약/실험 |
 
-### Jarvis launch
+### Stage launch
 
 | launch | 상태 | 용도 |
 | --- | --- | --- |
@@ -176,7 +175,7 @@ STT
 
 기준:
 
-- Python 파일: `python3 -m compileall -q src tools /home/ssu/ros2_ws/src/Azas`
+- Python 파일: `python3 -m compileall -q src tools`
 - Shell 파일: `bash -n tools/**/*.sh`
 - ROS launch: `ros2 launch <package> <launch>.launch.py --show-args`
 - Shell 실행 비트: `find tools -type f -name '*.sh' ! -perm -111`

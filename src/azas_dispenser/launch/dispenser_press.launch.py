@@ -121,22 +121,22 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "joint_velocity",
-                default_value="20.0",
+                default_value="30.0",
                 description="Doosan movej velocity.",
             ),
             DeclareLaunchArgument(
                 "joint_acceleration",
-                default_value="20.0",
+                default_value="30.0",
                 description="Doosan movej acceleration.",
             ),
             DeclareLaunchArgument(
                 "line_velocity",
-                default_value="10.0",
+                default_value="20.0",
                 description="Doosan movel translational/rotational velocity.",
             ),
             DeclareLaunchArgument(
                 "line_acceleration",
-                default_value="15.0",
+                default_value="30.0",
                 description="Doosan movel translational/rotational acceleration.",
             ),
             Node(

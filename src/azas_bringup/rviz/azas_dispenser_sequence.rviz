@@ -23,11 +23,11 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /robot_description
-      Enabled: true
+      Enabled: false
       Name: M0609 Robot
       TF Prefix: ""
       Update Interval: 0
-      Value: true
+      Value: false
       Visual Enabled: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
@@ -62,6 +62,36 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /azas/dispenser_sequence/plan
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /jarvis/robot_gripper/markers
+      Name: Side Grasp RG2 Preview
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /jarvis/shake_animation/markers
+      Name: Independent Shake Preview
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /jarvis/robot_arm/markers
+      Name: Demo Arm Marker Preview
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 24; 24; 28

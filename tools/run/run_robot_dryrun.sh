@@ -6,6 +6,10 @@ set -euo pipefail
 
 SELECTED_DISPENSER_ID="${SELECTED_DISPENSER_ID:-2}"
 RG2_IP="${RG2_IP:-192.168.1.1}"
+MODEL_PATH="${MODEL_PATH:-/home/ssu/Downloads/best.pt}"
+if [[ ! -f "${MODEL_PATH}" && -f "/home/ssu/Downloads/로봇 데이터/best.pt" ]]; then
+  MODEL_PATH="/home/ssu/Downloads/로봇 데이터/best.pt"
+fi
 ENABLE_REALSENSE="${ENABLE_REALSENSE:-true}"
 ENABLE_RG2="${ENABLE_RG2:-true}"
 COLOR_TOPIC="${COLOR_TOPIC:-/camera/camera/color/image_raw}"
@@ -33,12 +37,13 @@ CAMERA_BASE_TF_YAW="${CAMERA_BASE_TF_YAW:-0.0}"
 
 set +u
 source /opt/ros/humble/setup.bash
-source /home/ssu/Azas/install/setup.bash
 source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
 set -u
 
 echo "[Azas] Starting SAFE dry-run. Real robot motion is disabled."
 echo "[Azas] selected_dispenser_id=${SELECTED_DISPENSER_ID} rg2_ip=${RG2_IP}"
+echo "[Azas] yolo model: ${MODEL_PATH}"
 echo "[Azas] camera topics: ${COLOR_TOPIC}, ${DEPTH_TOPIC}, ${CAMERA_INFO_TOPIC}"
 echo "[Azas] outlet alignment: place_mouth_under_outlet=${PLACE_MOUTH_UNDER_OUTLET} clearance=${OUTLET_MOUTH_CLEARANCE}m"
 if [[ "${PUBLISH_CAMERA_BASE_TF}" == "true" ]]; then
@@ -50,6 +55,7 @@ fi
 
 exec ros2 launch azas_bringup robot_connection_control.launch.py \
   selected_dispenser_id:="${SELECTED_DISPENSER_ID}" \
+  model_path:="${MODEL_PATH}" \
   enable_realsense:="${ENABLE_REALSENSE}" \
   enable_rg2:="${ENABLE_RG2}" \
   ip:="${RG2_IP}" \

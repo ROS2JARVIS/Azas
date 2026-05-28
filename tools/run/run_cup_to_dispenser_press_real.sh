@@ -119,8 +119,8 @@ rm -f "${FLOOR_STATUS_FILE}" "${FLOOR_LOG_FILE}" "${PRESS_STATUS_FILE}" "${PRESS
 
 set +u
 source /opt/ros/humble/setup.bash
-source "${ROOT_DIR}/install/setup.bash"
 source /home/ssu/ros2_ws/install/setup.bash
+source "${ROOT_DIR}/install/local_setup.bash"
 set -u
 
 echo "[Azas] Stage 1/2: detect, side-grasp, place cup below selected outlet"

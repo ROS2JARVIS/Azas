@@ -76,6 +76,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--observe-only", action="store_true")
     parser.add_argument("--gripper-open-service", default="/jarvis/rg2/open")
     parser.add_argument("--gripper-close-service", default="/jarvis/rg2/close")
+    parser.add_argument(
+        "--gripper-open-settle-sec",
+        type=float,
+        default=1.0,
+        help="extra wait after RG2 open service success before any low approach motion",
+    )
+    parser.add_argument(
+        "--grasp-stop-backoff-m",
+        type=float,
+        default=0.02,
+        help="stop this far before the planned side-grasp pose so the open gripper does not bump the cup before closing",
+    )
+    parser.add_argument(
+        "--pre-pick-joint1-clearance-deg",
+        type=float,
+        default=12.0,
+        help="before side-grip approach, rotate joint_1 this many degrees in + direction so the open RG2 clears the cup, then let the approach plan return",
+    )
     parser.add_argument("--execute-action-name", default="/execute_trajectory")
     parser.add_argument("--move-action-name", default="/move_action")
     parser.add_argument("--action-timeout-sec", type=float, default=60.0)
@@ -94,6 +112,13 @@ def main() -> int:
         return 2
     if args.skip_observe and args.observe_only:
         print("[FAIL] --skip-observe and --observe-only are mutually exclusive")
+        return 2
+    if (
+        args.gripper_open_settle_sec < 0.0
+        or args.grasp_stop_backoff_m < 0.0
+        or args.pre_pick_joint1_clearance_deg < 0.0
+    ):
+        print("[FAIL] gripper_open_settle_sec, grasp_stop_backoff_m, and pre_pick_joint1_clearance_deg must be non-negative")
         return 2
     if not validate_speed_scales(args):
         return 2
@@ -649,12 +674,58 @@ def print_confirm_summary(args: argparse.Namespace, cup_pose: dict[str, float], 
     print(f"cup_pose={cup_pose}")
     print(f"gripper_open={args.gripper_open_service}")
     print(f"gripper_close={args.gripper_close_service}")
+    print(f"gripper_open_settle_sec={args.gripper_open_settle_sec:.2f}")
+    print(f"grasp_stop_backoff_m={args.grasp_stop_backoff_m:.3f}")
+    print(f"pre_pick_joint1_clearance_deg={args.pre_pick_joint1_clearance_deg:.1f}")
+    print(f"effective_grasp_pose={json.dumps(guarded_grasp_pose(best, args.grasp_stop_backoff_m), sort_keys=True)}")
     print(f"motion_backend={args.execute_action_name} [moveit_msgs/action/ExecuteTrajectory]")
     print(f"speed_scale={args.velocity_scale:.3f} accel_scale={args.accel_scale:.3f}")
     print(f"confirm_required={CONFIRM_PHRASE}")
     if args.enable_real_motion and not best.get("all_success"):
         print("[FAIL] selected candidate is not all_success; execution prohibited")
 
+
+
+def guarded_grasp_pose(candidate: dict[str, Any], backoff_m: float) -> dict[str, Any]:
+    """Return a grasp stop backed off from the cup along the approach vector."""
+    grasp = candidate["grasp_pose"]
+    approach = candidate["approach_pose"]
+    backoff = max(0.0, float(backoff_m))
+    gx = float(grasp["position"]["x"])
+    gy = float(grasp["position"]["y"])
+    gz = float(grasp["position"]["z"])
+    ax = float(approach["position"]["x"])
+    ay = float(approach["position"]["y"])
+    dx = ax - gx
+    dy = ay - gy
+    norm = math.hypot(dx, dy)
+    if norm <= 1e-9 or backoff <= 0.0:
+        return pose_with_orientation(gx, gy, gz, grasp["orientation"])
+    scale = min(backoff, norm) / norm
+    return pose_with_orientation(gx + dx * scale, gy + dy * scale, gz, grasp["orientation"])
+
+
+def guarded_lift_pose(candidate: dict[str, Any], guarded_pose: dict[str, Any]) -> dict[str, Any]:
+    """Lift vertically from the actual guarded grasp stop pose."""
+    lift = candidate["lift_pose"]
+    return pose_with_orientation(
+        float(guarded_pose["position"]["x"]),
+        float(guarded_pose["position"]["y"]),
+        float(lift["position"]["z"]),
+        guarded_pose["orientation"],
+    )
+
+
+def pose_with_orientation(x: float, y: float, z: float, orientation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "position": {"x": x, "y": y, "z": z},
+        "orientation": {
+            "x": float(orientation["x"]),
+            "y": float(orientation["y"]),
+            "z": float(orientation["z"]),
+            "w": float(orientation["w"]),
+        },
+    }
 
 def execute_one_pick(args: argparse.Namespace, candidate: dict[str, Any]) -> int:
     print_stage("EXECUTE_ONE_PICK", "one-shot ExecuteTrajectory backend")
@@ -691,11 +762,25 @@ class MoveItExecuteTrajectoryBackend:
         try:
             self._init_moveit()
             self._call_gripper(self.args.gripper_open_service, "GRIPPER_OPEN")
-            for label in ("approach", "grasp"):
-                trajectory = self._plan_pose(label, candidate[f"{label}_pose"])
-                self._execute_trajectory(label, trajectory)
+            if self.args.gripper_open_settle_sec > 0.0:
+                print(
+                    f"[INFO] waiting {self.args.gripper_open_settle_sec:.2f}s "
+                    "for RG2 full-open before approach motion"
+                )
+                time.sleep(float(self.args.gripper_open_settle_sec))
+            self._execute_pre_pick_joint1_clearance()
+            trajectory = self._plan_pose("approach", candidate["approach_pose"])
+            self._execute_trajectory("approach", trajectory)
+            guarded_pose = guarded_grasp_pose(candidate, self.args.grasp_stop_backoff_m)
+            print(
+                "[INFO] guarded grasp stop pose: "
+                + json.dumps(guarded_pose, sort_keys=True)
+            )
+            trajectory = self._plan_pose("guarded_grasp", guarded_pose)
+            self._execute_trajectory("guarded_grasp", trajectory)
             self._call_gripper(self.args.gripper_close_service, "GRIPPER_CLOSE")
-            trajectory = self._plan_pose("lift", candidate["lift_pose"])
+            lift_pose = guarded_lift_pose(candidate, guarded_pose)
+            trajectory = self._plan_pose("lift", lift_pose)
             self._execute_trajectory("lift", trajectory)
         finally:
             self.node.destroy_node()
@@ -704,6 +789,26 @@ class MoveItExecuteTrajectoryBackend:
                     self.rclpy.shutdown()
             except Exception:
                 pass
+
+    def _execute_pre_pick_joint1_clearance(self) -> None:
+        delta = float(self.args.pre_pick_joint1_clearance_deg)
+        if delta <= 0.0:
+            print("[INFO] pre-pick joint_1 clearance detour disabled")
+            return
+        current = self._read_joint_state_map(timeout_sec=3.0)
+        if current is None or "joint_1" not in current:
+            raise RuntimeError("cannot read /joint_states for pre-pick joint_1 clearance")
+        target = {name: math.degrees(value) for name, value in current.items()}
+        before = target["joint_1"]
+        target["joint_1"] = before + delta
+        print(
+            "[INFO] pre-pick joint_1 clearance detour: "
+            f"joint_1 {before:.1f} -> {target['joint_1']:.1f} deg; "
+            "the following approach plan returns from this safer +J1 side"
+        )
+        trajectory = self._plan_joint_target("pre_pick_joint1_clearance", target)
+        self._execute_trajectory("pre_pick_joint1_clearance", trajectory, expected_joint_degrees=target)
+        self._wait_for_joint_target("pre_pick_joint1_clearance", target)
 
     def execute_observe(self, observe_target: dict[str, Any]) -> None:
         label = "observe_cup_pose"

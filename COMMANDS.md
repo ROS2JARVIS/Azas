@@ -2,6 +2,9 @@
 
 > Doosan M0609 + OnRobot RG2 + RealSense 칵테일 로봇  
 > 현장 투입 전 이 순서대로 진행하세요.
+>
+> 원칙: Azas 프로젝트 작업은 `/home/ssu/Azas`와 `/home/ssu/Azas/install`만 사용합니다.
+> 외부 ROS 워크스페이스를 소싱하는 예전 절차는 폐기했습니다.
 
 ---
 
@@ -23,18 +26,27 @@
 
 ## 1. 환경 설정
 
+처음 받은 PC에서는 먼저 로컬 `install/`을 생성합니다.
+
 ```bash
-# ROS 2 Humble 소싱 (매 터미널 시작 시)
+cd /home/ssu/Azas
+git switch develop
+git pull origin develop
+bash tools/setup/bootstrap_local_workspace.sh
+```
+
+매 터미널 시작 시 필요한 기본 소싱:
+
+```bash
+# ROS 2 Humble 소싱
 source /opt/ros/humble/setup.bash
 
-# Azas 워크스페이스 소싱 (빌드 후)
-source /home/ssu/Azas/install/setup.bash
-
-# ros2_ws 소싱 (Doosan 드라이버 필요 시)
-source /home/ssu/ros2_ws/install/setup.bash
+# Azas 워크스페이스 소싱 (bootstrap 또는 colcon build 후)
+source /home/ssu/Azas/install/local_setup.bash
 ```
 
 > **팁**: `~/.bashrc`에 `source /opt/ros/humble/setup.bash` 추가하면 편합니다.
+> `install/`은 Git에 올리지 않습니다. 각 PC에서 `bootstrap_local_workspace.sh` 또는 `colcon build --symlink-install`로 재생성합니다.
 
 ---
 
@@ -42,6 +54,9 @@ source /home/ssu/ros2_ws/install/setup.bash
 
 ```bash
 cd /home/ssu/Azas
+
+# 처음 PC 또는 install 누락 시 권장
+bash tools/setup/bootstrap_local_workspace.sh
 
 # 전체 빌드
 colcon build --symlink-install
@@ -59,6 +74,31 @@ colcon test --packages-select azas_voice
 
 ---
 
+## 제어 패널
+
+```bash
+cd /home/ssu/Azas
+
+# 패널 서버가 없으면 시작하고, 브라우저에서 http://127.0.0.1:8765/ 를 엽니다.
+# 첫 실행 때 ~/.local/bin/azas-panel symlink도 자동으로 준비합니다.
+bash tools/run/open_robot_pipeline_control_panel.sh
+```
+
+첫 실행 뒤에는 어느 디렉터리에서든 짧은 명령으로 열 수 있습니다.
+
+```bash
+azas-panel
+```
+
+패널 서버만 종료할 때:
+
+```bash
+pgrep -af "robot_pipeline_control_server.py"
+kill -TERM <PID>
+```
+
+---
+
 ## 3. 시뮬레이션 (가상 로봇)
 
 ```bash
@@ -66,7 +106,7 @@ colcon test --packages-select azas_voice
 bash tools/run/run_doosan_virtual_m0609.sh
 
 # MoveIt + RViz 수동 실행
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py \
   model:=m0609 mode:=virtual host:=127.0.0.1 port:=12345
 ```
@@ -175,16 +215,17 @@ ping 192.168.127.100
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 
 ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py \
-  mode:=real model:=m0609 host:=192.168.137.100 port:=12345
+  mode:=real model:=m0609 host:=192.168.1.100 port:=12345 rt_host:=192.168.1.101
 ```
 
 ### 7-3. RG2 그리퍼 서비스 시작
 
 ```bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /opt/ros/humble/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ros2 launch jarvis rg2_trigger.launch.py ip:=192.168.1.1
 ```
 

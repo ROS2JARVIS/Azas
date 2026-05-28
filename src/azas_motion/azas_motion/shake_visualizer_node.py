@@ -28,7 +28,7 @@ class ShakeVisualizerNode(Node):
         self.declare_parameter("shake_amplitude_x", 0.050)
         self.declare_parameter("shake_amplitude_y", 0.025)
         self.declare_parameter("shake_amplitude_z", 0.035)
-        self.declare_parameter("segment_seconds", 0.16)
+        self.declare_parameter("segment_seconds", 0.10)
         self.declare_parameter("publish_demo_arm", False)
 
         self.robot_arm_pub = self.create_publisher(
@@ -94,7 +94,7 @@ class ShakeVisualizerNode(Node):
         x = start[0] + (end[0] - start[0]) * smooth_t
         y = start[1] + (end[1] - start[1]) * smooth_t
         z = start[2] + (end[2] - start[2]) * smooth_t
-        yaw = math.sin(elapsed * math.tau * 2.8) * 0.14
+        yaw = math.sin(elapsed * math.tau * 4.0) * 0.26
         return x, y, z, yaw
 
     def _robot_arm_markers(

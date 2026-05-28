@@ -18,11 +18,29 @@ Azas는 Doosan M0609, OnRobot RG2, RealSense D435i를 사용하는 ROS 2 Humble 
 
 ## 처음 실행 순서
 
+처음 받은 PC에서는 `install/`이 없을 수 있습니다. 아래 부트스트랩을 한 번 실행해 로컬에서 빌드 산출물을 만듭니다.
+
+```bash
+cd /home/ssu/Azas
+git switch develop
+git pull origin develop
+bash tools/setup/bootstrap_local_workspace.sh
+```
+
+패널 실행은 아래 명령을 사용합니다.
+
+```bash
+bash tools/run/open_robot_pipeline_control_panel.sh
+```
+
+수동 빌드가 필요하면 아래 순서를 사용합니다.
+
 ```bash
 source /opt/ros/humble/setup.bash
 cd /home/ssu/Azas
+rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
-source install/setup.bash
+source install/local_setup.bash
 ```
 
 하드웨어 없이 먼저 확인할 명령은 아래입니다.

@@ -1,26 +1,26 @@
 # 역할별 패키지 맵
 
+> 폐기 안내: 이 문서는 예전 외부 워크스페이스 병행 구조를 설명합니다.
+> 현재 Azas 프로젝트 작업은 `/home/ssu/Azas` 아래에서만 진행합니다.
+
 이 문서는 협업자가 자기 담당 영역과 건드리면 안 되는 경계를 빠르게 찾기 위한 지도입니다.
 
-## 두 개의 워크스페이스 구조
+목적별 수정 위치는 `docs/collaboration_edit_map.md`를 우선 확인하세요.
 
-Azas 프로젝트는 두 개의 ROS 2 워크스페이스를 함께 사용합니다.
+## 현재 워크스페이스 구조
+
+Azas 프로젝트는 하나의 ROS 2 워크스페이스를 사용합니다.
 
 ```
 /home/ssu/Azas/          ← Azas 메인 패키지 (이 레포)
   src/azas_*/            ← 비전, 모션, 태스크, 음성 등
-
-/home/ssu/ros2_ws/       ← 외부 패키지 (별도 레포)
-  src/Azas/jarvis/       ← 실제 RG2 그리퍼 + 디스펜서 제어
-  src/doosan-robot2/     ← 두산 M0609 ROS 2 드라이버
 ```
 
-매 터미널에서 두 워크스페이스를 모두 소싱해야 합니다:
+매 터미널에서 Azas만 소싱합니다:
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/ssu/Azas/install/setup.bash
-source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/local_setup.bash
 ```
 
 ## 패키지별 책임
@@ -38,7 +38,7 @@ source /home/ssu/ros2_ws/install/setup.bash
 | `azas_calibration` | 실측 캘리브레이션 값 로드/저장 경계 | `calibration_loader_node.py`, `calibration.yaml` | 실측 대기 중 |
 | `azas_bringup` | 런치 파일과 시스템 설정 조합 | `launch/`, `config/` | 구현됨 |
 
-### ros2_ws (`/home/ssu/ros2_ws/src/`)
+### Azas에 통합된 외부 드라이버/제어 패키지
 
 | 패키지 | 담당 영역 | 서비스/토픽 | 상태 |
 |--------|----------|------------|------|

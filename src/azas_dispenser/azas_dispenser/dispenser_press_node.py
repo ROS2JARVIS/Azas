@@ -3,7 +3,15 @@ import time
 
 from azas_interfaces.srv import SetGripper
 import rclpy
-from dsr_msgs2.srv import GetCurrentPosx, MoveJoint, MoveLine, MoveWait
+from dsr_msgs2.srv import (
+    GetCurrentPosj,
+    GetCurrentPosx,
+    GetCurrentTcp,
+    MoveJoint,
+    MoveLine,
+    MoveWait,
+    SetCurrentTcp,
+)
 
 
 DR_BASE = 0
@@ -17,6 +25,7 @@ SAFE_Y_MIN_MM = -300.0
 SAFE_Y_MAX_MM = 300.0
 SAFE_Z_MIN_MM = 270.0
 SAFE_Z_MAX_MM = 750.0
+PRE_HOME_RETREAT_SAFE_Z_MM = 520.0
 
 
 def clamp(value, lower, upper):
@@ -42,6 +51,13 @@ class DispenserPressNode:
         self.logger = self.node.get_logger()
 
         self.service_prefix = str(get_param(self.node, "service_prefix", ""))
+        self.tcp_name = str(get_param(self.node, "tcp_name", "")).strip()
+        self.restore_tcp_after_run = bool(get_param(self.node, "restore_tcp_after_run", True))
+        self.previous_tcp_name = None
+        self.require_tcp_for_taught_posx = bool(
+            get_param(self.node, "require_tcp_for_taught_posx", True)
+        )
+        self.allow_tcp_set_failure = bool(get_param(self.node, "allow_tcp_set_failure", False))
         self.move_home_first = bool(get_param(self.node, "move_home_first", True))
         self.return_home = bool(get_param(self.node, "return_home", True))
         self.use_home_as_reference = bool(
@@ -69,6 +85,18 @@ class DispenserPressNode:
         )
         self.gripper_wait_timeout_sec = float(
             get_param(self.node, "gripper_wait_timeout", 2.0)
+        )
+        self.service_wait_timeout_sec = float(
+            get_param(self.node, "service_wait_timeout_sec", 10.0)
+        )
+        self.pose_position_tolerance_mm = float(
+            get_param(self.node, "pose_position_tolerance_mm", 5.0)
+        )
+        self.pose_orientation_tolerance_deg = float(
+            get_param(self.node, "pose_orientation_tolerance_deg", 5.0)
+        )
+        self.strict_pose_verification = bool(
+            get_param(self.node, "strict_pose_verification", False)
         )
         self.taught_posx_by_name = {
             "red": [
@@ -152,6 +180,54 @@ class DispenserPressNode:
         self.joint_acceleration = float(get_param(self.node, "joint_acceleration", 20.0))
         self.line_velocity = float(get_param(self.node, "line_velocity", 30.0))
         self.line_acceleration = float(get_param(self.node, "line_acceleration", 50.0))
+        self.travel_line_velocity = float(
+            get_param(self.node, "travel_line_velocity", self.line_velocity)
+        )
+        self.travel_line_acceleration = float(
+            get_param(self.node, "travel_line_acceleration", self.line_acceleration)
+        )
+        self.pre_home_retreat_before_home = bool(
+            get_param(self.node, "pre_home_retreat_before_home", False)
+        )
+        # Press starts are often requested while the gripper is still near the cup/
+        # dispenser handoff area.  A direct HOME movej from there can sweep the
+        # gripper through the cup.  Default direction is -X in base coordinates:
+        # dispenser taught poses are near x~=730 mm and HOME is near x~=370 mm, so
+        # this pulls back toward the robot before the joint HOME transition.
+        self.pre_home_retreat_dx_mm = float(
+            get_param(self.node, "pre_home_retreat_dx_mm", -120.0)
+        )
+        self.pre_home_retreat_dy_mm = float(
+            get_param(self.node, "pre_home_retreat_dy_mm", 0.0)
+        )
+        self.pre_home_retreat_min_z_mm = float(
+            get_param(self.node, "pre_home_retreat_min_z_mm", PRE_HOME_RETREAT_SAFE_Z_MM)
+        )
+        self.pre_home_retreat_lift_first = bool(
+            get_param(self.node, "pre_home_retreat_lift_first", True)
+        )
+        self.pre_home_retreat_min_current_x_mm = float(
+            get_param(self.node, "pre_home_retreat_min_current_x_mm", 450.0)
+        )
+        self.pre_home_retreat_velocity = float(
+            get_param(self.node, "pre_home_retreat_velocity", min(self.travel_line_velocity, 25.0))
+        )
+        self.pre_home_retreat_acceleration = float(
+            get_param(
+                self.node,
+                "pre_home_retreat_acceleration",
+                min(self.travel_line_acceleration, 30.0),
+            )
+        )
+        self.joint1_clearance_before_home = bool(
+            get_param(self.node, "joint1_clearance_before_home", False)
+        )
+        self.joint1_clearance_return_home = bool(
+            get_param(self.node, "joint1_clearance_return_home", False)
+        )
+        self.joint1_clearance_offset_deg = float(
+            get_param(self.node, "joint1_clearance_offset_deg", 12.0)
+        )
 
         self.move_joint = self.node.create_client(
             MoveJoint,
@@ -169,6 +245,18 @@ class DispenserPressNode:
             GetCurrentPosx,
             service_name(self.service_prefix, "aux_control/get_current_posx"),
         )
+        self.get_current_posj = self.node.create_client(
+            GetCurrentPosj,
+            service_name(self.service_prefix, "aux_control/get_current_posj"),
+        )
+        self.set_current_tcp = self.node.create_client(
+            SetCurrentTcp,
+            service_name(self.service_prefix, "tcp/set_current_tcp"),
+        )
+        self.get_current_tcp = self.node.create_client(
+            GetCurrentTcp,
+            service_name(self.service_prefix, "tcp/get_current_tcp"),
+        )
         self.gripper_client = self.node.create_client(
             SetGripper,
             self.gripper_service_name,
@@ -178,14 +266,31 @@ class DispenserPressNode:
         self.node.destroy_node()
 
     def wait_for_services(self):
-        for client, label in (
+        deadline = time.monotonic() + max(self.service_wait_timeout_sec, 0.1)
+        required_clients = [
             (self.move_joint, "motion/move_joint"),
             (self.move_line, "motion/move_line"),
             (self.move_wait, "motion/move_wait"),
+            (self.get_current_posj, "aux_control/get_current_posj"),
             (self.get_current_posx, "aux_control/get_current_posx"),
-        ):
+        ]
+        if self.tcp_name or (self.use_taught_posx and self.require_tcp_for_taught_posx):
+            required_clients.extend(
+                [
+                    (self.set_current_tcp, "tcp/set_current_tcp"),
+                    (self.get_current_tcp, "tcp/get_current_tcp"),
+                ]
+            )
+
+        for client, label in required_clients:
             while rclpy.ok() and not client.wait_for_service(timeout_sec=1.0):
+                if time.monotonic() > deadline:
+                    self.logger.error(
+                        f"서비스 {label} 를 {self.service_wait_timeout_sec:.1f}초 안에 찾지 못했습니다"
+                    )
+                    return False
                 self.logger.info(f"서비스 {label} 를 기다리는 중")
+        return True
 
     def call_service(self, client, request, label):
         future = client.call_async(request)
@@ -197,6 +302,117 @@ class DispenserPressNode:
             self.logger.error(f"{label} 가 success=false를 반환했습니다")
             return False
         return True
+
+    def current_tcp_name(self):
+        get_req = GetCurrentTcp.Request()
+        future = self.get_current_tcp.call_async(get_req)
+        rclpy.spin_until_future_complete(self.node, future)
+        result = future.result()
+        if result is None:
+            self.logger.error(f"tcp/get_current_tcp 호출 실패: {future.exception()}")
+            return None
+        if not result.success:
+            self.logger.error("tcp/get_current_tcp 가 success=false를 반환했습니다")
+            return None
+        return str(result.info).strip()
+
+    def set_tcp_name(self, name, label):
+        req = SetCurrentTcp.Request()
+        req.name = str(name).strip()
+        self.logger.info(f"{label}: Doosan current TCP 설정: {req.name if req.name else '<empty/default>'}")
+        return self.call_service(self.set_current_tcp, req, label)
+
+    def current_joints_deg(self, label):
+        req = GetCurrentPosj.Request()
+        future = self.get_current_posj.call_async(req)
+        rclpy.spin_until_future_complete(self.node, future)
+        result = future.result()
+        if result is None:
+            self.logger.error(f"{label}: aux_control/get_current_posj 호출 실패: {future.exception()}")
+            return None
+        if not result.success or len(result.pos) < 6:
+            self.logger.error(
+                f"{label}: aux_control/get_current_posj 가 success=false 또는 6축 미만을 반환했습니다"
+            )
+            return None
+        return [float(value) for value in result.pos[:6]]
+
+    def configure_tcp(self):
+        if not self.tcp_name:
+            if self.use_taught_posx and self.require_tcp_for_taught_posx:
+                self.logger.error(
+                    "use_taught_posx=true 프레스는 Doosan controller TCP 이름이 필요합니다. "
+                    "tcp_name 파라미터가 비어 있어 link_6/flange 기준 프레스를 막습니다."
+                )
+                return False
+            self.logger.warning(
+                "tcp_name이 비어 있습니다. 현재 컨트롤러 TCP를 그대로 사용합니다."
+            )
+            return True
+
+        self.previous_tcp_name = self.current_tcp_name()
+        if self.previous_tcp_name is None:
+            return False
+        self.logger.info(
+            "프레스 전 Doosan TCP: "
+            f"{self.previous_tcp_name if self.previous_tcp_name else '<empty/default>'}"
+        )
+
+        if self.previous_tcp_name == self.tcp_name:
+            self.logger.info(
+                f"요청 TCP '{self.tcp_name}' 가 이미 활성화되어 있어 "
+                "tcp/set_current_tcp 호출을 건너뜁니다."
+            )
+            return True
+
+        if not self.set_tcp_name(self.tcp_name, "tcp/set_current_tcp"):
+            message = (
+                f"Doosan controller가 TCP '{self.tcp_name}' 설정을 거부했습니다. "
+                "티치펜던트/컨트롤러에 해당 TCP가 등록되어 있는지 확인하세요."
+            )
+            if not self.allow_tcp_set_failure:
+                self.logger.error(message)
+                return False
+            self.logger.warning(
+                message + " allow_tcp_set_failure=true 이므로 현재 컨트롤러 TCP를 유지하고 계속합니다."
+            )
+            self.previous_tcp_name = None
+            return True
+
+        current_name = self.current_tcp_name()
+        if current_name is None:
+            return False
+        self.logger.info(f"현재 Doosan TCP 확인: {current_name}")
+        if current_name != self.tcp_name:
+            self.logger.error(
+                f"요청 TCP '{self.tcp_name}' 와 현재 TCP '{current_name}' 가 다릅니다. "
+                "link_6/flange 기준 프레스를 막습니다."
+            )
+            return False
+        return True
+
+    def restore_tcp_if_needed(self):
+        if not self.restore_tcp_after_run:
+            return
+        if self.previous_tcp_name is None or self.previous_tcp_name == self.tcp_name:
+            return
+        previous = self.previous_tcp_name
+        self.logger.info(
+            "프레스 후 Doosan TCP를 이전 값으로 복원합니다: "
+            f"{previous if previous else '<empty/default>'}"
+        )
+        if not self.set_tcp_name(previous, "tcp/restore_previous_tcp"):
+            self.logger.error(
+                "프레스 후 TCP 복원 실패. 다음 link_6 기준 이동 전에 티치펜던트/컨트롤러 TCP를 확인하세요."
+            )
+            return
+        current_name = self.current_tcp_name()
+        if current_name != previous:
+            self.logger.error(
+                f"TCP 복원 확인 실패: current='{current_name}', expected='{previous}'"
+            )
+            return
+        self.logger.info("Doosan TCP 복원 확인 완료")
 
     def close_gripper(self):
         if not self.close_gripper_at_home:
@@ -244,10 +460,29 @@ class DispenserPressNode:
         self.logger.info(f"{label}: movej {req.pos}")
         return self.call_service(self.move_joint, req, label)
 
-    def movel(self, x_mm, y_mm, z_mm, label):
+    def movej_joint1_clearance(self, label):
+        if self.joint1_clearance_offset_deg <= 0.0:
+            self.logger.info(f"{label}: joint_1 clearance disabled by non-positive offset")
+            return True
+        joints = self.current_joints_deg(label)
+        if joints is None:
+            return False
+        before_j1 = joints[0]
+        joints[0] += self.joint1_clearance_offset_deg
+        self.logger.info(
+            f"{label}: 컵 회피를 위해 현재 관절 자세를 유지한 채 joint_1만 "
+            f"+{self.joint1_clearance_offset_deg:.1f}deg 이동합니다 "
+            f"(j1 {before_j1:.1f}->{joints[0]:.1f}, j2~j6 유지={joints[1:]})"
+        )
+        if not self.movej(joints, label):
+            return False
+        return self.wait_for_motion_done(label)
+
+    def movel(self, x_mm, y_mm, z_mm, label, rpy_deg=None, velocity=None, acceleration=None):
         safe_x = clamp(x_mm, SAFE_X_MIN_MM, SAFE_X_MAX_MM)
         safe_y = clamp(y_mm, SAFE_Y_MIN_MM, SAFE_Y_MAX_MM)
         safe_z = clamp(z_mm, SAFE_Z_MIN_MM, SAFE_Z_MAX_MM)
+        rx, ry, rz = rpy_deg if rpy_deg is not None else (self.rx, self.ry, self.rz)
 
         if (safe_x, safe_y, safe_z) != (x_mm, y_mm, z_mm):
             self.logger.warning(
@@ -257,9 +492,11 @@ class DispenserPressNode:
             )
 
         req = MoveLine.Request()
-        req.pos = [safe_x, safe_y, safe_z, self.rx, self.ry, self.rz]
-        req.vel = [self.line_velocity, self.line_velocity]
-        req.acc = [self.line_acceleration, self.line_acceleration]
+        req.pos = [safe_x, safe_y, safe_z, float(rx), float(ry), float(rz)]
+        line_velocity = self.line_velocity if velocity is None else float(velocity)
+        line_acceleration = self.line_acceleration if acceleration is None else float(acceleration)
+        req.vel = [line_velocity, line_velocity]
+        req.acc = [line_acceleration, line_acceleration]
         req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -274,6 +511,51 @@ class DispenserPressNode:
         req = MoveWait.Request()
         self.logger.info(f"{label}: 모션 완료 대기 중")
         return self.call_service(self.move_wait, req, f"{label} wait")
+
+    def movel_checked_no_clamp(
+        self,
+        x_mm,
+        y_mm,
+        z_mm,
+        label,
+        rpy_deg,
+        velocity,
+        acceleration,
+        z_min_mm=50.0,
+    ):
+        if not (SAFE_X_MIN_MM <= x_mm <= SAFE_X_MAX_MM):
+            self.logger.error(
+                f"{label}: x={x_mm:.1f} mm가 허용 범위 "
+                f"[{SAFE_X_MIN_MM:.1f}, {SAFE_X_MAX_MM:.1f}] mm 밖입니다."
+            )
+            return False
+        if not (SAFE_Y_MIN_MM <= y_mm <= SAFE_Y_MAX_MM):
+            self.logger.error(
+                f"{label}: y={y_mm:.1f} mm가 허용 범위 "
+                f"[{SAFE_Y_MIN_MM:.1f}, {SAFE_Y_MAX_MM:.1f}] mm 밖입니다."
+            )
+            return False
+        if not (z_min_mm <= z_mm <= SAFE_Z_MAX_MM):
+            self.logger.error(
+                f"{label}: z={z_mm:.1f} mm가 허용 범위 "
+                f"[{z_min_mm:.1f}, {SAFE_Z_MAX_MM:.1f}] mm 밖입니다."
+            )
+            return False
+
+        rx, ry, rz = rpy_deg
+        req = MoveLine.Request()
+        req.pos = [float(x_mm), float(y_mm), float(z_mm), float(rx), float(ry), float(rz)]
+        req.vel = [float(velocity), float(velocity)]
+        req.acc = [float(acceleration), float(acceleration)]
+        req.time = 0.0
+        req.radius = 0.0
+        req.ref = DR_BASE
+        req.mode = MOVE_MODE_ABSOLUTE
+        req.blend_type = BLENDING_SPEED_TYPE_DUPLICATE
+        req.sync_type = SYNC
+
+        self.logger.info(f"{label}: checked movel(no clamp) {req.pos}")
+        return self.call_service(self.move_line, req, label)
 
     def read_current_posx(self):
         req = GetCurrentPosx.Request()
@@ -330,6 +612,120 @@ class DispenserPressNode:
             f"rpy_max={max_rpy_error:.2f} deg "
             f"(drx={drx:.2f}, dry={dry:.2f}, drz={drz:.2f})"
         )
+        if not self.strict_pose_verification:
+            return True
+        if position_error > self.pose_position_tolerance_mm:
+            self.logger.error(
+                f"{label}: 위치 오차 {position_error:.2f} mm가 허용값 "
+                f"{self.pose_position_tolerance_mm:.2f} mm를 초과했습니다."
+            )
+            return False
+        if max_rpy_error > self.pose_orientation_tolerance_deg:
+            self.logger.error(
+                f"{label}: 자세 오차 {max_rpy_error:.2f} deg가 허용값 "
+                f"{self.pose_orientation_tolerance_deg:.2f} deg를 초과했습니다."
+            )
+            return False
+        return True
+
+    def retreat_before_home_if_needed(self):
+        if not self.pre_home_retreat_before_home:
+            return True
+
+        current_pose = self.read_current_posx()
+        if current_pose is None:
+            return False
+
+        current_x = current_pose[0]
+        target_z = max(current_pose[2], self.pre_home_retreat_min_z_mm)
+        if (
+            current_x < self.pre_home_retreat_min_current_x_mm
+            and current_pose[2] >= target_z - 1.0
+        ):
+            self.logger.info(
+                "pre-HOME retreat 생략: 현재 TCP x="
+                f"{current_x:.1f} mm 가 기준 "
+                f"{self.pre_home_retreat_min_current_x_mm:.1f} mm 보다 작아 "
+                f"이미 HOME/로봇 쪽 안전 영역이고 z={current_pose[2]:.1f} mm가 "
+                f"안전 높이 {target_z:.1f} mm 이상이라고 판단했습니다."
+            )
+            return True
+
+        target_x = current_pose[0] + self.pre_home_retreat_dx_mm
+        target_y = current_pose[1] + self.pre_home_retreat_dy_mm
+        target_rpy = current_pose[3:6]
+        vertical_lift_completed = False
+
+        if self.pre_home_retreat_lift_first and current_pose[2] < target_z - 1.0:
+            lift_label = "pre-HOME vertical lift away from cup"
+            self.logger.info(
+                "HOME movej 전에 컵을 옆으로 치지 않도록 먼저 수직 상승합니다: "
+                f"z {current_pose[2]:.1f}->{target_z:.1f} mm, "
+                f"x/y/rpy 유지=({current_pose[0]:.1f}, {current_pose[1]:.1f}, "
+                f"{target_rpy[0]:.1f}, {target_rpy[1]:.1f}, {target_rpy[2]:.1f})"
+            )
+            if not self.movel_checked_no_clamp(
+                current_pose[0],
+                current_pose[1],
+                target_z,
+                lift_label,
+                target_rpy,
+                min(self.pre_home_retreat_velocity, 15.0),
+                min(self.pre_home_retreat_acceleration, 20.0),
+            ):
+                self.logger.error("pre-HOME vertical lift movel 실패")
+                return False
+            if not self.wait_for_motion_done(lift_label):
+                self.logger.error("pre-HOME vertical lift 모션이 완료되지 않았습니다")
+                return False
+            if not self.verify_reached_pose(
+                [current_pose[0], current_pose[1], target_z, target_rpy[0], target_rpy[1], target_rpy[2]],
+                lift_label,
+            ):
+                self.logger.error("pre-HOME vertical lift 목표 포즈 확인 실패")
+                return False
+            vertical_lift_completed = True
+
+        label = "pre-HOME retreat away from cup"
+        self.logger.info(
+            "수직 상승 후 HOME movej 전 컵/디스펜서 충돌 회피용 후퇴를 수행합니다: "
+            f"dx={self.pre_home_retreat_dx_mm:.1f} mm, "
+            f"dy={self.pre_home_retreat_dy_mm:.1f} mm, "
+            f"target_z={target_z:.1f} mm, rpy 유지="
+            f"({target_rpy[0]:.1f}, {target_rpy[1]:.1f}, {target_rpy[2]:.1f})"
+        )
+        if not self.movel_checked_no_clamp(
+            target_x,
+            target_y,
+            target_z,
+            label,
+            target_rpy,
+            self.pre_home_retreat_velocity,
+            self.pre_home_retreat_acceleration,
+        ):
+            if vertical_lift_completed:
+                self.logger.warning(
+                    "pre-HOME horizontal retreat movel 실패: 이미 수직 상승으로 컵 높이에서 벗어났으므로 "
+                    "추가 가로 후퇴를 생략하고 HOME movej로 진행합니다."
+                )
+                return True
+            self.logger.error("pre-HOME retreat movel 실패")
+            return False
+        if not self.wait_for_motion_done(label):
+            self.logger.error("pre-HOME retreat 모션이 완료되지 않았습니다")
+            return False
+
+        clamped_target = [
+            target_x,
+            target_y,
+            target_z,
+            target_rpy[0],
+            target_rpy[1],
+            target_rpy[2],
+        ]
+        if not self.verify_reached_pose(clamped_target, label):
+            self.logger.error("pre-HOME retreat 목표 포즈 확인 실패")
+            return False
         return True
 
     def build_press_steps(self):
@@ -438,14 +834,17 @@ class DispenserPressNode:
             )
 
         steps = [
-            (x_mm, y_mm, approach_z, "approach above dispenser"),
-            (x_mm, y_mm, top_z, "move to dispenser top"),
-            (x_mm, y_mm, pressed_z, "press dispenser pump"),
-            (x_mm, y_mm, approach_z, "retreat above dispenser"),
+            (x_mm, y_mm, approach_z, self.rx, self.ry, self.rz, "approach above dispenser"),
+            (x_mm, y_mm, top_z, self.rx, self.ry, self.rz, "move to dispenser top"),
+            (x_mm, y_mm, pressed_z, self.rx, self.ry, self.rz, "press dispenser pump"),
+            (x_mm, y_mm, approach_z, self.rx, self.ry, self.rz, "retreat above dispenser"),
         ]
 
         if home_lift_step is not None:
-            return [home_lift_step] + steps
+            home_x, home_y, home_z, home_label = home_lift_step
+            return [
+                (home_x, home_y, home_z, self.rx, self.ry, self.rz, home_label)
+            ] + steps
 
         return steps
 
@@ -454,9 +853,16 @@ class DispenserPressNode:
             self.logger.error("press_depth must be greater than 0.0 m.")
             return False
 
-        self.wait_for_services()
+        if not self.wait_for_services():
+            return False
+        if not self.configure_tcp():
+            return False
 
         if self.move_home_first:
+            if not self.retreat_before_home_if_needed():
+                return False
+            if self.joint1_clearance_before_home and not self.movej_joint1_clearance("pre-HOME joint_1 + clearance"):
+                return False
             if not self.movej(self.home_joints_deg, "move to HOME"):
                 return False
             if not self.wait_for_motion_done("move to HOME"):
@@ -474,15 +880,35 @@ class DispenserPressNode:
         if steps is None:
             return False
 
-        for idx, (x_mm, y_mm, z_mm, label) in enumerate(steps, start=1):
+        for idx, step in enumerate(steps, start=1):
+            if len(step) == 4:
+                x_mm, y_mm, z_mm, label = step
+                rx, ry, rz = self.rx, self.ry, self.rz
+            else:
+                x_mm, y_mm, z_mm, rx, ry, rz, label = step
+            is_press_down = label == "press dispenser pump"
+            line_velocity = self.line_velocity if is_press_down else self.travel_line_velocity
+            line_acceleration = (
+                self.line_acceleration if is_press_down else self.travel_line_acceleration
+            )
             self.logger.info(f"단계 {idx}/{len(steps)}: 시작 '{label}' -> x={x_mm:.1f} y={y_mm:.1f} z={z_mm:.1f} mm")
-            if not self.movel(x_mm, y_mm, z_mm, label):
+            if not self.movel(
+                x_mm,
+                y_mm,
+                z_mm,
+                label,
+                (rx, ry, rz),
+                velocity=line_velocity,
+                acceleration=line_acceleration,
+            ):
                 self.logger.error(f"{label} 단계에서 movel 실패")
                 return False
             if not self.wait_for_motion_done(label):
                 self.logger.error(f"{label} 단계의 모션이 완료되지 않았습니다")
                 return False
-            self.verify_reached_pose([x_mm, y_mm, z_mm, self.rx, self.ry, self.rz], label)
+            if not self.verify_reached_pose([x_mm, y_mm, z_mm, rx, ry, rz], label):
+                self.logger.error(f"{label} 단계가 목표 포즈에 도달하지 못했습니다")
+                return False
             self.logger.info(f"단계 {idx}/{len(steps)}: 완료 '{label}'")
             if label == "approach above dispenser" and self.approach_pause_seconds > 0.0:
                 self.logger.info(
@@ -497,6 +923,8 @@ class DispenserPressNode:
             self.logger.info(
                 "복귀용 transit 높이 도달 후 HOME으로 복귀합니다."
             )
+            if self.joint1_clearance_return_home and not self.movej_joint1_clearance("return pre-HOME joint_1 + clearance"):
+                return False
             if not self.movej(self.home_joints_deg, "return to HOME"):
                 return False
             if not self.wait_for_motion_done("return to HOME"):
@@ -510,12 +938,17 @@ class DispenserPressNode:
 def main(args=None):
     rclpy.init(args=args)
     node = DispenserPressNode()
+    ok = False
     try:
-        node.run()
+        ok = node.run()
     finally:
-        node.destroy()
-        rclpy.shutdown()
+        try:
+            node.restore_tcp_if_needed()
+        finally:
+            node.destroy()
+            rclpy.shutdown()
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
