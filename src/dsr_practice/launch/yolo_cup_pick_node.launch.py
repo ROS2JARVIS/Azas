@@ -120,6 +120,14 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "side_grasp_direction": LaunchConfiguration("side_grasp_direction"),
                     "side_approach_offset": LaunchConfiguration("side_approach_offset"),
                     "side_staging_offset": LaunchConfiguration("side_staging_offset"),
+                    "side_far_stage_enabled": LaunchConfiguration(
+                        "side_far_stage_enabled"
+                    ),
+                    "side_short_stage_backoff_m": LaunchConfiguration(
+                        "side_short_stage_backoff_m"
+                    ),
+                    "side_stage_y_min": LaunchConfiguration("side_stage_y_min"),
+                    "side_stage_y_max": LaunchConfiguration("side_stage_y_max"),
                     "side_grasp_offset": LaunchConfiguration("side_grasp_offset"),
                     "side_grasp_z_offset": LaunchConfiguration("side_grasp_z_offset"),
                     "side_grasp_stop_backoff_m": LaunchConfiguration(
@@ -127,6 +135,12 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     ),
                     "side_close_underreach_m": LaunchConfiguration(
                         "side_close_underreach_m"
+                    ),
+                    "side_low_retry_lift_m": LaunchConfiguration(
+                        "side_low_retry_lift_m"
+                    ),
+                    "side_low_retry_attempts": LaunchConfiguration(
+                        "side_low_retry_attempts"
                     ),
                     "side_auto_direction_by_cup_y": LaunchConfiguration(
                         "side_auto_direction_by_cup_y"
@@ -187,6 +201,28 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "move_joint_home_before_camera_home": LaunchConfiguration(
                         "move_joint_home_before_camera_home"
                     ),
+                    "camera_home_mode": ParameterValue(
+                        LaunchConfiguration("camera_home_mode"),
+                        value_type=str,
+                    ),
+                    "camera_home_joint_1_deg": LaunchConfiguration(
+                        "camera_home_joint_1_deg"
+                    ),
+                    "camera_home_joint_2_deg": LaunchConfiguration(
+                        "camera_home_joint_2_deg"
+                    ),
+                    "camera_home_joint_3_deg": LaunchConfiguration(
+                        "camera_home_joint_3_deg"
+                    ),
+                    "camera_home_joint_4_deg": LaunchConfiguration(
+                        "camera_home_joint_4_deg"
+                    ),
+                    "camera_home_joint_5_deg": LaunchConfiguration(
+                        "camera_home_joint_5_deg"
+                    ),
+                    "camera_home_joint_6_deg": LaunchConfiguration(
+                        "camera_home_joint_6_deg"
+                    ),
                     "camera_home_x": LaunchConfiguration("camera_home_x"),
                     "camera_home_y": LaunchConfiguration("camera_home_y"),
                     "camera_home_z": LaunchConfiguration("camera_home_z"),
@@ -200,8 +236,14 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                         "camera_home_search_step_z"
                     ),
                     "min_motion_z": LaunchConfiguration("min_motion_z"),
+                    "workspace_xy_clamp_enabled": LaunchConfiguration(
+                        "workspace_xy_clamp_enabled"
+                    ),
                     "return_home_after_task": LaunchConfiguration(
                         "return_home_after_task"
+                    ),
+                    "return_to_camera_home_after_attempt": LaunchConfiguration(
+                        "return_to_camera_home_after_attempt"
                     ),
                     "place_x": LaunchConfiguration("place_x"),
                     "place_y": LaunchConfiguration("place_y"),
@@ -274,7 +316,9 @@ def generate_launch_description():
         "side_grasp_axis", default_value="y_axis"
     )
     side_grasp_direction_arg = DeclareLaunchArgument(
-        "side_grasp_direction", default_value="-1.0"
+        "side_grasp_direction",
+        default_value="1.0",
+        description="Default +Y side approach keeps the low side-grip staging pose away from the measured dispenser row.",
     )
     side_approach_offset_arg = DeclareLaunchArgument(
         "side_approach_offset",
@@ -285,6 +329,26 @@ def generate_launch_description():
         "side_staging_offset",
         default_value="0.30",
         description="Far outside offset where the wrist first turns horizontal.",
+    )
+    side_far_stage_enabled_arg = DeclareLaunchArgument(
+        "side_far_stage_enabled",
+        default_value="false",
+        description="If false, skip the far side-staging waypoint and keep the side-grip posture while approaching from the closer pre-grasp offset.",
+    )
+    side_short_stage_backoff_m_arg = DeclareLaunchArgument(
+        "side_short_stage_backoff_m",
+        default_value="0.06",
+        description="When far stage is disabled, start this much farther behind the side pre-grasp point before moving to the target.",
+    )
+    side_stage_y_min_arg = DeclareLaunchArgument(
+        "side_stage_y_min",
+        default_value="-0.35",
+        description="Minimum preferred base_link Y for side staging; side direction is flipped if the configured direction leaves this range.",
+    )
+    side_stage_y_max_arg = DeclareLaunchArgument(
+        "side_stage_y_max",
+        default_value="0.35",
+        description="Maximum preferred base_link Y for side staging; side direction is flipped if the configured direction leaves this range.",
     )
     side_grasp_offset_arg = DeclareLaunchArgument(
         "side_grasp_offset", default_value="0.035"
@@ -304,10 +368,20 @@ def generate_launch_description():
         default_value="0.03",
         description="Extra XY underreach along the side approach direction to stop short of the detected cup center.",
     )
+    side_low_retry_lift_m_arg = DeclareLaunchArgument(
+        "side_low_retry_lift_m",
+        default_value="0.03",
+        description="Raise the low side-grip Z by this amount per retry if table/dispenser collision or IK blocks the first low pose.",
+    )
+    side_low_retry_attempts_arg = DeclareLaunchArgument(
+        "side_low_retry_attempts",
+        default_value="5",
+        description="Number of raised-Z retries for the low side-grip staging pose.",
+    )
     side_auto_direction_by_cup_y_arg = DeclareLaunchArgument(
         "side_auto_direction_by_cup_y",
-        default_value="true",
-        description="For y-axis side grasps, approach from -Y for +Y cups and +Y for -Y cups.",
+        default_value="false",
+        description="If true, flip side direction by cup Y; disabled by default because the measured dispenser row is on the -Y side.",
     )
     side_linear_approach_enabled_arg = DeclareLaunchArgument(
         "side_linear_approach_enabled",
@@ -477,6 +551,31 @@ def generate_launch_description():
         default_value="false",
         description="Move joint home before camera home. Disabled to start directly at high camera home.",
     )
+    camera_home_mode_arg = DeclareLaunchArgument(
+        "camera_home_mode",
+        default_value="joint",
+        description="Camera observe home mode: 'joint' uses taught joint angles, 'pose' uses Cartesian target.",
+    )
+    camera_home_joint_1_deg_arg = DeclareLaunchArgument(
+        "camera_home_joint_1_deg", default_value="3.0"
+    )
+    camera_home_joint_2_deg_arg = DeclareLaunchArgument(
+        "camera_home_joint_2_deg", default_value="-12.7"
+    )
+    camera_home_joint_3_deg_arg = DeclareLaunchArgument(
+        "camera_home_joint_3_deg", default_value="44.0"
+    )
+    camera_home_joint_4_deg_arg = DeclareLaunchArgument(
+        "camera_home_joint_4_deg", default_value="-9.0"
+    )
+    camera_home_joint_5_deg_arg = DeclareLaunchArgument(
+        "camera_home_joint_5_deg", default_value="133.0"
+    )
+    camera_home_joint_6_deg_arg = DeclareLaunchArgument(
+        "camera_home_joint_6_deg",
+        default_value="90.0",
+        description="Small wrist twist for the straight-up camera observe joint home; tune sign/angle from camera view.",
+    )
     camera_home_x_arg = DeclareLaunchArgument("camera_home_x", default_value="0.45")
     camera_home_y_arg = DeclareLaunchArgument("camera_home_y", default_value="0.0")
     camera_home_z_arg = DeclareLaunchArgument("camera_home_z", default_value="0.64")
@@ -500,8 +599,18 @@ def generate_launch_description():
         default_value="0.12",
         description="Minimum allowed commanded Z in base frame.",
     )
+    workspace_xy_clamp_enabled_arg = DeclareLaunchArgument(
+        "workspace_xy_clamp_enabled",
+        default_value="false",
+        description="If true, clamp commanded X/Y to legacy fixed workspace bounds; Z clamp still uses min_motion_z.",
+    )
     return_home_after_task_arg = DeclareLaunchArgument(
         "return_home_after_task", default_value="true"
+    )
+    return_to_camera_home_after_attempt_arg = DeclareLaunchArgument(
+        "return_to_camera_home_after_attempt",
+        default_value="true",
+        description="After each pick attempt, return to camera home even if the attempt failed.",
     )
     place_x_arg = DeclareLaunchArgument("place_x", default_value="0.45")
     place_y_arg = DeclareLaunchArgument("place_y", default_value="0.0")
@@ -538,10 +647,16 @@ def generate_launch_description():
             side_grasp_direction_arg,
             side_approach_offset_arg,
             side_staging_offset_arg,
+            side_far_stage_enabled_arg,
+            side_short_stage_backoff_m_arg,
+            side_stage_y_min_arg,
+            side_stage_y_max_arg,
             side_grasp_offset_arg,
             side_grasp_z_offset_arg,
             side_grasp_stop_backoff_m_arg,
             side_close_underreach_m_arg,
+            side_low_retry_lift_m_arg,
+            side_low_retry_attempts_arg,
             side_auto_direction_by_cup_y_arg,
             side_linear_approach_enabled_arg,
             side_final_slide_enabled_arg,
@@ -579,6 +694,13 @@ def generate_launch_description():
             joint_goal_tolerance_rad_arg,
             move_to_camera_home_arg,
             move_joint_home_before_camera_home_arg,
+            camera_home_mode_arg,
+            camera_home_joint_1_deg_arg,
+            camera_home_joint_2_deg_arg,
+            camera_home_joint_3_deg_arg,
+            camera_home_joint_4_deg_arg,
+            camera_home_joint_5_deg_arg,
+            camera_home_joint_6_deg_arg,
             camera_home_x_arg,
             camera_home_y_arg,
             camera_home_z_arg,
@@ -586,7 +708,9 @@ def generate_launch_description():
             camera_home_search_min_z_arg,
             camera_home_search_step_z_arg,
             min_motion_z_arg,
+            workspace_xy_clamp_enabled_arg,
             return_home_after_task_arg,
+            return_to_camera_home_after_attempt_arg,
             place_x_arg,
             place_y_arg,
             place_z_arg,

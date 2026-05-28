@@ -83,16 +83,17 @@ class SideGraspPlan:
     close_backoff_m: float
 
 
-def clamp_to_safe_workspace(x, y, z, logger, z_min=SAFE_Z_MIN):
-    if x < SAFE_X_MIN:
-        logger.warning(f"x={x:.3f} -> {SAFE_X_MIN:.3f}")
-        x = SAFE_X_MIN
-    if y < SAFE_Y_MIN:
-        logger.warning(f"y={y:.3f} -> {SAFE_Y_MIN:.3f}")
-        y = SAFE_Y_MIN
-    elif y > SAFE_Y_MAX:
-        logger.warning(f"y={y:.3f} -> {SAFE_Y_MAX:.3f}")
-        y = SAFE_Y_MAX
+def clamp_to_safe_workspace(x, y, z, logger, z_min=SAFE_Z_MIN, clamp_xy=True):
+    if clamp_xy:
+        if x < SAFE_X_MIN:
+            logger.warning(f"x={x:.3f} -> {SAFE_X_MIN:.3f}")
+            x = SAFE_X_MIN
+        if y < SAFE_Y_MIN:
+            logger.warning(f"y={y:.3f} -> {SAFE_Y_MIN:.3f}")
+            y = SAFE_Y_MIN
+        elif y > SAFE_Y_MAX:
+            logger.warning(f"y={y:.3f} -> {SAFE_Y_MAX:.3f}")
+            y = SAFE_Y_MAX
     if z < z_min:
         logger.warning(f"z={z:.3f} -> {z_min:.3f}")
         z = z_min
@@ -200,14 +201,20 @@ class YoloCupPickNode(Node):
         self.declare_parameter("grasp_mode", "side")
         dynamic_param = ParameterDescriptor(dynamic_typing=True)
         self.declare_parameter("side_grasp_axis", "y_axis", dynamic_param)
-        self.declare_parameter("side_grasp_direction", -1.0)
+        self.declare_parameter("side_grasp_direction", 1.0)
         self.declare_parameter("side_approach_offset", 0.16)
         self.declare_parameter("side_staging_offset", 0.30)
+        self.declare_parameter("side_far_stage_enabled", False)
+        self.declare_parameter("side_short_stage_backoff_m", 0.06)
+        self.declare_parameter("side_stage_y_min", SAFE_Y_MIN)
+        self.declare_parameter("side_stage_y_max", SAFE_Y_MAX)
         self.declare_parameter("side_grasp_offset", 0.035)
         self.declare_parameter("side_grasp_z_offset", 0.05)
         self.declare_parameter("side_grasp_stop_backoff_m", 0.04)
         self.declare_parameter("side_close_underreach_m", 0.03)
-        self.declare_parameter("side_auto_direction_by_cup_y", True)
+        self.declare_parameter("side_low_retry_lift_m", 0.03)
+        self.declare_parameter("side_low_retry_attempts", 5)
+        self.declare_parameter("side_auto_direction_by_cup_y", False)
         self.declare_parameter("side_linear_approach_enabled", True)
         self.declare_parameter("side_final_slide_enabled", False)
         self.declare_parameter("side_fixed_grasp_z_enabled", False)
@@ -306,6 +313,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("approach_offset", 0.12)
         self.declare_parameter("safe_z", 0.50)
         self.declare_parameter("min_motion_z", 0.12)
+        self.declare_parameter("workspace_xy_clamp_enabled", False)
         self.declare_parameter("return_home_after_task", True)
         self.declare_parameter("verify_motion", True)
         self.declare_parameter("motion_verify_tolerance", 0.01)
@@ -313,12 +321,20 @@ class YoloCupPickNode(Node):
         self.declare_parameter("min_motion_delta_m", 0.005)
         self.declare_parameter("move_to_camera_home", True)
         self.declare_parameter("move_joint_home_before_camera_home", False)
+        self.declare_parameter("camera_home_mode", "joint")
+        self.declare_parameter("camera_home_joint_1_deg", 3.0)
+        self.declare_parameter("camera_home_joint_2_deg", -12.7)
+        self.declare_parameter("camera_home_joint_3_deg", 44.0)
+        self.declare_parameter("camera_home_joint_4_deg", -9.0)
+        self.declare_parameter("camera_home_joint_5_deg", 133.0)
+        self.declare_parameter("camera_home_joint_6_deg", 90.0)
         self.declare_parameter("camera_home_x", 0.45)
         self.declare_parameter("camera_home_y", 0.00)
         self.declare_parameter("camera_home_z", 0.64)
         self.declare_parameter("camera_home_search_max_z", 0.64)
         self.declare_parameter("camera_home_search_min_z", 0.54)
         self.declare_parameter("camera_home_search_step_z", 0.02)
+        self.declare_parameter("return_to_camera_home_after_attempt", True)
         self.declare_parameter("place_x", 0.45)
         self.declare_parameter("place_y", 0.0)
         self.declare_parameter("place_z", 0.30)
@@ -352,6 +368,14 @@ class YoloCupPickNode(Node):
         self.side_staging_offset = float(
             self.get_parameter("side_staging_offset").value
         )
+        self.side_far_stage_enabled = parse_bool(
+            self.get_parameter("side_far_stage_enabled").value
+        )
+        self.side_short_stage_backoff_m = max(
+            0.0, float(self.get_parameter("side_short_stage_backoff_m").value)
+        )
+        self.side_stage_y_min = float(self.get_parameter("side_stage_y_min").value)
+        self.side_stage_y_max = float(self.get_parameter("side_stage_y_max").value)
         self.side_grasp_offset = float(self.get_parameter("side_grasp_offset").value)
         self.side_grasp_z_offset = float(
             self.get_parameter("side_grasp_z_offset").value
@@ -361,6 +385,12 @@ class YoloCupPickNode(Node):
         )
         self.side_close_underreach_m = max(
             0.0, float(self.get_parameter("side_close_underreach_m").value)
+        )
+        self.side_low_retry_lift_m = max(
+            0.0, float(self.get_parameter("side_low_retry_lift_m").value)
+        )
+        self.side_low_retry_attempts = max(
+            0, int(self.get_parameter("side_low_retry_attempts").value)
         )
         self.side_auto_direction_by_cup_y = parse_bool(
             self.get_parameter("side_auto_direction_by_cup_y").value
@@ -451,6 +481,9 @@ class YoloCupPickNode(Node):
         self.approach_offset = float(self.get_parameter("approach_offset").value)
         self.safe_z = float(self.get_parameter("safe_z").value)
         self.min_motion_z = float(self.get_parameter("min_motion_z").value)
+        self.workspace_xy_clamp_enabled = parse_bool(
+            self.get_parameter("workspace_xy_clamp_enabled").value
+        )
         self.return_home_after_task = parse_bool(
             self.get_parameter("return_home_after_task").value
         )
@@ -470,6 +503,11 @@ class YoloCupPickNode(Node):
         self.move_joint_home_before_camera_home = parse_bool(
             self.get_parameter("move_joint_home_before_camera_home").value
         )
+        self.camera_home_mode = str(self.get_parameter("camera_home_mode").value).strip().lower()
+        self.camera_home_joint_positions = [
+            math.radians(float(self.get_parameter(f"camera_home_joint_{idx}_deg").value))
+            for idx in range(1, 7)
+        ]
         self.camera_home_x = float(self.get_parameter("camera_home_x").value)
         self.camera_home_y = float(self.get_parameter("camera_home_y").value)
         self.camera_home_z = float(self.get_parameter("camera_home_z").value)
@@ -481,6 +519,9 @@ class YoloCupPickNode(Node):
         )
         self.camera_home_search_step_z = max(
             0.01, float(self.get_parameter("camera_home_search_step_z").value)
+        )
+        self.return_to_camera_home_after_attempt = parse_bool(
+            self.get_parameter("return_to_camera_home_after_attempt").value
         )
         self.place_x = float(self.get_parameter("place_x").value)
         self.place_y = float(self.get_parameter("place_y").value)
@@ -500,6 +541,8 @@ class YoloCupPickNode(Node):
             )
         if self.grasp_mode not in {"side", "top"}:
             raise ValueError("grasp_mode must be 'side' or 'top'")
+        if self.camera_home_mode not in {"joint", "pose"}:
+            raise ValueError("camera_home_mode must be 'joint' or 'pose'")
         if self.side_grasp_axis not in {"x", "y"}:
             raise ValueError("side_grasp_axis must be 'x' or 'y'")
         self.side_grasp_direction = 1.0 if self.side_grasp_direction >= 0 else -1.0
@@ -507,7 +550,7 @@ class YoloCupPickNode(Node):
             raise ValueError(
                 "side_orientation_mode must be 'approach', 'euler', or 'home'"
             )
-        if self.side_staging_offset < self.side_approach_offset:
+        if self.side_far_stage_enabled and self.side_staging_offset < self.side_approach_offset:
             self.get_logger().warning(
                 "side_staging_offset is smaller than side_approach_offset; "
                 "using side_approach_offset for staging."
@@ -823,7 +866,14 @@ class YoloCupPickNode(Node):
             x = pose_goal.pose.position.x
             y = pose_goal.pose.position.y
             z = pose_goal.pose.position.z
-            x, y, z = clamp_to_safe_workspace(x, y, z, log, self.min_motion_z)
+            x, y, z = clamp_to_safe_workspace(
+                x,
+                y,
+                z,
+                log,
+                self.min_motion_z,
+                self.workspace_xy_clamp_enabled,
+            )
             pose_goal.pose.position.x = x
             pose_goal.pose.position.y = y
             pose_goal.pose.position.z = z
@@ -967,6 +1017,31 @@ class YoloCupPickNode(Node):
             return self.move_camera_home()
         return self.move_joint_home()
 
+    def move_camera_joint_home(self):
+        log = self.get_logger()
+        target_state = RobotState(self.robot_model)
+        target_state.set_joint_group_positions(GROUP_NAME, self.camera_home_joint_positions)
+        target_state.update()
+        joint_degrees = [math.degrees(value) for value in self.camera_home_joint_positions]
+        log.info(
+            "Move CAMERA JOINT HOME -> "
+            + ", ".join(
+                f"{name}={degrees:.1f}deg"
+                for name, degrees in zip(ARM_JOINT_ORDER, joint_degrees)
+            )
+        )
+        if not self.plan_and_execute(
+            state_goal=target_state,
+            params=self.ompl_params,
+            joint_goal_names=ARM_JOINT_ORDER,
+            joint_goal_positions=self.camera_home_joint_positions,
+        ):
+            return False
+
+        transform = get_ee_matrix(self.robot)
+        self.update_home_orientation_from_matrix(transform)
+        return True
+
     def update_home_orientation_from_matrix(self, transform):
         qx, qy, qz, qw = Rotation.from_matrix(transform[:3, :3]).as_quat()
         self.home_ori = {
@@ -1043,6 +1118,9 @@ class YoloCupPickNode(Node):
         )
 
     def move_camera_home(self):
+        if self.camera_home_mode == "joint":
+            return self.move_camera_joint_home()
+
         log = self.get_logger()
         candidate_zs = []
         search_top_z = max(self.camera_home_z, self.camera_home_search_max_z)
@@ -1284,9 +1362,39 @@ class YoloCupPickNode(Node):
         return base_xyz, int(round(u)), int(round(v))
 
     def side_direction_for_cup(self, cup_base_xyz):
+        direction = self.side_grasp_direction
         if self.side_grasp_axis == "y" and self.side_auto_direction_by_cup_y:
-            return -1.0 if float(cup_base_xyz[1]) >= self.side_prepose_split_y else 1.0
-        return self.side_grasp_direction
+            direction = -1.0 if float(cup_base_xyz[1]) >= self.side_prepose_split_y else 1.0
+
+        if self.side_grasp_axis == "y":
+            cup_y = float(cup_base_xyz[1])
+            candidates = [direction, -direction]
+            stage_offset = (
+                self.side_staging_offset
+                if self.side_far_stage_enabled
+                else self.side_approach_offset + self.side_short_stage_backoff_m
+            )
+
+            def y_violation(candidate_direction):
+                stage_y = cup_y + candidate_direction * stage_offset
+                return max(
+                    self.side_stage_y_min - stage_y,
+                    0.0,
+                    stage_y - self.side_stage_y_max,
+                )
+
+            best_direction = min(candidates, key=y_violation)
+            if best_direction != direction and y_violation(best_direction) < y_violation(direction):
+                old_stage_y = cup_y + direction * stage_offset
+                new_stage_y = cup_y + best_direction * stage_offset
+                self.get_logger().warning(
+                    "side staging Y would leave reachable workspace; "
+                    f"flipping side direction {direction:.0f}->{best_direction:.0f} "
+                    f"(stage_y {old_stage_y:.3f}->{new_stage_y:.3f}, "
+                    f"limit=[{self.side_stage_y_min:.3f}, {self.side_stage_y_max:.3f}])"
+                )
+                return best_direction
+        return direction
 
     def side_unit_vector(self, cup_base_xyz=None):
         direction = (
@@ -1345,7 +1453,12 @@ class YoloCupPickNode(Node):
         side_vec = self.side_unit_vector(cup_xyz)
         side_ori = self.side_grasp_orientation(side_vec)
         cup_xy = cup_xyz[:2]
-        stage_xy = cup_xy + side_vec * self.side_staging_offset
+        stage_offset = (
+            self.side_staging_offset
+            if self.side_far_stage_enabled
+            else self.side_approach_offset + self.side_short_stage_backoff_m
+        )
+        stage_xy = cup_xy + side_vec * stage_offset
         pre_xy = cup_xy + side_vec * self.side_approach_offset
         grasp_xy = cup_xy + side_vec * self.side_grasp_offset
         close_backoff_m = self.side_grasp_stop_backoff_m + self.side_close_underreach_m
@@ -1520,27 +1633,51 @@ class YoloCupPickNode(Node):
             if self.side_final_slide_enabled
             else self.side_final_approach_params()
         )
-        steps = [
-            (
-                "move to outside side-staging pose",
-                make_pose(plan.stage_xy[0], plan.stage_xy[1], plan.lift_z, plan.orientation),
-                self.ompl_params,
+        log.info("move to outside side-staging pose")
+        if not self.plan_and_execute(
+            pose_goal=make_pose(plan.stage_xy[0], plan.stage_xy[1], plan.lift_z, plan.orientation),
+            params=self.ompl_params,
+        ):
+            return False
+
+        active_pre_z = None
+        for attempt in range(self.side_low_retry_attempts + 1):
+            try_pre_z = plan.pre_z + attempt * self.side_low_retry_lift_m
+            if attempt == 0:
+                log.info(
+                    "lower at outside side-staging pose with OMPL "
+                    f"(z={try_pre_z:.3f})"
+                )
+            else:
+                log.warning(
+                    "retry lower at outside side-staging pose above table "
+                    f"(z={try_pre_z:.3f}, retry={attempt}/{self.side_low_retry_attempts})"
+                )
+            if self.plan_and_execute(
+                pose_goal=make_pose(
+                    plan.stage_xy[0],
+                    plan.stage_xy[1],
+                    try_pre_z,
+                    plan.orientation,
+                ),
+                params=self.ompl_params,
+            ):
+                active_pre_z = try_pre_z
+                break
+        if active_pre_z is None:
+            return False
+
+        log.info(f"{side_close_label} (z={active_pre_z:.3f})")
+        if not self.plan_and_execute(
+            pose_goal=make_pose(
+                side_close_xy[0],
+                side_close_xy[1],
+                active_pre_z,
+                plan.orientation,
             ),
-            (
-                "lower at outside side-staging pose",
-                make_pose(plan.stage_xy[0], plan.stage_xy[1], plan.pre_z, plan.orientation),
-                self.pilz_lin_params,
-            ),
-            (
-                side_close_label,
-                make_pose(side_close_xy[0], side_close_xy[1], plan.pre_z, plan.orientation),
-                side_close_params,
-            ),
-        ]
-        for label, pose, params in steps:
-            log.info(label)
-            if not self.plan_and_execute(pose_goal=pose, params=params):
-                return False
+            params=side_close_params,
+        ):
+            return False
 
         if not self.wait_until_gripper_idle():
             return False
@@ -1560,6 +1697,9 @@ class YoloCupPickNode(Node):
                 "because moving to the cup center before close can push the cup."
             )
         close_xy = plan.guarded_grasp_xy.copy()
+        active_lift_z = max(active_pre_z + self.approach_offset, plan.lift_z)
+        active_place_z = max(active_pre_z, self.min_motion_z)
+        active_place_approach_z = max(active_place_z + self.approach_offset, self.safe_z)
 
         log.info("close gripper for guarded side grasp")
         self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
@@ -1568,17 +1708,17 @@ class YoloCupPickNode(Node):
         move_steps = [
             (
                 "lift cup",
-                make_pose(close_xy[0], close_xy[1], plan.lift_z, plan.orientation),
+                make_pose(close_xy[0], close_xy[1], active_lift_z, plan.orientation),
                 self.side_final_approach_params(),
             ),
             (
                 "move above syrup pump front",
-                make_pose(self.place_x, self.place_y, plan.place_approach_z, plan.orientation),
+                make_pose(self.place_x, self.place_y, active_place_approach_z, plan.orientation),
                 self.ompl_params,
             ),
             (
                 "place cup",
-                make_pose(self.place_x, self.place_y, plan.place_z, plan.orientation),
+                make_pose(self.place_x, self.place_y, active_place_z, plan.orientation),
                 self.pilz_params,
             ),
         ]
@@ -1705,8 +1845,10 @@ class YoloCupPickNode(Node):
 
         self.picking = True
         self.last_status = "moving robot"
+        task_ok = False
         try:
-            if self.pick_and_place(base_xyz):
+            task_ok = self.pick_and_place(base_xyz)
+            if task_ok:
                 self.has_picked_once = True
                 self.last_pick_time = time.time()
                 self.last_status = "pick finished"
@@ -1718,6 +1860,16 @@ class YoloCupPickNode(Node):
                     )
                 self.last_status = "pick failed"
         finally:
+            if self.return_to_camera_home_after_attempt:
+                log.info("return to camera home after pick attempt")
+                if self.move_camera_home():
+                    if task_ok:
+                        self.last_status = "pick finished; returned camera home"
+                    else:
+                        self.last_status = "pick failed; returned camera home"
+                else:
+                    log.error("Failed to return to camera home after pick attempt")
+                    self.last_status = "camera home return failed"
             self.picking = False
 
     def draw_detections(self, image, detections):
