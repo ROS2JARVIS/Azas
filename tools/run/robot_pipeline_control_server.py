@@ -270,7 +270,7 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "컵홀더 컵 다시 잡기 설명 후 쉐이킹", "run", "tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 side grip으로 다시 잡은 상태/순서를 먼저 설명한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행"),
+    Step("shake_closed_cup", "컵홀더 컵 다시 잡기 후 쉐이킹", "run", "tools/run/pick_from_cup_holder_side_grip.py && tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 측정된 cup_holder.side_grip_place pose로 다시 side-grip 픽업한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행"),
     Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
     Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
 ]
@@ -843,9 +843,13 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
         ]
     if step.key == "shake_closed_cup":
         return [
+            "/jarvis/rg2/set_width",
+            f"/{clean}/motion/move_line",
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/move_wait",
+            f"/{clean}/motion/ikin",
             f"/{clean}/motion/check_motion",
+            f"/{clean}/aux_control/get_current_posx",
             f"/{clean}/aux_control/get_current_posj",
             f"/{clean}/system/get_robot_state",
             "/check_state_validity",
@@ -1605,11 +1609,34 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f" && {tumbler_scene_once('add_holder', object_id='tumbler_in_holder')}"
         )
     if step.key == "shake_closed_cup":
+        place_final_z_offset_m = str(
+            payload.get("cup_holder_place_final_z_offset_m")
+            or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
+            or "0.0"
+        ).strip()
+        holder_pick = (
+            "python3 tools/run/pick_from_cup_holder_side_grip.py "
+            f"--service-prefix {service_prefix} "
+            "--config /home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/calibration.yaml "
+            "--approach-velocity 12.0 --approach-acceleration 16.0 "
+            "--descend-velocity 6.0 --descend-acceleration 10.0 "
+            "--lift-velocity 12.0 --lift-acceleration 16.0 "
+            f"--place-final-z-offset-m {shlex.quote(place_final_z_offset_m)} "
+            "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
+            "--ikin-timeout-sec 20.0 --ikin-retries 2 "
+            "--z-max 0.28 "
+            "--execute --confirm ENABLE_CUP_HOLDER_PICK"
+        )
         return (
             f"cd {ROOT} && "
-            "echo '[Azas] SHAKE START 설명: 컵홀더에 놓인 닫힌 컵을 side grip으로 다시 잡은 뒤 흔드는 단계입니다.' && "
-            "echo '[Azas] 순서: 컵홀더 place 완료 확인 -> RG2가 컵 몸통/홀더 쪽을 안정적으로 잡은 상태 확인 -> 들어 올림/관절 쉐이킹 실행.' && "
-            "echo '[Azas] 주의: 이 버튼은 컵 좌표를 새로 만들지 않으며, 컵이 이미 닫혀 있고 그리퍼에 잡힌 상태를 전제로 합니다.' && "
+            f"{ROS_SETUP} && "
+            "echo '[Azas] SHAKE START: 컵홀더에 놓인 닫힌 컵을 측정 pose로 다시 side-grip 픽업한 뒤 흔듭니다.' && "
+            "echo '[Azas] 순서: RG2 open -> 컵홀더 retreat 접근 -> holder final pose에서 soft grasp -> holder lift -> 관절 쉐이킹.' && "
+            "echo '[Azas] 주의: 컵 좌표를 새로 만들지 않고 calibration.yaml cup_holder.side_grip_place 측정값만 사용합니다.' && "
+            f"{holder_pick}"
+            f" && {tumbler_scene_once('remove_world', object_id='tumbler_in_holder')}"
+            f" && {tumbler_scene_once('attach', object_id='carried_tumbler')}"
+            " && "
             f"SERVICE_PREFIX={service_prefix} GRASPED_CUP_TEST_MODE=true "
             "REQUIRE_ROBOT_STANDBY=true SHAKE_CONTROL_MODE=joint SHAKE_CYCLES=4 "
             "JOINT_SHAKE_BASE_J1_DEG=0.0 JOINT_SHAKE_BASE_J2_DEG=-35.0 "
