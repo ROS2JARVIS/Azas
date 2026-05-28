@@ -1,0 +1,25 @@
+/**:
+  ros__parameters:
+    # Side-grip rule-based joint-space prepose parameters.
+    #
+    # Keep `side_prepose_enabled` false until joints are taught/verified on real hardware.
+    # Fill `side_prepose_joints_low_rad` / `side_prepose_joints_high_rad` later with
+    # measured joint values (radians) in the order of `side_prepose_joint_order`.
+    side_prepose_enabled: true
+    side_prepose_joint_order: ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
+    # Selection mode:
+    # - "y": choose by cup base y (cup_left / cup_right)
+    # - "z": choose by cup base z (low / high) (legacy)
+    side_prepose_selection_mode: "y"
+    side_prepose_split_y: 0.0
+    # Single prepose: use the same joint set for both cup_left / cup_right.
+    # Source snapshot: `/dsr01/joint_states --once` (radians), mapped by joint name.
+    side_prepose_joints_cup_left_rad: [0.0, -0.0000006272625797, 1.570796251297, 0.00000002156949996, 1.5707968473434448, 0.0000000240724400413]
+    side_prepose_joints_cup_right_rad: [0.0, -0.0000006272625797, 1.570796251297, 0.00000002156949996, 1.5707968473434448, 0.0000000240724400413]
+
+    # Legacy z-selection fields (only used when side_prepose_selection_mode: "z")
+    side_prepose_split_z: 0.18
+
+    # Optional: after reaching guarded side-grasp stop, move XY to the *initial*
+    # cup center without changing Z, then close gripper.
+    side_move_to_initial_center_before_close: false
