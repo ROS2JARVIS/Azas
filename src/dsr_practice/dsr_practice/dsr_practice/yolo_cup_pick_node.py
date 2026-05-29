@@ -171,7 +171,9 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_staging_offset", 0.24)
         self.declare_parameter("side_grasp_offset", 0.035)
         self.declare_parameter("side_grasp_z_offset", 0.05)
-        self.declare_parameter("side_grasp_stop_backoff_m", 0.02)
+
+        self.declare_parameter("side_grasp_stop_backoff_m", 0.03)
+        
         self.declare_parameter("gripper_open_settle_sec", 1.0)
         self.declare_parameter("pre_pick_joint1_clearance_deg", 12.0)
         self.declare_parameter("side_orientation_mode", "approach")
