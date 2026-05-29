@@ -2028,7 +2028,15 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                 ),
             }
 
-    cmd = command_for(step, payload)
+    custom_commands = payload.get("custom_commands") if isinstance(payload.get("custom_commands"), dict) else {}
+    custom_cmd = str(custom_commands.get(step.key) or "").strip()
+    cmd = custom_cmd or command_for(step, payload)
+    command_edited = bool(custom_cmd)
+    if command_edited:
+        preflight_output = (
+            f"{preflight_output}\n--- edited command ---\n"
+            "패널에서 편집한 명령어로 실행합니다. 기존 안전 preflight/service gate는 유지됩니다."
+        ).strip()
     if step.kind == "background":
         restart_output = ""
         if step.key == "connect_robot":
@@ -2415,6 +2423,21 @@ class Handler(BaseHTTPRequestHandler):
                 if key in steps_by_key
             ]
             self.send_json({"results": results})
+            return
+        if path == "/api/run_custom":
+            key = str(payload.get("key") or "")
+            command = str(payload.get("command") or "").strip()
+            steps_by_key = {step.key: step for step in STEPS}
+            if key not in steps_by_key:
+                self.send_json({"error": f"unknown step: {key}"}, 400)
+                return
+            if not command:
+                self.send_json({"error": "command is empty"}, 400)
+                return
+            custom_payload = dict(payload)
+            custom_payload["selected"] = [key]
+            custom_payload["custom_commands"] = {key: command}
+            self.send_json({"results": [run_step(steps_by_key[key], custom_payload)]})
             return
         if path == "/api/stop":
             self.send_json(stop_all())

@@ -498,6 +498,26 @@
       max-height: 220px;
       overflow: auto;
     }
+    .command-editor {
+      width: 100%;
+      min-height: 150px;
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      background: #020617;
+      color: #dbeafe;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .command-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .command-edit-actions button { min-height: 32px; padding: 0 10px; border-radius: 9px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 850; }
+    .command-edit-actions .run-edited-command { border-color: #fecaca; background: #fee2e2; color: #991b1b; }
+    .command-edit-help { margin-top: 7px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .command-warning { color: #991b1b; font-weight: 850; }
     .step.kind-background { border-left-color: var(--purple); }
     .step.kind-run { border-left-color: var(--blue); }
     .step.unimplemented { opacity: 0.72; }
@@ -899,6 +919,12 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
       return allSteps.filter((step) => matchesSearch(step));
     }
 
+    function commandStorageKey(key) { return `azas.command.${key}`; }
+    function defaultCommand(step) { return step?.resolved_command || step?.command || ""; }
+    function editedCommandFor(step) { return localStorage.getItem(commandStorageKey(step.key)) || defaultCommand(step); }
+    function setEditedCommand(key, command) { localStorage.setItem(commandStorageKey(key), command); }
+    function resetEditedCommand(key) { localStorage.removeItem(commandStorageKey(key)); }
+
     function payload() {
       return {
         robot_host: document.getElementById("robotHost").value.trim(),
@@ -1086,8 +1112,15 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	                  ${step.key === "side_grip" ? `<button class="step-run-now" type="button" data-run-step="${escapeHtml(step.key)}">PR #20 바로 실행</button>` : ""}
 	                </div>
 	                <details class="command">
-                  <summary>명령 보기</summary>
+                  <summary>명령 보기/편집</summary>
                   <code>${escapeHtml(cmd)}</code>
+                  <div class="command-edit-help">아래 명령어는 편집 가능합니다. 수정 내용은 이 브라우저에 저장되며, “편집 명령 실행”을 누를 때만 사용됩니다. <span class="command-warning">실제모션 단계는 수정 명령도 로봇을 움직일 수 있습니다.</span></div>
+                  <textarea class="command-editor" data-command-editor="${escapeHtml(step.key)}" spellcheck="false">${escapeHtml(editedCommandFor(step))}</textarea>
+                  <div class="command-edit-actions">
+                    <button class="save-edited-command" type="button" data-save-command="${escapeHtml(step.key)}">편집 저장</button>
+                    <button class="reset-edited-command" type="button" data-reset-command="${escapeHtml(step.key)}">기본값 복원</button>
+                    <button class="run-edited-command" type="button" data-run-edited-command="${escapeHtml(step.key)}">편집 명령 실행</button>
+                  </div>
                 </details>
               </div>
             </label>
@@ -1198,6 +1231,36 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	      }
 	    }
 	
+	    async function runEditedCommand(key) {
+	      const step = stepByKey(key);
+	      const editor = document.querySelector(`[data-command-editor="${CSS.escape(key)}"]`);
+	      const command = (editor?.value || "").trim();
+	      if (!step || !command) { log.textContent = "실행할 편집 명령이 없습니다."; focusLog(); return; }
+	      setEditedCommand(key, command);
+	      const itemId = `edited-${key}-${Date.now()}`;
+	      resetResultBadges();
+	      isRunning = true;
+	      setStepStatus(key, "running", itemId);
+	      log.textContent = `편집 명령 실행 중: ${step.label}`;
+	      focusLog();
+	      try {
+	        const body = payload();
+	        body.key = key;
+	        body.command = command;
+	        const res = await fetch("/api/run_custom", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+	        const data = await res.json();
+	        const results = Array.isArray(data.results) && data.results.length ? data.results : [{key, status: "failed", output: data.error ? `서버 오류: ${data.error}` : `결과 없음: ${JSON.stringify(data)}`}];
+	        for (const returned of results) setStepStatus(returned.key || key, returned.status, returned.key === key ? itemId : "");
+	        log.textContent = JSON.stringify({edited_command_for: key, results}, null, 2);
+	      } catch (err) {
+	        setStepStatus(key, "failed", itemId);
+	        log.textContent = String(err);
+	      } finally {
+	        isRunning = false;
+	        renderFlow();
+	      }
+	    }
+
 	    function selectedStepKeys() {
 	      compactSelectionQueue();
 	      return selectedQueue.map((item) => item.key);
@@ -1276,6 +1339,32 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	        runSingleStepNow(runKey);
 	        return;
 	      }
+	      const saveKey = event.target.closest?.("[data-save-command]")?.dataset.saveCommand;
+	      if (saveKey) {
+	        event.preventDefault(); event.stopPropagation();
+	        const editor = document.querySelector(`[data-command-editor="${CSS.escape(saveKey)}"]`);
+	        setEditedCommand(saveKey, editor?.value || "");
+	        log.textContent = `${stepByKey(saveKey)?.label || saveKey} 편집 명령을 저장했습니다.`;
+	        focusLog();
+	        return;
+	      }
+	      const resetKey = event.target.closest?.("[data-reset-command]")?.dataset.resetCommand;
+	      if (resetKey) {
+	        event.preventDefault(); event.stopPropagation();
+	        resetEditedCommand(resetKey);
+	        const step = stepByKey(resetKey);
+	        const editor = document.querySelector(`[data-command-editor="${CSS.escape(resetKey)}"]`);
+	        if (editor) editor.value = defaultCommand(step);
+	        log.textContent = `${step?.label || resetKey} 명령을 기본값으로 복원했습니다.`;
+	        focusLog();
+	        return;
+	      }
+	      const editedRunKey = event.target.closest?.("[data-run-edited-command]")?.dataset.runEditedCommand;
+	      if (editedRunKey) {
+	        event.preventDefault(); event.stopPropagation();
+	        runEditedCommand(editedRunKey);
+	        return;
+	      }
 	      const addKey = event.target?.dataset?.addStep;
 	      if (addKey) {
 	        event.preventDefault();
@@ -1342,6 +1431,12 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 		      flowEl.classList.remove("drop-empty");
 		      updateSelectedCount();
 		    });
+    stepsEl.addEventListener("input", (event) => {
+      const editor = event.target.closest?.("[data-command-editor]");
+      if (!editor) return;
+      setEditedCommand(editor.dataset.commandEditor, editor.value);
+    });
+
     document.getElementById("search").addEventListener("input", renderSteps);
     document.getElementById("refresh").addEventListener("click", loadSteps);
     document.getElementById("refreshCamera").addEventListener("click", refreshCameraPreview);
