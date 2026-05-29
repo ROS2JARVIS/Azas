@@ -1576,6 +1576,8 @@ class YoloCupPickNode(Node):
     def pick_and_place(self, base_xyz):
         if self.grasp_mode == "side":
             task_ok = self.pick_and_place_side(base_xyz)
+            if task_ok:
+                return True
         else:
             task_ok = self.pick_and_place_top(base_xyz)
 
@@ -1696,50 +1698,12 @@ class YoloCupPickNode(Node):
                 "side_move_to_initial_center_before_close is disabled at runtime "
                 "because moving to the cup center before close can push the cup."
             )
-        close_xy = plan.guarded_grasp_xy.copy()
-        active_lift_z = max(active_pre_z + self.approach_offset, plan.lift_z)
-        active_place_z = max(active_pre_z, self.min_motion_z)
-        active_place_approach_z = max(active_place_z + self.approach_offset, self.safe_z)
 
         log.info("close gripper for guarded side grasp")
         self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
         time.sleep(1.0)
-
-        move_steps = [
-            (
-                "lift cup",
-                make_pose(close_xy[0], close_xy[1], active_lift_z, plan.orientation),
-                self.side_final_approach_params(),
-            ),
-            (
-                "move above syrup pump front",
-                make_pose(self.place_x, self.place_y, active_place_approach_z, plan.orientation),
-                self.ompl_params,
-            ),
-            (
-                "place cup",
-                make_pose(self.place_x, self.place_y, active_place_z, plan.orientation),
-                self.pilz_params,
-            ),
-        ]
-        for label, pose, params in move_steps:
-            log.info(label)
-            if not self.plan_and_execute(pose_goal=pose, params=params):
-                return False
-
-        log.info("open gripper")
-        self.open_gripper_max(wait=True)
-
-        log.info("retract")
-        return self.plan_and_execute(
-            pose_goal=make_pose(
-                self.place_x,
-                self.place_y,
-                plan.place_approach_z,
-                plan.orientation,
-            ),
-            params=self.pilz_params,
-        )
+        log.info("side grasp complete; holding cup for downstream rule-based task")
+        return True
 
     def pick_and_place_top(self, base_xyz):
         log = self.get_logger()
@@ -1860,7 +1824,10 @@ class YoloCupPickNode(Node):
                     )
                 self.last_status = "pick failed"
         finally:
-            if self.return_to_camera_home_after_attempt:
+            if (
+                self.return_to_camera_home_after_attempt
+                and not (task_ok and self.grasp_mode == "side")
+            ):
                 log.info("return to camera home after pick attempt")
                 if self.move_camera_home():
                     if task_ok:
