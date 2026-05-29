@@ -79,7 +79,7 @@ def _random_recipe_decision(utterance: str, normalized: str) -> RecipeDecision:
     dispenser_ids = RECIPE_DISPENSERS[recipe_id]
     confirmation = (
         f"오늘 기분에는 {_recipe_name(recipe_id)}를 추천합니다. "
-        f"사용 디스펜서: {', '.join(dispenser_ids)}. 진행할까요?"
+        f"진행할까요?"
     )
     return RecipeDecision(True, utterance, normalized, "make_cocktail", recipe_id, dispenser_ids, confirmation)
 
@@ -121,5 +121,5 @@ def parse_recipe_command(text: str) -> RecipeDecision:
         dispenser_ids = RECIPE_DISPENSERS.get(recipe_id, ())
 
     dispenser_text = ", ".join(dispenser_ids) if dispenser_ids else "configured recipe dispensers"
-    confirmation = f"{_recipe_name(recipe_id)} 요청을 인식했습니다. 사용 디스펜서: {dispenser_text}. 진행할까요?"
+    confirmation = f"{_recipe_name(recipe_id)} 요청을 인식했습니다. 진행할까요?"
     return RecipeDecision(True, utterance, normalized, "make_cocktail", recipe_id, dispenser_ids, confirmation)

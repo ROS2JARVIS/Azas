@@ -1,7 +1,7 @@
 from azas_voice.llm_recipe_mapper_node import _sanitize_llm_decision
 
 
-def test_sanitize_llm_decision_accepts_fixed_dispenser_numbers():
+def test_sanitize_llm_decision_converts_dispenser_numbers_to_colors():
     decision = _sanitize_llm_decision(
         "2번 4번으로 만들어줘",
         {
@@ -14,10 +14,10 @@ def test_sanitize_llm_decision_accepts_fixed_dispenser_numbers():
 
     assert decision.valid
     assert decision.intent == "make_cocktail"
-    assert decision.dispenser_ids == ("2", "4")
+    assert decision.dispenser_ids == ("yellow", "blue")
 
 
-def test_sanitize_llm_decision_converts_color_aliases_to_numbers():
+def test_sanitize_llm_decision_accepts_color_aliases():
     decision = _sanitize_llm_decision(
         "노란색 파란색으로 만들어줘",
         {
@@ -29,7 +29,7 @@ def test_sanitize_llm_decision_converts_color_aliases_to_numbers():
     )
 
     assert decision.valid
-    assert decision.dispenser_ids == ("1", "3")
+    assert decision.dispenser_ids == ("yellow", "blue")
 
 
 def test_sanitize_llm_decision_rejects_coordinate_like_output():
