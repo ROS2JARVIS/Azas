@@ -25,6 +25,7 @@ setup(
             "llm_recipe_mapper_node = azas_voice.llm_recipe_mapper_node:main",
             "recipe_mapper_node = azas_voice.recipe_mapper_node:main",
             "stt_node = azas_voice.stt_node:main",
+            "tts_node = azas_voice.tts_node:main",
             "stt_pick_and_place_legacy = azas_voice.stt_pick_and_place_legacy:main",
             "stt_robot_control_legacy = azas_voice.stt_robot_control_legacy:main",
         ],
