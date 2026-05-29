@@ -299,9 +299,11 @@ AUXILIARY_STACK_PATTERNS = (
     "rg2_gripper_node",
     "yolo_perception.launch.py",
     "azas_voice.launch.py",
+    "rqt_image_view",
     "run_rule_based_shake_real.sh",
     "run_cup_target_then_shake_rviz.sh",
     "cup_target_then_shake_rviz.launch.py",
+    "run_rule_based_dispenser_then_shake_sim.sh",
     "tumbler_shake_sequence.launch.py",
     "tumbler_shake_sequence_node",
     "shake_visualizer_node",
@@ -323,6 +325,19 @@ SIDE_GRIP_STACK_PATTERNS = (
     "yolo_cup_pick_node_legacy.launch.py",
     "yolo_cup_pick_legacy_node",
     "joint_state_relay_legacy",
+)
+
+RUN_STEP_STACK_PATTERNS = (
+    "dispenser_press_node",
+    "direct_movej_joints.py",
+    "rg2_full_open_verify.sh",
+    "move_to_measured_dispenser_front_hold.py",
+    "pick_from_measured_dispenser_front_hold.py",
+    "run_measured_dispenser_recipe_sequence.py",
+    "place_side_grip_cup_in_holder.py",
+    "pick_from_cup_holder_side_grip.py",
+    "ros2 service call /dsr01/",
+    "ros2 control list_controllers",
 )
 
 PANEL_PROTECTED_PATTERNS = (
@@ -525,6 +540,46 @@ def cleanup_side_grip_stack(*, grace_sec: float = 2.0) -> list[str]:
         events.extend(terminate_process_tree(old, label="stored side_grip", grace_sec=grace_sec))
     events.extend(cleanup_matching_processes(SIDE_GRIP_STACK_PATTERNS, label="side_grip cleanup", grace_sec=grace_sec))
     return events
+
+
+def cleanup_run_step_stack(*, grace_sec: float = 3.0) -> list[str]:
+    """Best-effort cleanup of stale one-shot motion/ROS CLI commands.
+
+    These commands are normally launched as blocking panel steps.  If a timeout,
+    browser refresh, or operator interrupt leaves a child process alive, the next
+    panel run can observe old services/actions/nodes and behave inconsistently.
+    The explicit cleanup button therefore treats these as robot-stack residue.
+    """
+    return cleanup_matching_processes(
+        RUN_STEP_STACK_PATTERNS,
+        label="run-step cleanup",
+        grace_sec=grace_sec,
+    )
+
+
+def stop_ros2_daemon() -> list[str]:
+    """Stop the ROS 2 CLI daemon so cleanup starts the next run from a fresh graph cache."""
+    env = os.environ.copy()
+    env["ROS_DOMAIN_ID"] = str(env.get("AZAS_PANEL_ROS_DOMAIN_ID") or env.get("ROS_DOMAIN_ID") or DEFAULT_ROS_DOMAIN_ID)
+    env["ROS_LOCALHOST_ONLY"] = str(env.get("ROS_LOCALHOST_ONLY") or "0")
+    try:
+        completed = subprocess.run(
+            ["bash", "-lc", f"{ROS_SETUP} && ros2 daemon stop"],
+            cwd=str(ROOT),
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=8.0,
+        )
+    except subprocess.TimeoutExpired:
+        return ["ros2 daemon stop: timed out"]
+    except Exception as exc:  # pragma: no cover - operator diagnostics only.
+        return [f"ros2 daemon stop: failed: {exc}"]
+
+    output = " ".join(part.strip() for part in (completed.stdout, completed.stderr) if part.strip())
+    if completed.returncode == 0:
+        return [f"ros2 daemon stop: ok{': ' + output if output else ''}"]
+    return [f"ros2 daemon stop: rc={completed.returncode}{': ' + output if output else ''}"]
 
 
 def find_existing_doosan_launch() -> tuple[int | None, str]:
@@ -1307,7 +1362,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M"] = str(
         payload.get("cup_holder_place_final_z_offset_m")
         or env.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
-        or "0.0"
+        or "-0.020"
     )
     # Operational-only offset for the pre-shake cup-holder re-grasp.
     # This intentionally does not modify calibration.yaml and is separate from the
@@ -1316,7 +1371,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["CUP_HOLDER_PICK_Z_OFFSET_M"] = str(
         payload.get("cup_holder_pick_z_offset_m")
         or env.get("CUP_HOLDER_PICK_Z_OFFSET_M")
-        or "-0.010"
+        or "-0.020"
     )
     env["RT_HOST"] = str(
         payload.get("rt_host")
@@ -1601,7 +1656,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         place_final_z_offset_m = str(
             payload.get("cup_holder_place_final_z_offset_m")
             or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
-            or "0.0"
+            or "-0.020"
         ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/place_side_grip_cup_in_holder.py "
@@ -1621,7 +1676,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         pick_z_offset_m = str(
             payload.get("cup_holder_pick_z_offset_m")
             or os.environ.get("CUP_HOLDER_PICK_Z_OFFSET_M")
-            or "-0.010"
+            or "-0.020"
         ).strip()
         holder_pick = (
             "python3 tools/run/pick_from_cup_holder_side_grip.py "
@@ -2025,6 +2080,9 @@ def cleanup_all_processes() -> dict[str, Any]:
     """Explicit operator cleanup button: stop tracked jobs plus stale robot/panel helpers."""
     stopped = stop_all()
     events: list[str] = []
+    events.extend(cleanup_run_step_stack(grace_sec=3.0))
+    events.extend(cleanup_side_grip_stack(grace_sec=3.0))
+    events.extend(cleanup_camera_stack(grace_sec=3.0))
     events.extend(cleanup_doosan_stack(grace_sec=3.0))
     events.extend(
         cleanup_matching_processes(
@@ -2033,6 +2091,7 @@ def cleanup_all_processes() -> dict[str, Any]:
             grace_sec=3.0,
         )
     )
+    events.extend(stop_ros2_daemon())
     return {"stopped": stopped.get("stopped", []), "cleanup": events}
 
 
