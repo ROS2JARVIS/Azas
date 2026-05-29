@@ -40,9 +40,9 @@ def build_cocktail_steps(dispenser_ids: list[str]) -> list[TaskStep]:
     steps = [
         TaskStep(
             "VERIFY_RECIPE",
-            "accept symbolic recipe and ordered dispenser IDs",
+            "accept symbolic recipe and ordered dispenser color targets",
             required_inputs=("/azas/voice/recipe_decision",),
-            produces=("ordered_dispenser_ids",),
+            produces=("ordered_dispenser_colors",),
         ),
         TaskStep(
             "VERIFY_CUP_AND_LID_DETECTION",
@@ -52,13 +52,13 @@ def build_cocktail_steps(dispenser_ids: list[str]) -> list[TaskStep]:
         ),
         TaskStep(
             "VERIFY_CALIBRATION",
-            "require measured camera frame, base frame, TCP, cup offset, dispenser ID pose mapping, and safety bounds",
+                "require measured camera frame, base frame, TCP, cup offset, dispenser color pose mapping, and safety bounds",
             required_inputs=(
                 "calibration.yaml",
                 "safety.yaml",
                 "base_link<-camera_frame TF",
                 "tcp_to_cup_mouth_m",
-                "dispenser_outlets.1..4 outlet_pose and press_pose",
+                "dispenser_outlets.red|yellow|green|blue outlet_pose and press_pose",
             ),
             produces=("calibration_ready",),
             command="tools/checks/check_real_motion_config.sh",
