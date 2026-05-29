@@ -192,6 +192,18 @@ def parse_args() -> argparse.Namespace:
         help="Base-frame Z offset added to the measured link_6 target; use only for derived staging poses.",
     )
     parser.add_argument("--precheck-ikin", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--ikin-timeout-sec",
+        type=float,
+        default=20.0,
+        help="service response timeout for each /motion/ikin precheck attempt",
+    )
+    parser.add_argument(
+        "--ikin-retries",
+        type=int,
+        default=2,
+        help="number of /motion/ikin precheck attempts before failing closed",
+    )
     parser.add_argument("--verify-target", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--moveit-planning-guard",
@@ -689,6 +701,10 @@ def main() -> int:
         f"{args.timeout_sec:.6f}",
         "--wait-service-sec",
         f"{args.wait_service_sec:.6f}",
+        "--ikin-timeout-sec",
+        f"{args.ikin_timeout_sec:.6f}",
+        "--ikin-retries",
+        str(max(int(args.ikin_retries), 1)),
         "--target-tolerance-mm",
         f"{args.target_tolerance_mm:.6f}",
         "--verify-timeout-sec",

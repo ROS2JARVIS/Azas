@@ -167,7 +167,7 @@ class YoloCupPickNode(Node):
 
         self.declare_parameter(
             "model_path",
-            "/home/ssu/Azas/data/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
+            "/home/ssu/Azas/local_models/best.pt",
         )
         self.declare_parameter("conf", 0.35)
         self.declare_parameter("imgsz", 640)
@@ -1115,11 +1115,11 @@ class YoloCupPickNode(Node):
                 make_pose(stage_xy[0], stage_xy[1], lift_z, side_ori),
             ),
             (
-                "lower at outside side-staging pose",
-                make_pose(stage_xy[0], stage_xy[1], pre_z, side_ori),
+                "move above side pre-grasp",
+                make_pose(pre_xy[0], pre_xy[1], lift_z, side_ori),
             ),
             (
-                "move horizontally to side pre-grasp",
+                "lower at side pre-grasp",
                 make_pose(pre_xy[0], pre_xy[1], pre_z, side_ori),
             ),
         ]

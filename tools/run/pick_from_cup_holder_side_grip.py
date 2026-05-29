@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Place a side-gripped cup into the measured cup holder.
+"""Pick a closed cup back up from the measured cup holder using side grip.
 
-The taught poses come from calibration.yaml and are active-TCP targets measured
-while holding the real cup. The sequence is intentionally simple and gated:
-pre-place -> final place -> RG2 full open -> retreat.
+This is the reverse of place_side_grip_cup_in_holder.py for the measured
+cup_holder.side_grip_place poses in calibration.yaml. It does not invent cup
+coordinates: it reuses the measured active-TCP holder place pose.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ import yaml
 ROOT = Path("/home/ssu/Azas")
 DEFAULT_CONFIG = ROOT / "src" / "azas_bringup" / "config" / "calibration.yaml"
 DIRECT_MOVEL = ROOT / "tools" / "run" / "direct_movel_xyz.py"
-RG2_OPEN = ROOT / "tools" / "run" / "rg2_full_open_verify.sh"
-CONFIRM_PHRASE = "ENABLE_CUP_HOLDER_PLACE"
+RG2_SET_WIDTH = ROOT / "tools" / "run" / "rg2_set_width_verify.py"
+CONFIRM_PHRASE = "ENABLE_CUP_HOLDER_PICK"
 DIRECT_CONFIRM_PHRASE = "ENABLE_DIRECT_MOVEL"
 
 
@@ -68,15 +68,6 @@ def load_sequence(config_path: Path) -> tuple[TargetPose, TargetPose, TargetPose
     place_final = load_target(block, "place_final")
     retreat = load_target(block, "retreat")
     approach_lift_m = float(block.get("approach_lift_m", 0.0))
-
-    if pre_place.xyz_m[2] <= place_final.xyz_m[2]:
-        raise ValueError("pre_place z must be above place_final z")
-    if approach_lift_m > 0.0 and abs((pre_place.xyz_m[2] - place_final.xyz_m[2]) - approach_lift_m) > 0.015:
-        print(
-            "[WARN] pre_place/place_final z gap differs from approach_lift_m: "
-            f"gap={pre_place.xyz_m[2] - place_final.xyz_m[2]:.3f}m "
-            f"approach_lift_m={approach_lift_m:.3f}m"
-        )
     return pre_place, place_final, retreat, approach_lift_m
 
 
@@ -128,6 +119,10 @@ def run_movel(
         f"{args.timeout_sec:.6f}",
         "--wait-service-sec",
         f"{args.wait_service_sec:.6f}",
+        "--ikin-timeout-sec",
+        f"{args.ikin_timeout_sec:.6f}",
+        "--ikin-retries",
+        str(max(int(args.ikin_retries), 1)),
         "--verify-timeout-sec",
         f"{args.verify_timeout_sec:.6f}",
         "--target-tolerance-mm",
@@ -153,44 +148,54 @@ def run_movel(
     return subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
 
 
-def run_gripper_open(args: argparse.Namespace) -> int:
-    print("[Azas] RG2 full open before retreat")
+def run_gripper(args: argparse.Namespace, *, command: str, width_m: float, force_n: float) -> int:
+    print(f"[Azas] RG2 command={command} width_m={width_m:.3f} force_n={force_n:.1f}")
     if not args.execute:
-        print("[DRY-RUN] --execute not set; gripper open not sent.")
+        print("[DRY-RUN] --execute not set; gripper command not sent.")
         return 0
 
     env = os.environ.copy()
     env["RG2_SET_WIDTH_SERVICE"] = args.gripper_service
-    env["RG2_FULL_OPEN_WIDTH_M"] = f"{args.gripper_open_width_m:.6f}"
-    env["RG2_OPEN_FORCE_N"] = f"{args.gripper_open_force_n:.6f}"
-    env["RG2_OPEN_TIMEOUT_SEC"] = f"{args.gripper_timeout_sec:.3f}"
-    return subprocess.run([str(RG2_OPEN)], cwd=str(ROOT), env=env, check=False).returncode
+    cmd = [
+        sys.executable,
+        str(RG2_SET_WIDTH),
+        "--service",
+        args.gripper_service,
+        "--command",
+        command,
+        "--width-m",
+        f"{width_m:.6f}",
+        "--force-n",
+        f"{force_n:.6f}",
+        "--timeout-sec",
+        f"{args.gripper_timeout_sec:.3f}",
+    ]
+    return subprocess.run(cmd, cwd=str(ROOT), env=env, check=False).returncode
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Move held cup to measured cup-holder place pose, open RG2, then retreat."
+        description="Open RG2, approach measured cup-holder side-grip pose, grasp, then lift."
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--service-prefix", default="dsr01")
-    parser.add_argument("--approach-velocity", type=float, default=15.0)
-    parser.add_argument("--approach-acceleration", type=float, default=20.0)
-    parser.add_argument("--place-velocity", type=float, default=6.0)
-    parser.add_argument("--place-acceleration", type=float, default=10.0)
-    parser.add_argument("--retreat-velocity", type=float, default=12.0)
-    parser.add_argument("--retreat-acceleration", type=float, default=16.0)
+    parser.add_argument("--approach-velocity", type=float, default=12.0)
+    parser.add_argument("--approach-acceleration", type=float, default=16.0)
+    parser.add_argument("--descend-velocity", type=float, default=6.0)
+    parser.add_argument("--descend-acceleration", type=float, default=10.0)
+    parser.add_argument("--lift-velocity", type=float, default=12.0)
+    parser.add_argument("--lift-acceleration", type=float, default=16.0)
     parser.add_argument(
         "--place-final-z-offset-m",
         type=float,
-        default=-0.020,
-        help=(
-            "Measured adjustment added only to place_final Z. Use a negative value "
-            "to lower the cup into the holder without rewriting calibration.yaml."
-        ),
+        default=0.0,
+        help="Same measured adjustment used by place_cup_holder; added only to place_final Z.",
     )
     parser.add_argument("--timeout-sec", type=float, default=90.0)
     parser.add_argument("--wait-service-sec", type=float, default=8.0)
-    parser.add_argument("--verify-timeout-sec", type=float, default=35.0)
+    parser.add_argument("--ikin-timeout-sec", type=float, default=20.0)
+    parser.add_argument("--ikin-retries", type=int, default=2)
+    parser.add_argument("--verify-timeout-sec", type=float, default=45.0)
     parser.add_argument("--target-tolerance-mm", type=float, default=12.0)
     parser.add_argument("--x-min", type=float, default=0.35)
     parser.add_argument("--x-max", type=float, default=0.50)
@@ -200,8 +205,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--z-max", type=float, default=0.28)
     parser.add_argument("--gripper-service", default="/jarvis/rg2/set_width")
     parser.add_argument("--gripper-open-width-m", type=float, default=0.110)
-    parser.add_argument("--gripper-open-force-n", type=float, default=12.0)
+    parser.add_argument("--gripper-grasp-width-m", type=float, default=0.068)
+    parser.add_argument("--gripper-force-n", type=float, default=35.0)
     parser.add_argument("--gripper-timeout-sec", type=float, default=12.0)
+    parser.add_argument("--post-grasp-settle-sec", type=float, default=0.8)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
         "--confirm",
@@ -228,43 +235,62 @@ def main() -> int:
         print(f"[FAIL] {exc}")
         return 2
 
-    print("[Azas] Cup holder side-grip place sequence")
+    print("[Azas] Cup holder side-grip pick sequence")
     print(f"[Azas] config={args.config}")
     print(f"[Azas] service_prefix={args.service_prefix}")
+    print("[Azas] source=cup_holder.side_grip_place measured poses; no operator/LLM-generated cup coordinates")
     print(f"[Azas] approach_lift_m={approach_lift_m:.3f}")
     print(f"[Azas] place_final_z_offset_m={args.place_final_z_offset_m:.4f}")
-    print_target(pre_place)
-    print_target(place_final)
     print_target(retreat)
+    print_target(place_final)
+    print_target(pre_place)
     if not args.execute:
         print("[DRY-RUN] --execute not set; no robot or gripper command will be sent.")
 
-    steps = [
-        (pre_place, args.approach_velocity, args.approach_acceleration),
-        (place_final, args.place_velocity, args.place_acceleration),
-    ]
-    for target, velocity, acceleration in steps:
-        rc = run_movel(target, args=args, velocity=velocity, acceleration=acceleration)
-        if rc != 0:
-            print(f"[FAIL] {target.label} MoveLine failed; aborting sequence.")
-            return rc
-
-    rc = run_gripper_open(args)
-    if rc != 0:
-        print("[FAIL] gripper open failed; retreat skipped to avoid dragging the cup.")
-        return rc
-
-    rc = run_movel(
-        retreat,
-        args=args,
-        velocity=args.retreat_velocity,
-        acceleration=args.retreat_acceleration,
+    rc = run_gripper(
+        args,
+        command="open",
+        width_m=args.gripper_open_width_m,
+        force_n=args.gripper_force_n,
     )
     if rc != 0:
-        print("[FAIL] retreat MoveLine failed.")
+        print("[FAIL] gripper open failed; holder approach skipped.")
         return rc
 
-    print("[PASS] cup holder side-grip place sequence completed")
+    for target, velocity, acceleration in [
+        (retreat, args.approach_velocity, args.approach_acceleration),
+        (place_final, args.descend_velocity, args.descend_acceleration),
+    ]:
+        rc = run_movel(target, args=args, velocity=velocity, acceleration=acceleration)
+        if rc != 0:
+            print(f"[FAIL] {target.label} MoveLine failed; aborting holder pick.")
+            return rc
+
+    rc = run_gripper(
+        args,
+        command="set_width",
+        width_m=args.gripper_grasp_width_m,
+        force_n=args.gripper_force_n,
+    )
+    if rc != 0:
+        print("[FAIL] gripper grasp failed; lift skipped to avoid dragging an unsecured cup.")
+        return rc
+    if args.post_grasp_settle_sec > 0:
+        print(f"[Azas] post-grasp settle before lift: {args.post_grasp_settle_sec:.2f}s")
+        import time
+        time.sleep(args.post_grasp_settle_sec)
+
+    rc = run_movel(
+        pre_place,
+        args=args,
+        velocity=args.lift_velocity,
+        acceleration=args.lift_acceleration,
+    )
+    if rc != 0:
+        print("[FAIL] post-grasp holder lift failed.")
+        return rc
+
+    print("[PASS] cup holder side-grip pick sequence completed")
     return 0
 
 
