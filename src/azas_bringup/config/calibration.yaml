@@ -25,6 +25,21 @@ outlet:
   pose_rpy_rad: null        # 확인 필요
   clearance_m: null         # 확인 필요: rim/outlet 안전 간격
 
+table:
+  parent_frame: base_link
+  source: operator_confirmed_base_link_bounds
+  status: measured_confirmed
+  surface_z_m: 0.000
+  thickness_m: 0.040
+  center_xy_m: [0.450, 0.000]
+  size_xy_m: [1.200, 1.000]
+  bounds_xy_m:
+    x_min: -0.150
+    x_max: 1.050
+    y_min: -0.500
+    y_max: 0.500
+  notes: "Derived from confirmed table size/center in base_link."
+
 # Fixed dispenser-number to measured-pose mapping.
 # STT/LLM may select only these IDs. Coordinates must be filled only from
 # measured teaching/calibration data in base_link; never from STT, LLM, or VLA.
