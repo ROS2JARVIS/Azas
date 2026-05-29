@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 try:
     import psutil
@@ -252,7 +252,7 @@ STEPS = [
         "tools/run/run_measured_dispenser_recipe_sequence.py --dispenser-ids 1,2,3,4",
         True,
         True,
-        "설정의 RECIPE_DISPENSER_IDS 순서대로 실행. 컵 이동/놓기와 다시 side-grip 집기는 통합 ROS 클라이언트로 처리해 반복 명령 실행 시간을 줄임",
+        "STT/레시피에서 받은 색상 또는 ID 순서(RECIPE_DISPENSER_IDS: red,yellow,blue,green 또는 1,3,4,2)대로 move→press→pick 반복 실행",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
     Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
@@ -265,7 +265,15 @@ STEPS = [
         True,
         "실제모션 후보: 측정된 side_grip_place pre_place→place_final→RG2 full-open→retreat",
     ),
-    Step("attach_lid", "뚜껑을 컵에 끼우기", "blocked", "", False, True, "뚜껑 체결 동작 미구현"),
+    Step(
+        "attach_lid",
+        "컵홀더 컵 뚜껑 닫기 / 잡은 뚜껑 joint6 twist",
+        "run",
+        "tools/run/attach_lid_on_cup_holder.py",
+        True,
+        True,
+        "전제: 뚜껑은 이미 그리퍼가 잡고 있고 컵은 컵홀더에 있음. 컵 입구 접촉/가압 위치에서 joint_6 회전으로 뚜껑을 닫은 뒤 RG2 open 및 후퇴",
+    ),
     Step(
         "shake_rviz_preview",
         "쉐이킹 RViz 미리보기 / 무모션",
@@ -282,6 +290,7 @@ STEPS = [
 
 processes: dict[str, subprocess.Popen[str]] = {}
 process_logs: dict[str, Path] = {}
+process_log_started_at: dict[str, float] = {}
 
 DOOSAN_STACK_PATTERNS = (
     "run_doosan_real_no_motion_m0609.sh",
@@ -386,6 +395,29 @@ def background_log_path(step_key: str) -> Path:
     BACKGROUND_LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     return BACKGROUND_LOG_DIR / f"{step_key}-{stamp}.log"
+
+
+def log_tail_response(step_key: str, *, min_started_at: float = 0.0, max_chars: int = 12000) -> dict[str, Any]:
+    proc = processes.get(step_key)
+    path = process_logs.get(step_key)
+    started_at = process_log_started_at.get(step_key, 0.0)
+    running = bool(proc and proc.poll() is None)
+    if min_started_at and started_at and started_at < min_started_at:
+        return {
+            "key": step_key,
+            "running": running,
+            "stale": True,
+            "started_at": started_at,
+            "output": "",
+        }
+    return {
+        "key": step_key,
+        "running": running,
+        "returncode": None if proc is None or running else proc.returncode,
+        "started_at": started_at,
+        "log_path": str(path) if path else "",
+        "output": tail_file(path, max_chars=max_chars),
+    }
 
 
 def terminate_process_tree(proc: subprocess.Popen[str], *, label: str, grace_sec: float = 3.0) -> list[str]:
@@ -899,8 +931,8 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/tcp/set_current_tcp",
             f"/{clean}/aux_control/get_current_posx",
         ]
-    if step.key == "place_cup_holder":
-        return [
+    if step.key in {"place_cup_holder", "attach_lid"}:
+        services = [
             "/jarvis/rg2/set_width",
             f"/{clean}/motion/move_line",
             f"/{clean}/motion/ikin",
@@ -908,6 +940,13 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/system/get_robot_state",
             f"/{clean}/aux_control/get_current_posx",
         ]
+        if step.key == "attach_lid":
+            services.extend([
+                f"/{clean}/motion/move_joint",
+                f"/{clean}/motion/move_wait",
+                f"/{clean}/aux_control/get_current_posj",
+            ])
+        return services
     if step.key == "shake_closed_cup":
         return [
             "/jarvis/rg2/set_width",
@@ -938,7 +977,7 @@ def required_service_wait_timeout(step: Step) -> float:
         or step.key.startswith("press_dispenser_")
         or step.key.startswith("pick_from_dispenser_")
         or step.key == "run_dispenser_recipe_sequence"
-        or step.key == "place_cup_holder"
+        or step.key in {"place_cup_holder", "attach_lid"}
     ):
         return 35.0
     if step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}:
@@ -1273,6 +1312,7 @@ def ensure_gripper_services(step: Step, payload: dict[str, Any], service_prefix:
         log_handle.close()
         processes["connect_gripper"] = proc
         process_logs["connect_gripper"] = log_path
+        process_log_started_at["connect_gripper"] = time.time()
         events.append(f"auto-started connect_gripper pid={proc.pid} log={log_path}")
     else:
         proc = old
@@ -1297,7 +1337,7 @@ def requires_doosan_motion(step: Step) -> bool:
         or step.key.startswith("press_dispenser_")
         or step.key.startswith("pick_from_dispenser_")
         or step.key == "run_dispenser_recipe_sequence"
-        or step.key == "place_cup_holder"
+        or step.key in {"place_cup_holder", "attach_lid"}
     )
 
 
@@ -1478,7 +1518,7 @@ def run_timeout_for_step(step: Step) -> float:
         return 900.0
     if step.key == "side_grip":
         return 900.0
-    if step.key == "place_cup_holder":
+    if step.key in {"place_cup_holder", "attach_lid"}:
         return 240.0
     return 180.0
 
@@ -1523,6 +1563,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         or "192.168.137.50"
     )
     env["DOOSAN_NO_MOTION_CONFIRM"] = "CONNECT_DOOSAN_NO_MOTION"
+    env["PYTHONUNBUFFERED"] = str(env.get("PYTHONUNBUFFERED") or "1")
     return env
 
 
@@ -1885,6 +1926,21 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f" && {tumbler_scene_once('detach', object_id='carried_tumbler')}"
             f" && {tumbler_scene_once('add_holder', object_id='tumbler_in_holder')}"
         )
+    if step.key == "attach_lid":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/attach_lid_on_cup_holder.py "
+            f"--service-prefix {service_prefix} "
+            "--config /home/ssu/Azas/src/azas_bringup/config/calibration.yaml "
+            "--allow-estimated-holder-top "
+            "--pre-attach-lift-m 0.060 --contact-z-offset-m 0.040 --press-z-offset-m 0.025 "
+            "--approach-velocity 10.0 --approach-acceleration 14.0 "
+            "--press-velocity 4.0 --press-acceleration 8.0 "
+            "--retreat-velocity 10.0 --retreat-acceleration 14.0 "
+            "--twist-j6-deg 45.0 --twist-velocity 8.0 --twist-acceleration 12.0 "
+            "--return-j6-after-release "
+            "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
+            "--execute --confirm ENABLE_CUP_HOLDER_LID_ATTACH"
+        )
     if step.key == "shake_closed_cup":
         pick_z_offset_m = str(
             payload.get("cup_holder_pick_z_offset_m")
@@ -2164,6 +2220,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         log_handle.close()
         processes[step.key] = proc
         process_logs[step.key] = log_path
+        process_log_started_at[step.key] = time.time()
         if step.key == "connect_robot":
             ready, waited_output = wait_for_motion_services_ready(
                 env["SERVICE_PREFIX"],
@@ -2267,63 +2324,67 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
             "output": output,
         }
 
-    try:
-        completed = subprocess.run(
+    log_path = background_log_path(step.key)
+    timeout_sec = run_timeout_for_step(step)
+    with log_path.open("w", encoding="utf-8", buffering=1) as log_handle:
+        if preflight_output:
+            log_handle.write(f"{preflight_output}\n--- command output ---\n")
+        log_handle.write(f"[Azas panel] command: {cmd}\n\n")
+        proc = subprocess.Popen(
             ["bash", "-lc", cmd],
             cwd=str(ROOT),
             env=env,
-            input="ENABLE_REAL_ROBOT_MOTION\n",
-            stdout=subprocess.PIPE,
+            stdin=subprocess.PIPE,
+            stdout=log_handle,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=run_timeout_for_step(step),
-            check=False,
+            start_new_session=True,
         )
-        output = completed.stdout
-        if preflight_output:
-            output = f"{preflight_output}\n--- command output ---\n{output}"
-        if completed.returncode == 0:
-            failure = run_output_failure(step, output)
+        processes[step.key] = proc
+        process_logs[step.key] = log_path
+        process_log_started_at[step.key] = time.time()
+        if proc.stdin is not None:
+            try:
+                proc.stdin.write("ENABLE_REAL_ROBOT_MOTION\n")
+                proc.stdin.close()
+            except BrokenPipeError:
+                pass
+        deadline = time.monotonic() + timeout_sec
+        while proc.poll() is None:
+            if time.monotonic() > deadline:
+                events = terminate_process_tree(proc, label=step.key, grace_sec=3.0)
+                log_handle.write("\n[TIMEOUT] command exceeded " + f"{timeout_sec:.1f}s\n")
+                for event in events:
+                    log_handle.write(event + "\n")
+                output = tail_file(log_path, max_chars=40000)
+                return {"key": step.key, "status": "timeout", "output": output, "log_path": str(log_path)}
+            time.sleep(0.25)
+
+    output = tail_file(log_path, max_chars=40000)
+    returncode = proc.returncode
+    if returncode == 0:
+        failure = run_output_failure(step, output)
+        if failure is not None:
+            output = f"{output}\n{failure}\n"
+            return {"key": step.key, "status": "failed", "returncode": 1, "output": output, "log_path": str(log_path)}
+        if step.key == "status_check":
+            failure = status_check_failure(output)
             if failure is not None:
                 output = f"{output}\n{failure}\n"
-                return {
-                    "key": step.key,
-                    "status": "failed",
-                    "returncode": 1,
-                    "output": output,
-                }
-            if step.key == "status_check":
-                failure = status_check_failure(output)
-                if failure is not None:
-                    output = f"{output}\n{failure}\n"
-                    return {
-                        "key": step.key,
-                        "status": "failed",
-                        "returncode": 1,
-                        "output": output,
-                    }
-            target_xyz = target_xyz_for_step(step.key)
-            if target_xyz is not None:
-                reached, verify_output = wait_for_xyz_target(env["SERVICE_PREFIX"], target_xyz)
-                output = f"{output}\n--- post-motion verification ---\n{verify_output}\n"
-                if not reached:
-                    return {
-                        "key": step.key,
-                        "status": "failed",
-                        "returncode": 1,
-                        "output": output,
-                    }
-        return {
-            "key": step.key,
-            "status": "passed" if completed.returncode == 0 else "failed",
-            "returncode": completed.returncode,
-            "output": output,
-        }
-    except subprocess.TimeoutExpired as exc:
-        output = text_output(exc.stdout)
-        if preflight_output:
-            output = f"{preflight_output}\n--- command output ---\n{output}"
-        return {"key": step.key, "status": "timeout", "output": output}
+                return {"key": step.key, "status": "failed", "returncode": 1, "output": output, "log_path": str(log_path)}
+        target_xyz = target_xyz_for_step(step.key)
+        if target_xyz is not None:
+            reached, verify_output = wait_for_xyz_target(env["SERVICE_PREFIX"], target_xyz)
+            output = f"{output}\n--- post-motion verification ---\n{verify_output}\n"
+            if not reached:
+                return {"key": step.key, "status": "failed", "returncode": 1, "output": output, "log_path": str(log_path)}
+    return {
+        "key": step.key,
+        "status": "passed" if returncode == 0 else "failed",
+        "returncode": returncode,
+        "output": output,
+        "log_path": str(log_path),
+    }
 
 
 def stop_all() -> dict[str, Any]:
@@ -2364,7 +2425,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
         if path in {"/", "/index.html"}:
             body = HTML_PATH.read_bytes()
             self.send_response(200)
@@ -2391,6 +2453,32 @@ class Handler(BaseHTTPRequestHandler):
                 data.append(item)
             self.send_json(data)
             return
+        if path == "/api/log_tail":
+            query = parse_qs(parsed.query)
+            step_key = str((query.get("step") or [""])[0])
+            if not step_key:
+                self.send_json({"error": "step query parameter is required"}, 400)
+                return
+            known_keys = {step.key for step in STEPS}
+            if step_key not in known_keys:
+                self.send_json({"error": f"unknown step: {step_key}"}, 404)
+                return
+            try:
+                min_started_at = float((query.get("min_started_at") or ["0"])[0] or "0")
+            except ValueError:
+                min_started_at = 0.0
+            try:
+                max_chars = int((query.get("max_chars") or ["12000"])[0] or "12000")
+            except ValueError:
+                max_chars = 12000
+            self.send_json(
+                log_tail_response(
+                    step_key,
+                    min_started_at=min_started_at,
+                    max_chars=max(1000, min(max_chars, 80000)),
+                )
+            )
+            return
         if path == "/api/camera_snapshot.jpg":
             ok, body, error = camera_snapshot_jpeg()
             if not ok:
@@ -2407,6 +2495,23 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if path == "/api/log":
+            params = parse_qs(urlparse(self.path).query)
+            key = (params.get("key") or [""])[0]
+            try:
+                max_chars = int((params.get("max_chars") or ["20000"])[0] or "20000")
+            except ValueError:
+                max_chars = 20000
+            log_path = process_logs.get(key)
+            proc = processes.get(key)
+            running = bool(proc is not None and proc.poll() is None)
+            self.send_json({
+                "key": key,
+                "running": running,
+                "log_path": str(log_path) if log_path else "",
+                "tail": tail_file(log_path, max_chars=max(1000, min(max_chars, 80000))),
+            })
             return
         self.send_json({"error": "not found"}, 404)
 

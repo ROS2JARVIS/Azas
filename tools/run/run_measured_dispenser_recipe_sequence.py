@@ -42,6 +42,7 @@ DISPENSER_TARGETS = {
     "3": "yellow",
     "4": "blue",
 }
+DISPENSER_IDS_BY_COLOR = {color: dispenser_id for dispenser_id, color in DISPENSER_TARGETS.items()}
 
 DR_BASE = 0
 MOVE_MODE_ABSOLUTE = 0
@@ -51,13 +52,32 @@ Pose = tuple[list[float], list[list[float]]]
 
 
 def parse_dispenser_ids(raw: str) -> list[str]:
-    values = [item.strip() for item in raw.replace(";", ",").split(",") if item.strip()]
+    """Parse STT/recipe dispenser order into numeric dispenser IDs.
+
+    The STT/LLM layer may hand off color names such as
+    ``red,yellow,blue,green``.  The motion layer only receives the resulting
+    fixed dispenser IDs and never asks for or generates cup coordinates.
+    """
+    values = [item.strip().lower() for item in raw.replace(";", ",").split(",") if item.strip()]
     if not values:
-        raise ValueError("at least one dispenser id is required")
-    invalid = [value for value in values if value not in DISPENSER_TARGETS]
+        raise ValueError("at least one dispenser id/color is required")
+
+    parsed: list[str] = []
+    invalid: list[str] = []
+    for value in values:
+        if value in DISPENSER_TARGETS:
+            parsed.append(value)
+        elif value in DISPENSER_IDS_BY_COLOR:
+            parsed.append(DISPENSER_IDS_BY_COLOR[value])
+        else:
+            invalid.append(value)
     if invalid:
-        raise ValueError(f"unsupported dispenser id(s): {', '.join(invalid)}; allowed: 1,2,3,4")
-    return values
+        allowed_colors = ",".join(DISPENSER_IDS_BY_COLOR)
+        raise ValueError(
+            f"unsupported dispenser id/color(s): {', '.join(invalid)}; "
+            f"allowed ids: 1,2,3,4; allowed colors: {allowed_colors}"
+        )
+    return parsed
 
 
 def service_name(prefix: str, suffix: str) -> str:
@@ -578,7 +598,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run move/release -> press -> re-grasp for ordered dispenser IDs."
     )
-    parser.add_argument("--dispenser-ids", default="1,2,3,4", help="comma-separated IDs, e.g. 1,3,2")
+    parser.add_argument(
+        "--dispenser-ids",
+        default="1,2,3,4",
+        help="comma-separated dispenser IDs or colors from STT, e.g. 1,3,2 or red,yellow,blue",
+    )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--service-prefix", default="dsr01")
     parser.add_argument("--dispenser-tcp-name", default="GripperDA_v1_jarvis")
@@ -638,7 +662,9 @@ def main() -> int:
         print("[DRY-RUN] --execute not set; sequence plan only, no robot command sent.")
 
     print("[Azas] Measured dispenser recipe sequence")
+    print(f"[Azas] dispenser_order_raw={args.dispenser_ids}")
     print(f"[Azas] dispenser_ids={','.join(dispenser_ids)}")
+    print("[Azas] dispenser_colors=" + ",".join(DISPENSER_TARGETS[item] for item in dispenser_ids))
     print(f"[Azas] service_prefix={args.service_prefix}")
     print(f"[Azas] dispenser_tcp_name={args.dispenser_tcp_name}")
     print("[Azas] source=existing measured front_hold poses and taught dispenser press poses")
