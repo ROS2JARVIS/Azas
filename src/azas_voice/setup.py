@@ -22,6 +22,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
+            "conversation_manager_node = azas_voice.conversation_manager_node:main",
             "llm_recipe_mapper_node = azas_voice.llm_recipe_mapper_node:main",
             "recipe_mapper_node = azas_voice.recipe_mapper_node:main",
             "stt_node = azas_voice.stt_node:main",

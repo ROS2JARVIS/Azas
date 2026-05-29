@@ -35,7 +35,12 @@ def generate_launch_description():
                 executable="recipe_mapper_node",
                 name="recipe_mapper_node",
                 output="screen",
-                parameters=[{"stt_topic": stt_topic}],
+                parameters=[
+                    {
+                        "stt_topic": stt_topic,
+                        "publish_confirmation": False,
+                    }
+                ],
                 condition=UnlessCondition(use_llm),
             ),
             Node(
@@ -50,9 +55,17 @@ def generate_launch_description():
                         "model": LaunchConfiguration("llm_model"),
                         "base_url": LaunchConfiguration("llm_base_url"),
                         "api_key_env": LaunchConfiguration("llm_api_key_env"),
+                        "publish_confirmation": False,
                     }
                 ],
                 condition=IfCondition(use_llm),
+            ),
+            Node(
+                package="azas_voice",
+                executable="conversation_manager_node",
+                name="conversation_manager_node",
+                output="screen",
+                condition=IfCondition(use_conversation_manager),
             ),
             Node(
                 package="azas_voice",
