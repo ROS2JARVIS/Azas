@@ -12,7 +12,7 @@ metadata:
   frame_id: base_link
   measured_target_frame: link_6
   source: operator_teaching_tf2_echo
-  status: draft_probe_estimate_not_enabled
+  status: measured_draft_single_box_not_enabled
   body_bottom_z_m: 0.000
   body_bottom_reason: dispenser bottles start on same floor plane as robot base
   margin_m:
@@ -23,106 +23,43 @@ metadata:
 front_hold_poses:
   # Cup hold/front limit poses. Cup pose itself still comes from vision.
   dispenser_1:
-    position_xyz_m: [0.555, -0.100, 0.093]
-    quaternion_xyzw: [0.214, 0.703, 0.667, 0.122]
-    rpy_deg: [94.657, -6.597, 152.161]
+    position_xyz_m: [0.609000, 0.070000, 0.087000]
+    quaternion_xyzw: [0.489000, 0.517000, 0.517000, 0.475000]
+    rpy_deg: [90.798, -0.845, 93.984]
   dispenser_2:
-    position_xyz_m: [0.549, -0.150, 0.097]
-    quaternion_xyzw: [0.239, 0.695, 0.660, 0.156]
-    rpy_deg: [94.584, -5.669, 147.296]
+    position_xyz_m: [0.617000, 0.028000, 0.082000]
+    quaternion_xyzw: [0.504000, 0.504000, 0.500000, 0.491000]
+    rpy_deg: [90.946, -0.512, 90.501]
   dispenser_3:
-    position_xyz_m: [0.527, -0.204, 0.107]
-    quaternion_xyzw: [0.274, 0.689, 0.642, 0.194]
-    rpy_deg: [95.793, -4.872, 141.013]
+    position_xyz_m: [0.616000, -0.026000, 0.079000]
+    quaternion_xyzw: [0.504000, 0.504000, 0.498000, 0.494000]
+    rpy_deg: [90.926, -0.278, 90.234]
   dispenser_4:
-    position_xyz_m: [0.517, -0.235, 0.109]
-    quaternion_xyzw: [0.290, 0.682, 0.636, 0.215]
-    rpy_deg: [95.681, -4.333, 137.869]
+    position_xyz_m: [0.607000, -0.083000, 0.075000]
+    quaternion_xyzw: [0.511000, 0.498000, 0.492000, 0.499000]
+    rpy_deg: [91.042, -0.280, 88.871]
 
 raw_probe_poses:
-  body_left_probe:
-    position_xyz_m: [0.533, 0.005, 0.095]
-    quaternion_xyzw: [0.362, 0.753, 0.526, 0.159]
-    rpy_deg: [113.625, -8.080, 133.982]
-  body_right_probe:
-    position_xyz_m: [0.502, -0.265, 0.095]
-    quaternion_xyzw: [0.403, 0.630, 0.575, 0.332]
-    rpy_deg: [96.862, -2.610, 117.065]
-  body_back_right_probe:
-    position_xyz_m: [0.811, -0.165, 0.120]
-    quaternion_xyzw: [-0.010, 0.701, 0.519, 0.489]
-    rpy_deg: [88.620, 44.063, 136.576]
-  body_top_right_probe:
-    position_xyz_m: [0.757, -0.184, 0.242]
-    quaternion_xyzw: [0.586, 0.360, 0.573, 0.446]
-    rpy_deg: [86.632, -20.555, 84.875]
-  head_top_1_probe:
-    position_xyz_m: [0.742, 0.066, 0.413]
-    quaternion_xyzw: [-0.042, 0.712, -0.047, 0.700]
-    rpy_deg: [-97.548, 82.646, -97.947]
-  head_front_probe:
-    position_xyz_m: [0.683, 0.029, 0.452]
-    quaternion_xyzw: [-0.397, 0.574, -0.374, 0.610]
-    rpy_deg: [-88.393, 23.817, -86.216]
+  left_front_bottom_probe:
+    position_xyz_m: [0.767, 0.072, 0.219]
+    quaternion_xyzw: [0.642, 0.732, 0.215, 0.079]
+    rpy_deg: [155.003, -9.233, 99.561]
+  right_back_top_probe:
+    position_xyz_m: [0.763, -0.103, 0.412]
+    quaternion_xyzw: [0.658, 0.654, 0.200, 0.313]
+    rpy_deg: [137.024, 8.372, 86.350]
 
 estimated_collision_objects:
-  dispenser_body_box:
+  dispenser_combined_body_box:
     type: box
     frame_id: base_link
-    # Legacy broad axis-aligned estimate. Kept visible as a faint comparison
-    # marker only because it overlaps the taught front-hold points.
-    center_xyz_m: [0.6815, -0.1300, 0.1310]
-    size_xyz_m: [0.2990, 0.3100, 0.2620]
+    # Single measured draft box from left-front-bottom and right-back-top
+    # link_6 probe poses, expanded by metadata.margin_m on each side.
+    center_xyz_m: [0.7650, -0.0155, 0.3155]
+    size_xyz_m: [0.0440, 0.2150, 0.2330]
     bounds_xyz_m:
-      min: [0.5320, -0.2850, 0.0000]
-      max: [0.8310, 0.0250, 0.2620]
-    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
-    publish_to_planning_scene: false
-    enabled_for_real_motion: false
-  dispenser_1_body_box_v2:
-    type: box
-    frame_id: base_link
-    # Local x axis follows the dispenser depth direction measured from the
-    # front-hold line toward the body/back probe. Local y follows the row.
-    center_xyz_m: [0.6946, -0.1393, 0.1310]
-    size_xyz_m: [0.2200, 0.0650, 0.2620]
-    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
-    publish_to_planning_scene: true
-    enabled_for_real_motion: false
-  dispenser_2_body_box_v2:
-    type: box
-    frame_id: base_link
-    center_xyz_m: [0.6886, -0.1893, 0.1310]
-    size_xyz_m: [0.2200, 0.0650, 0.2620]
-    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
-    publish_to_planning_scene: true
-    enabled_for_real_motion: false
-  dispenser_3_body_box_v2:
-    type: box
-    frame_id: base_link
-    center_xyz_m: [0.6666, -0.2433, 0.1310]
-    size_xyz_m: [0.2200, 0.0650, 0.2620]
-    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
-    publish_to_planning_scene: true
-    enabled_for_real_motion: false
-  dispenser_4_body_box_v2:
-    type: box
-    frame_id: base_link
-    center_xyz_m: [0.6566, -0.2743, 0.1310]
-    size_xyz_m: [0.2200, 0.0650, 0.2620]
-    orientation_xyzw: [0.0, 0.0, -0.1368, 0.9906]
-    publish_to_planning_scene: true
-    enabled_for_real_motion: false
-  dispenser_head_box:
-    type: box
-    frame_id: base_link
-    # Head/nozzle box is separated from the bottle body so the empty space under
-    # the pump is not blocked by one oversized collision box.
-    center_xyz_m: [0.7470, -0.0995, 0.3520]
-    size_xyz_m: [0.1680, 0.3710, 0.2400]
-    bounds_xyz_m:
-      min: [0.6630, -0.2850, 0.2320]
-      max: [0.8310, 0.0860, 0.4720]
+      min: [0.7430, -0.1230, 0.1990]
+      max: [0.7870, 0.0920, 0.4320]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
     publish_to_planning_scene: true
     enabled_for_real_motion: false

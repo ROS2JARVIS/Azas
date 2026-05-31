@@ -145,6 +145,9 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "side_auto_direction_by_cup_y": LaunchConfiguration(
                         "side_auto_direction_by_cup_y"
                     ),
+                    "side_candidate_plan_check_enabled": LaunchConfiguration(
+                        "side_candidate_plan_check_enabled"
+                    ),
                     "side_linear_approach_enabled": LaunchConfiguration(
                         "side_linear_approach_enabled"
                     ),
@@ -167,6 +170,29 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "table_size_y": LaunchConfiguration("table_size_y"),
                     "table_center_x": LaunchConfiguration("table_center_x"),
                     "table_center_y": LaunchConfiguration("table_center_y"),
+                    "table_collision_expand_to_workspace_walls": LaunchConfiguration(
+                        "table_collision_expand_to_workspace_walls"
+                    ),
+                    "safety_config_path": ParameterValue(
+                        LaunchConfiguration("safety_config_path"),
+                        value_type=str,
+                    ),
+                    "safety_workspace_enforced": LaunchConfiguration(
+                        "safety_workspace_enforced"
+                    ),
+                    "workspace_boundary_collision_enabled": LaunchConfiguration(
+                        "workspace_boundary_collision_enabled"
+                    ),
+                    "workspace_boundary_collision_prefix": ParameterValue(
+                        LaunchConfiguration("workspace_boundary_collision_prefix"),
+                        value_type=str,
+                    ),
+                    "workspace_boundary_wall_thickness": LaunchConfiguration(
+                        "workspace_boundary_wall_thickness"
+                    ),
+                    "workspace_boundary_wall_clearance": LaunchConfiguration(
+                        "workspace_boundary_wall_clearance"
+                    ),
                     "side_orientation_mode": ParameterValue(
                         LaunchConfiguration("side_orientation_mode"),
                         value_type=str,
@@ -383,6 +409,11 @@ def generate_launch_description():
         default_value="false",
         description="If true, flip side direction by cup Y; disabled by default because the measured dispenser row is on the -Y side.",
     )
+    side_candidate_plan_check_enabled_arg = DeclareLaunchArgument(
+        "side_candidate_plan_check_enabled",
+        default_value="true",
+        description="Plan-check both side-grip approach candidates before executing the first feasible one.",
+    )
     side_linear_approach_enabled_arg = DeclareLaunchArgument(
         "side_linear_approach_enabled",
         default_value="true",
@@ -445,7 +476,7 @@ def generate_launch_description():
     )
     table_collision_enabled_arg = DeclareLaunchArgument(
         "table_collision_enabled",
-        default_value="false",
+        default_value="true",
         description="Publish a base_link table collision box so MoveIt avoids robot-link/table collisions.",
     )
     table_surface_z_arg = DeclareLaunchArgument(
@@ -477,6 +508,47 @@ def generate_launch_description():
         "table_center_y",
         default_value="0.0",
         description="Table collision box center Y in base_link meters.",
+    )
+    table_collision_expand_to_workspace_walls_arg = DeclareLaunchArgument(
+        "table_collision_expand_to_workspace_walls",
+        default_value="true",
+        description="Expand table collision XY footprint to the workspace wall inner faces.",
+    )
+    safety_config_path_arg = DeclareLaunchArgument(
+        "safety_config_path",
+        default_value=PathJoinSubstitution(
+            [
+                FindPackageShare("azas_bringup"),
+                "config",
+                "safety.yaml",
+            ]
+        ),
+        description="YAML with enforced base_link workspace bounds.",
+    )
+    safety_workspace_enforced_arg = DeclareLaunchArgument(
+        "safety_workspace_enforced",
+        default_value="true",
+        description="Fail closed before planning/execution when a pose goal is outside safety.yaml workspace bounds.",
+    )
+    workspace_boundary_collision_enabled_arg = DeclareLaunchArgument(
+        "workspace_boundary_collision_enabled",
+        default_value="true",
+        description="Publish workspace wall collision objects from safety.yaml XY bounds.",
+    )
+    workspace_boundary_collision_prefix_arg = DeclareLaunchArgument(
+        "workspace_boundary_collision_prefix",
+        default_value="side_grip_workspace",
+        description="Collision object ID prefix for workspace boundary walls.",
+    )
+    workspace_boundary_wall_thickness_arg = DeclareLaunchArgument(
+        "workspace_boundary_wall_thickness",
+        default_value="0.04",
+        description="Thickness in meters for workspace boundary wall collision boxes.",
+    )
+    workspace_boundary_wall_clearance_arg = DeclareLaunchArgument(
+        "workspace_boundary_wall_clearance",
+        default_value="0.02",
+        description="Extra XY clearance outside safety.yaml bounds for wall collision boxes; pose goals still use safety.yaml bounds.",
     )
     side_orientation_mode_arg = DeclareLaunchArgument(
         "side_orientation_mode",
@@ -596,7 +668,7 @@ def generate_launch_description():
     )
     min_motion_z_arg = DeclareLaunchArgument(
         "min_motion_z",
-        default_value="0.12",
+        default_value="0.07",
         description="Minimum allowed commanded Z in base frame.",
     )
     workspace_xy_clamp_enabled_arg = DeclareLaunchArgument(
@@ -658,6 +730,7 @@ def generate_launch_description():
             side_low_retry_lift_m_arg,
             side_low_retry_attempts_arg,
             side_auto_direction_by_cup_y_arg,
+            side_candidate_plan_check_enabled_arg,
             side_linear_approach_enabled_arg,
             side_final_slide_enabled_arg,
             side_fixed_grasp_z_enabled_arg,
@@ -675,6 +748,13 @@ def generate_launch_description():
             table_size_y_arg,
             table_center_x_arg,
             table_center_y_arg,
+            table_collision_expand_to_workspace_walls_arg,
+            safety_config_path_arg,
+            safety_workspace_enforced_arg,
+            workspace_boundary_collision_enabled_arg,
+            workspace_boundary_collision_prefix_arg,
+            workspace_boundary_wall_thickness_arg,
+            workspace_boundary_wall_clearance_arg,
             side_orientation_mode_arg,
             side_tool_roll_deg_arg,
             side_roll_deg_arg,

@@ -19,10 +19,12 @@ class RecipeMapperNode(Node):
         self.declare_parameter("stt_topic", "/stt_result")
         self.declare_parameter("decision_topic", "/azas/voice/recipe_decision")
         self.declare_parameter("confirmation_topic", "/azas/voice/confirmation")
+        self.declare_parameter("publish_confirmation", True)
 
         stt_topic = self.get_parameter("stt_topic").value
         decision_topic = self.get_parameter("decision_topic").value
         confirmation_topic = self.get_parameter("confirmation_topic").value
+        self._publish_confirmation = bool(self.get_parameter("publish_confirmation").value)
 
         self._decision_pub = self.create_publisher(String, decision_topic, 10)
         self._confirmation_pub = self.create_publisher(String, confirmation_topic, 10)
@@ -38,7 +40,7 @@ class RecipeMapperNode(Node):
         payload.data = json.dumps(decision.to_dict(), ensure_ascii=False)
         self._decision_pub.publish(payload)
 
-        if decision.confirmation:
+        if self._publish_confirmation and decision.confirmation:
             confirmation = String()
             confirmation.data = decision.confirmation
             self._confirmation_pub.publish(confirmation)

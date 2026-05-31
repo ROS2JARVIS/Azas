@@ -1,0 +1,1 @@
+cup_classifier_best.pth filter=lfs diff=lfs merge=lfs -text

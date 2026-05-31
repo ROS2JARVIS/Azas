@@ -16,15 +16,22 @@ from azas_voice.recipe_catalog import COLOR_ALIASES, RECIPE_DISPENSERS, RECIPE_D
 
 
 ALLOWED_INTENTS = {"make_cocktail", "confirm", "cancel", "unknown"}
-ALLOWED_DISPENSERS = {"1", "2", "3", "4"}
+DISPENSER_NUMBER_TO_COLOR = {
+    "1": "red",
+    "2": "yellow",
+    "3": "green",
+    "4": "blue",
+}
 
 
 def _normalize_dispenser_id(value: object) -> str:
     raw = str(value).strip()
-    if raw in ALLOWED_DISPENSERS:
-        return raw
+    if raw in DISPENSER_NUMBER_TO_COLOR:
+        return DISPENSER_NUMBER_TO_COLOR[raw]
     normalized = "".join(raw.lower().split())
     for dispenser_id, aliases in COLOR_ALIASES.items():
+        if dispenser_id == normalized:
+            return dispenser_id
         if any("".join(alias.lower().split()) == normalized for alias in aliases):
             return dispenser_id
     return ""
@@ -77,9 +84,8 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
         elif intent == "confirm":
             confirmation = "선택한 칵테일 제조를 확인했습니다."
         else:
-            color_text = ", ".join(dispenser_ids) if dispenser_ids else "configured recipe dispensers"
             recipe_name = RECIPE_DISPLAY_NAMES.get(str(recipe_id), str(recipe_id))
-            confirmation = f"{recipe_name} 요청을 인식했습니다. 사용 디스펜서: {color_text}. 진행할까요?"
+            confirmation = f"{recipe_name} 요청을 인식했습니다. 진행할까요?"
 
     fallback = parse_recipe_command(text)
     return RecipeDecision(
@@ -112,6 +118,7 @@ class LlmRecipeMapperNode(Node):
         self.declare_parameter("base_url", "https://api.openai.com/v1")
         self.declare_parameter("model", "gpt-4o-mini")
         self.declare_parameter("request_timeout_sec", 8.0)
+        self.declare_parameter("publish_confirmation", True)
 
         self._decision_pub = self.create_publisher(
             String,
@@ -129,6 +136,7 @@ class LlmRecipeMapperNode(Node):
             self._on_stt,
             10,
         )
+        self._publish_confirmation = bool(self.get_parameter("publish_confirmation").value)
         self.get_logger().info(
             "LLM recipe mapper ready: "
             f"enable_llm={bool(self.get_parameter('enable_llm').value)} "
@@ -141,7 +149,7 @@ class LlmRecipeMapperNode(Node):
         payload.data = json.dumps(decision.to_dict(), ensure_ascii=False)
         self._decision_pub.publish(payload)
 
-        if decision.confirmation:
+        if self._publish_confirmation and decision.confirmation:
             confirmation = String()
             confirmation.data = decision.confirmation
             self._confirmation_pub.publish(confirmation)
@@ -178,9 +186,9 @@ class LlmRecipeMapperNode(Node):
                         "Return only JSON for Azas cocktail intent parsing. "
                         "Allowed fields: valid, intent, recipe_id, dispenser_ids, confirmation. "
                         "Allowed intents: make_cocktail, confirm, cancel, unknown. "
-                        "The user does not know dispenser numbers; infer them internally. "
-                        "If the user describes mood or asks for a recommendation, choose one recipe_01..recipe_16. "
-                        "Allowed dispenser_ids: 1, 2, 3, 4 only. "
+                        "The user does not know dispenser colors; infer them internally. "
+                        "If the user describes mood or asks for a recommendation, choose one recipe_01..recipe_04. "
+                        "Allowed dispenser_ids values: red, yellow, green, blue only. "
                         "Never output robot coordinates, calibration values, trajectories, or safety approvals."
                     ),
                 },
