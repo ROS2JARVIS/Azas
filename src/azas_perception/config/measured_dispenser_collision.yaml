@@ -54,11 +54,12 @@ estimated_collision_objects:
     type: box
     frame_id: base_link
     # Single measured draft box from left-front-bottom and right-back-top
-    # link_6 probe poses, expanded by metadata.margin_m on each side.
-    center_xyz_m: [0.7650, -0.0155, 0.3155]
-    size_xyz_m: [0.0440, 0.2150, 0.2330]
+    # link_6 probe poses. X/Y are expanded by metadata.margin_m on each side;
+    # Z uses body_bottom_z_m as the dispenser rests on the base/table plane.
+    center_xyz_m: [0.7650, -0.0155, 0.2160]
+    size_xyz_m: [0.0440, 0.2150, 0.4320]
     bounds_xyz_m:
-      min: [0.7430, -0.1230, 0.1990]
+      min: [0.7430, -0.1230, 0.0000]
       max: [0.7870, 0.0920, 0.4320]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
     publish_to_planning_scene: true

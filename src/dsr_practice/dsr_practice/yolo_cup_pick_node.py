@@ -2139,9 +2139,9 @@ class YoloCupPickNode(Node):
                 self.last_status = "pick finished"
             else:
                 if self.auto_pick:
-                    self.has_picked_once = True
+                    self.last_pick_time = time.time()
                     log.warning(
-                        "auto_pick attempt failed; automatic retry is latched off until reset"
+                        "auto_pick attempt failed; returning to camera home and retrying after interval"
                     )
                 self.last_status = "pick failed"
         finally:
