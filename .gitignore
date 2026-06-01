@@ -35,3 +35,6 @@ tmp/
 *.pth
 *.onnx
 *.tflite
+
+# Local offline experiment outputs
+outputs/
