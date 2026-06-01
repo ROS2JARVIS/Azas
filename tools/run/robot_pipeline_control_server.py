@@ -77,6 +77,12 @@ DISPENSER_PRESS_TARGETS = {
     "3": "yellow",
     "4": "blue",
 }
+DEFAULT_DISPENSER_COLOR_MAP = {
+    "red": "1",
+    "green": "2",
+    "yellow": "3",
+    "blue": "4",
+}
 
 
 @dataclass(frozen=True)
@@ -104,6 +110,42 @@ STEPS = [
     Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch azas_gripper rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
     Step("start_camera", "RealSense 카메라 시작", "background", "ros2 launch realsense2_camera rs_launch.py", True, False, "RealSense 드라이버와 color/aligned-depth 토픽 시작; 화면 창은 별도 버튼 사용"),
     Step("start_camera_view", "RealSense 컬러 화면 보기", "background", "rqt_image_view /camera/camera/color/image_raw", True, False, "카메라 color image 토픽을 rqt_image_view 창으로 표시"),
+    Step(
+        "detect_dispenser_color_map",
+        "카메라로 디스펜서 색상→번호 매칭",
+        "run",
+        "tools/run/detect_dispenser_color_map.py",
+        True,
+        False,
+        "RealSense 컬러 영상에서 red/green/yellow/blue 위치를 감지해 물리 디스펜서 1~4번에 매칭하고 /tmp/azas_dispenser_color_map.env에 저장",
+    ),
+    Step(
+        "teach_dispenser_color_scan_pose",
+        "티칭 저장: 색상 구분 카메라 관찰 자세",
+        "run",
+        "tools/run/teach_dispenser_color_scan_pose.py --write",
+        True,
+        False,
+        "로봇을 색상 구분이 잘 되는 관찰 자세에 둔 뒤 현재 joint pose를 저장; 모션 명령 없음",
+    ),
+    Step(
+        "move_dispenser_color_scan_pose",
+        "색상 구분 관찰 자세로 이동",
+        "run",
+        "tools/run/move_to_dispenser_color_scan_pose.py --execute",
+        True,
+        True,
+        "저장된 joint pose로 이동해 RealSense가 디스펜서 색상들을 보게 함",
+    ),
+    Step(
+        "scan_dispenser_colors",
+        "관찰 자세 이동 후 색상→번호 자동 매칭",
+        "run",
+        "move_to_dispenser_color_scan_pose.py && detect_dispenser_color_map.py",
+        True,
+        True,
+        "저장된 색상 관찰 자세로 이동한 다음 RealSense로 red/green/yellow/blue를 물리 번호에 매칭",
+    ),
     Step("detect_cup_lid", "컵/뚜껑 탐지 토픽 시작", "background", "ros2 launch azas_bringup yolo_perception.launch.py", True, False, "YOLO 탐지 결과를 /azas/cup_detection으로 publish; 이 노드는 화면 창을 띄우지 않음"),
     Step(
         "start_collision_scene",
@@ -137,6 +179,79 @@ STEPS = [
     ),
     Step("gripper_soft_grasp", "그리퍼 살짝 잡기", "run", "ros2 service call /jarvis/rg2/set_width azas_interfaces/srv/SetGripper", True, True, "큰 컵용: 완전 close 대신 폭 75mm/약한 힘으로 살짝 오므림"),
     Step("gripper_open", "그리퍼 full open / 컵 놓기 검증", "run", "tools/run/rg2_full_open_verify.sh", True, True, "컵을 배출구 아래에 둔 뒤 RG2 full-open 명령 success=True 검증"),
+
+    Step(
+        "teach_front_hold_1",
+        "티칭 저장: 디스펜서 1 컵 전면 위치",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 1 --write",
+        True,
+        False,
+        "유지보수 전용: 디스펜서 1 컵 전면/link_6 티칭 좌표 저장; 색상 구분 작업에서는 사용하지 않음",
+    ),
+    Step(
+        "teach_front_hold_2",
+        "티칭 저장: 디스펜서 2 컵 전면 위치",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 2 --write",
+        True,
+        False,
+        "유지보수 전용: 디스펜서 2 컵 전면/link_6 티칭 좌표 저장; 색상 구분 작업에서는 사용하지 않음",
+    ),
+    Step(
+        "teach_front_hold_3",
+        "티칭 저장: 디스펜서 3 컵 전면 위치",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 3 --write",
+        True,
+        False,
+        "유지보수 전용: 디스펜서 3 컵 전면/link_6 티칭 좌표 저장; 색상 구분 작업에서는 사용하지 않음",
+    ),
+    Step(
+        "teach_front_hold_4",
+        "티칭 저장: 디스펜서 4 컵 전면 위치",
+        "run",
+        "tools/run/teach_measured_dispenser_front_hold.py --dispenser-id 4 --write",
+        True,
+        False,
+        "유지보수 전용: 디스펜서 4 컵 전면/link_6 티칭 좌표 저장; 색상 구분 작업에서는 사용하지 않음",
+    ),
+    Step(
+        "teach_press_pose_1",
+        "티칭 저장: 디스펜서 1 프레스 top",
+        "run",
+        "tools/run/teach_dispenser_press_pose.py --dispenser-id 1 --write",
+        True,
+        False,
+        "로봇 TCP를 디스펜서 1 펌프 top 위치에 둔 뒤 현재 Doosan posx를 measured_dispenser_press.yaml에 저장; 모션 명령 없음",
+    ),
+    Step(
+        "teach_press_pose_2",
+        "티칭 저장: 디스펜서 2 프레스 top",
+        "run",
+        "tools/run/teach_dispenser_press_pose.py --dispenser-id 2 --write",
+        True,
+        False,
+        "로봇 TCP를 디스펜서 2 펌프 top 위치에 둔 뒤 현재 Doosan posx를 measured_dispenser_press.yaml에 저장; 모션 명령 없음",
+    ),
+    Step(
+        "teach_press_pose_3",
+        "티칭 저장: 디스펜서 3 프레스 top",
+        "run",
+        "tools/run/teach_dispenser_press_pose.py --dispenser-id 3 --write",
+        True,
+        False,
+        "로봇 TCP를 디스펜서 3 펌프 top 위치에 둔 뒤 현재 Doosan posx를 measured_dispenser_press.yaml에 저장; 모션 명령 없음",
+    ),
+    Step(
+        "teach_press_pose_4",
+        "티칭 저장: 디스펜서 4 프레스 top",
+        "run",
+        "tools/run/teach_dispenser_press_pose.py --dispenser-id 4 --write",
+        True,
+        False,
+        "로봇 TCP를 디스펜서 4 펌프 top 위치에 둔 뒤 현재 Doosan posx를 measured_dispenser_press.yaml에 저장; 모션 명령 없음",
+    ),
     Step(
         "move_to_dispenser_1",
         "고정 디스펜서 1 배출구 아래로 컵 이동",
@@ -800,6 +915,47 @@ def parse_robot_state_id(text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def runtime_dispenser_color_map_file() -> Path:
+    return Path(os.environ.get("AZAS_DISPENSER_COLOR_MAP_FILE", "/tmp/azas_dispenser_color_map.env"))
+
+
+def read_runtime_dispenser_color_map() -> str:
+    path = runtime_dispenser_color_map_file()
+    if not path.is_file():
+        return ""
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("DISPENSER_COLOR_MAP="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def parse_dispenser_color_map(raw: str) -> dict[str, str]:
+    mapping = dict(DEFAULT_DISPENSER_COLOR_MAP)
+    raw = (raw or "").strip()
+    if not raw:
+        return mapping
+    for item in raw.replace(";", ",").split(","):
+        item = item.strip().lower()
+        if not item:
+            continue
+        if "=" in item:
+            color, slot = [part.strip() for part in item.split("=", 1)]
+        elif ":" in item:
+            color, slot = [part.strip() for part in item.split(":", 1)]
+        else:
+            continue
+        if color in mapping and slot in DISPENSER_PRESS_TARGETS:
+            mapping[color] = slot
+    return mapping
+
+
+def dispenser_color_map_arg(payload: dict[str, Any]) -> str:
+    requested = str(payload.get("dispenser_color_map") or os.environ.get("DISPENSER_COLOR_MAP") or "").strip()
+    if requested.lower() in {"", "auto"}:
+        return read_runtime_dispenser_color_map() or requested
+    return requested
+
+
 def robot_state_name(state_id: int | None) -> str:
     if state_id is None:
         return "UNKNOWN"
@@ -869,6 +1025,20 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
         return ["/jarvis/rg2/set_width"]
     if step.key.startswith("teach_front_hold_"):
         return [
+            f"/{clean}/system/get_robot_state",
+        ]
+    if step.key.startswith("teach_press_pose_"):
+        return [
+            f"/{clean}/aux_control/get_current_posx",
+        ]
+    if step.key == "teach_dispenser_color_scan_pose":
+        return [
+            f"/{clean}/aux_control/get_current_posj",
+        ]
+    if step.key in {"move_dispenser_color_scan_pose", "scan_dispenser_colors"}:
+        return [
+            f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/check_motion",
             f"/{clean}/system/get_robot_state",
         ]
     if step.key == "side_grip":
@@ -1498,17 +1668,23 @@ def requires_collision_scene_step(key: str) -> bool:
     )
 
 
+def insert_prereqs_before(ordered: list[str], target: str, prerequisites: list[str]) -> None:
+    if target not in ordered:
+        return
+    target_index = ordered.index(target)
+    for prereq in reversed(prerequisites):
+        if prereq not in ordered:
+            ordered.insert(target_index, prereq)
+
+
 def with_collision_scene_prereq(selected: list[str]) -> list[str]:
     ordered = list(selected)
-    if "side_grip" in ordered:
-        # PR #20 node also moves to camera-home internally, but the supervised
-        # panel must make the operator-visible sequence explicit and safe:
-        # lift the robot first, then start RealSense, then run manual side-grip.
-        side_index = ordered.index("side_grip")
-        prerequisites = ["lift_robot", "start_camera"]
-        for prereq in reversed(prerequisites):
-            if prereq not in ordered:
-                ordered.insert(side_index, prereq)
+    # PR #20 node also moves to camera-home internally, but the supervised panel
+    # must make the operator-visible sequence explicit and safe.
+    insert_prereqs_before(ordered, "side_grip", ["lift_robot", "start_camera"])
+    # Recipe execution with color names must first look at the dispenser row from
+    # the taught color-scan pose and write DISPENSER_COLOR_MAP for this run.
+    insert_prereqs_before(ordered, "run_dispenser_recipe_sequence", ["start_camera", "scan_dispenser_colors"])
     if any(requires_collision_scene_step(key) for key in ordered):
         ordered = ["start_collision_scene"] + [key for key in ordered if key != "start_collision_scene"]
     return ordered
@@ -1663,6 +1839,55 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             "ros2 run rqt_image_view rqt_image_view /camera/camera/color/image_raw"
         )
+    if step.key == "detect_dispenser_color_map":
+        slot_order = str(
+            payload.get("dispenser_slot_order_left_to_right")
+            or os.environ.get("DISPENSER_SLOT_ORDER_LEFT_TO_RIGHT")
+            or "1,2,3,4"
+        ).strip()
+        out = runtime_dispenser_color_map_file()
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "python3 tools/run/detect_dispenser_color_map.py "
+            f"--slot-order-left-to-right {shlex.quote(slot_order)} "
+            f"--write-env {shlex.quote(str(out))} "
+            "--write-json /tmp/azas_dispenser_color_map.json "
+            "--debug-image /tmp/azas_dispenser_color_map_debug.jpg "
+            "--sample-image /tmp/azas_dispenser_color_map_sample.jpg"
+        )
+    if step.key == "teach_dispenser_color_scan_pose":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "python3 tools/run/teach_dispenser_color_scan_pose.py "
+            f"--service-prefix {shlex.quote(service_prefix)} "
+            "--write --confirm ENABLE_TEACH_DISPENSER_COLOR_SCAN_POSE"
+        )
+    if step.key == "move_dispenser_color_scan_pose":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "python3 tools/run/move_to_dispenser_color_scan_pose.py "
+            f"--service-prefix {shlex.quote(service_prefix)} "
+            "--velocity 20 --acceleration 25 --execute --confirm ENABLE_DISPENSER_COLOR_SCAN_MOVE"
+        )
+    if step.key == "scan_dispenser_colors":
+        slot_order = str(
+            payload.get("dispenser_slot_order_left_to_right")
+            or os.environ.get("DISPENSER_SLOT_ORDER_LEFT_TO_RIGHT")
+            or "1,2,3,4"
+        ).strip()
+        out = runtime_dispenser_color_map_file()
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "python3 tools/run/move_to_dispenser_color_scan_pose.py "
+            f"--service-prefix {shlex.quote(service_prefix)} "
+            "--velocity 20 --acceleration 25 --execute --confirm ENABLE_DISPENSER_COLOR_SCAN_MOVE "
+            "&& python3 tools/run/detect_dispenser_color_map.py "
+            f"--slot-order-left-to-right {shlex.quote(slot_order)} "
+            f"--write-env {shlex.quote(str(out))} "
+            "--write-json /tmp/azas_dispenser_color_map.json "
+            "--debug-image /tmp/azas_dispenser_color_map_debug.jpg "
+            "--sample-image /tmp/azas_dispenser_color_map_sample.jpg"
+        )
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
     if step.key == "voice_input":
@@ -1800,7 +2025,17 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"cd {ROOT} && {ROS_SETUP} && "
             "python3 tools/run/teach_measured_dispenser_front_hold.py "
             f"--dispenser-id {shlex.quote(dispenser_id)} "
+            "--no-update-collision-from-front "
             "--write --confirm ENABLE_TEACH_MEASURED_DISPENSER_FRONT_HOLD"
+        )
+    if step.key.startswith("teach_press_pose_"):
+        dispenser_id = step.key.rsplit("_", 1)[-1]
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "python3 tools/run/teach_dispenser_press_pose.py "
+            f"--service-prefix {shlex.quote(service_prefix)} "
+            f"--dispenser-id {shlex.quote(dispenser_id)} "
+            "--write --confirm ENABLE_TEACH_DISPENSER_PRESS_POSE"
         )
     if step.key.startswith("move_to_dispenser_"):
         dispenser_id = step.key.rsplit("_", 1)[-1]
@@ -1829,6 +2064,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
     if step.key.startswith("press_dispenser_"):
         dispenser_id = step.key.rsplit("_", 1)[-1]
         target = DISPENSER_PRESS_TARGETS.get(dispenser_id, "red")
+        press_config = ROOT / "src" / "azas_bringup" / "config" / "measured_dispenser_press.yaml"
         tcp_name = str(
             payload.get("dispenser_tcp_name")
             or os.environ.get("DISPENSER_TCP_NAME")
@@ -1842,6 +2078,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"-p tcp_name:={shlex.quote(tcp_name)} "
             "-p require_tcp_for_taught_posx:=false "
             "-p allow_tcp_set_failure:=true "
+            f"-p taught_posx_config_path:={shlex.quote(str(press_config))} "
+            f"-p target_slot:={shlex.quote(dispenser_id)} "
             f"-p target_dispenser:={shlex.quote(target)} "
             "-p move_home_first:=true "
             "-p pre_home_retreat_before_home:=true "
@@ -1851,8 +2089,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "-p pre_home_retreat_min_current_x_mm:=0.0 "
             "-p pre_home_retreat_velocity:=20.0 "
             "-p pre_home_retreat_acceleration:=25.0 "
-            "-p joint1_clearance_before_home:=false "
-            "-p joint1_clearance_return_home:=false "
+            "-p joint1_clearance_before_home:=true "
+            "-p joint1_clearance_return_home:=true "
             "-p joint1_clearance_offset_deg:=12.0 "
             "-p return_home:=true "
             "-p close_gripper_at_home:=true "
@@ -1894,6 +2132,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             or os.environ.get("RECIPE_DISPENSER_IDS")
             or "1,2,3,4"
         ).strip()
+        color_map = dispenser_color_map_arg(payload)
         tcp_name = str(
             payload.get("dispenser_tcp_name")
             or os.environ.get("DISPENSER_TCP_NAME")
@@ -1903,6 +2142,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/run_measured_dispenser_recipe_sequence.py "
             f"--service-prefix {service_prefix} "
             f"--dispenser-ids {shlex.quote(recipe_ids)} "
+            f"--color-map {shlex.quote(color_map)} "
+            f"--press-config {shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'measured_dispenser_press.yaml'))} "
             f"--dispenser-tcp-name {shlex.quote(tcp_name)} "
             "--execute --confirm ENABLE_MEASURED_DISPENSER_RECIPE_SEQUENCE"
         )
@@ -2416,13 +2657,22 @@ def cleanup_all_processes() -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def write_body(self, body: bytes) -> None:
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # Browser refresh/cancel can close the socket while the panel is
+            # writing a response. That should not make the panel look broken.
+            print("[panel] client disconnected before response finished")
+
     def send_json(self, data: Any, status: int = 200) -> None:
         body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        self.write_body(body)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -2431,9 +2681,10 @@ class Handler(BaseHTTPRequestHandler):
             body = HTML_PATH.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            self.write_body(body)
             return
         if path == "/api/steps":
             preview_payload = {
@@ -2445,6 +2696,8 @@ class Handler(BaseHTTPRequestHandler):
                     "DISPENSER_TCP_NAME", DEFAULT_DISPENSER_TCP_NAME
                 ),
                 "selected_dispenser_id": os.environ.get("SELECTED_DISPENSER_ID", "2"),
+                "dispenser_color_map": os.environ.get("DISPENSER_COLOR_MAP", "auto"),
+                "dispenser_slot_order_left_to_right": os.environ.get("DISPENSER_SLOT_ORDER_LEFT_TO_RIGHT", "1,2,3,4"),
             }
             data = []
             for step in STEPS:
@@ -2487,14 +2740,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Content-Length", str(len(message)))
                 self.end_headers()
-                self.wfile.write(message)
+                self.write_body(message)
                 return
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            self.write_body(body)
             return
         if path == "/api/log":
             params = parse_qs(urlparse(self.path).query)
@@ -2520,7 +2773,8 @@ class Handler(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(length) or b"{}")
         path = urlparse(self.path).path
         if path == "/api/run":
-            selected = with_collision_scene_prereq([str(key) for key in payload.get("selected") or []])
+            raw_selected = [str(key) for key in payload.get("selected") or []]
+            selected = raw_selected if payload.get("skip_prereq_injection") else with_collision_scene_prereq(raw_selected)
             steps_by_key = {step.key: step for step in STEPS}
             results = [
                 run_step(steps_by_key[key], payload)

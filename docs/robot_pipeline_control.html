@@ -162,6 +162,47 @@
       border-color: #a7f3d0;
       color: #047857;
     }
+    .color-check-panel {
+      margin-top: 10px;
+      border: 2px solid #bfdbfe;
+      border-radius: 14px;
+      background: #eff6ff;
+      padding: 12px;
+    }
+    .color-check-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .color-check-title { font-size: 15px; font-weight: 950; color: #1d4ed8; }
+    .color-check-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .color-check-actions button {
+      min-height: 38px;
+      padding: 0 13px;
+      border-radius: 10px;
+      border: 1px solid #93c5fd;
+      background: #fff;
+      color: #1d4ed8;
+      font-weight: 900;
+    }
+    .color-check-actions .primary-check {
+      background: #2563eb;
+      color: #fff;
+      border-color: #1d4ed8;
+    }
+    .color-command-line {
+      margin: 8px 0 0;
+      white-space: pre-wrap;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 12px;
+      overflow-x: auto;
+    }
     .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
 
     details.settings {
@@ -647,6 +688,10 @@
         <button class="recipe-preset" data-recipe-preset="2">칵테일 2</button>
         <button class="recipe-preset" data-recipe-preset="3">칵테일 3</button>
         <button class="recipe-preset" data-recipe-preset="4">칵테일 4</button>
+        <button data-run-step="start_camera">카메라 시작</button>
+        <button data-run-step="detect_dispenser_color_map" class="plain-btn">색상만 판단</button>
+        <button data-run-step="scan_dispenser_colors" class="plain-btn">관찰자세+색상판단</button>
+        <button data-run-step="start_camera_view" class="plain-btn">카메라 화면</button>
         <button data-select="core">연결/상태 선택</button>
         <button data-select="move">컵 이동 선택</button>
         <button data-select="press">프레스 선택</button>
@@ -655,6 +700,33 @@
         <button data-select="clear" class="danger-light">선택 해제</button>
         <button id="refresh" class="plain-btn">단계 새로고침</button>
         <button id="focusLog" class="plain-btn">로그로 이동</button>
+      </div>
+
+      <div class="color-check-panel" aria-label="dispenser color check panel">
+        <div class="color-check-head">
+          <div>
+            <div class="color-check-title">디스펜서 색상 체크</div>
+            <div class="stage-help">버튼을 바로 누르거나, 아래 명령어를 복사해서 터미널에서 실행할 수 있습니다. 색상 판단은 로봇을 움직이지 않습니다.</div>
+          </div>
+          <div class="color-check-actions">
+            <button type="button" data-run-step="start_camera">1. 카메라 시작</button>
+            <button type="button" data-run-step="start_camera_view">2. 카메라 화면</button>
+            <button class="primary-check" type="button" data-run-step="detect_dispenser_color_map">3. 색상만 체크</button>
+            <button type="button" data-run-step="scan_dispenser_colors">관찰자세 이동+색상 체크</button>
+          </div>
+        </div>
+        <details class="command" open>
+          <summary>색상 체크 명령어 보기</summary>
+          <pre class="color-command-line"><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/Azas/install/setup.bash
+python3 tools/run/detect_dispenser_color_map.py \
+  --slot-order-left-to-right 1,2,3,4 \
+  --write-env /tmp/azas_dispenser_color_map.env \
+  --write-json /tmp/azas_dispenser_color_map.json \
+  --debug-image /tmp/azas_dispenser_color_map_debug.jpg \
+  --sample-image /tmp/azas_dispenser_color_map_sample.jpg</code></pre>
+        </details>
       </div>
 
       <details class="settings">
@@ -680,6 +752,12 @@
           </label>
           <label class="field">RECIPE_DISPENSER_IDS / STT 색상 순서
             <input id="recipeDispenserIds" type="text" value="1,2,3,4" placeholder="예: red,yellow,blue,green 또는 1,3,4,2">
+          </label>
+          <label class="field">DISPENSER_COLOR_MAP / 색상만 물리 슬롯에 매핑
+            <input id="dispenserColorMap" type="text" value="auto" placeholder="좌표 변경 없음: auto 또는 red=4,green=2,yellow=1,blue=3">
+          </label>
+          <label class="field">SLOT_ORDER_LEFT_TO_RIGHT / 화면 좌→우 물리번호
+            <input id="dispenserSlotOrderLeftToRight" type="text" value="1,2,3,4" placeholder="카메라가 반대로 보면 4,3,2,1">
           </label>
           <label class="field">CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M
             <input id="cupHolderPlaceFinalZOffsetM" type="text" value="-0.020" placeholder="예: -0.020 (홀더에 놓을 때 최종 Z 20mm 낮춤)">
@@ -854,10 +932,12 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   <script>
     const core = new Set(["connect_robot", "status_check", "start_collision_scene"]);
     const hiddenStepKeys = new Set([]);
-    const groupOrder = ["core", "grip", "move", "press", "shake", "blocked", "etc"];
+    const groupOrder = ["core", "camera", "grip", "teach", "move", "press", "shake", "blocked", "etc"];
     const groupLabels = {
       core: "연결/준비",
+      camera: "카메라/인식",
       grip: "그리퍼",
+      teach: "측정/티칭 저장",
       move: "컵 이동/배치",
       press: "디스펜서 프레스",
       shake: "쉐이킹",
@@ -906,9 +986,9 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
     function stepGroup(step) {
       const key = step.key || "";
       if (core.has(key)) return "core";
-      if (key === "start_camera" || key === "detect_cup_lid") return "camera";
+      if (key === "start_camera" || key === "start_camera_view" || key === "detect_cup_lid" || key.includes("color_scan") || key.includes("dispenser_colors") || key === "detect_dispenser_color_map") return "camera";
       if (key.includes("gripper")) return "grip";
-      if (key.startsWith("teach_front_hold_")) return "teach";
+      if (key.startsWith("teach_front_hold_") || key.startsWith("teach_press_pose_")) return "teach";
       if (key === "run_dispenser_recipe_sequence") return "press";
       if (key === "start_collision_scene") return "core";
       if (key === "attach_lid" || key.startsWith("move_to_dispenser") || key.includes("cup") || key.includes("holder") || key.includes("side_grip") || key.includes("home") || key.includes("lift")) return "move";
@@ -950,6 +1030,8 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
         rg2_ip: document.getElementById("rg2Ip").value.trim(),
         dispenser_tcp_name: document.getElementById("dispenserTcpName").value.trim(),
         recipe_dispenser_ids: document.getElementById("recipeDispenserIds").value.trim(),
+        dispenser_color_map: document.getElementById("dispenserColorMap").value.trim(),
+        dispenser_slot_order_left_to_right: document.getElementById("dispenserSlotOrderLeftToRight").value.trim(),
         cup_holder_place_final_z_offset_m: document.getElementById("cupHolderPlaceFinalZOffsetM").value.trim(),
         cup_holder_pick_z_offset_m: document.getElementById("cupHolderPickZOffsetM").value.trim(),
         armed: document.getElementById("armed").checked,
@@ -977,17 +1059,20 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
         || key.startsWith("pick_from_dispenser_");
     }
 
-    function withCollisionScenePrereq(queue) {
-      const items = queue.map((item) => ({...item}));
-      const sideIndex = items.findIndex((item) => item.key === "side_grip");
-      if (sideIndex >= 0) {
-        const prereqs = ["lift_robot", "start_camera"];
-        for (const prereq of [...prereqs].reverse()) {
-          if (!items.some((item) => item.key === prereq)) {
-            items.splice(sideIndex, 0, {id: `q${nextQueueId++}`, key: prereq, injected: true});
-          }
+    function insertPrereqsBefore(items, targetKey, prereqs) {
+      const targetIndex = items.findIndex((item) => item.key === targetKey);
+      if (targetIndex < 0) return;
+      for (const prereq of [...prereqs].reverse()) {
+        if (!items.some((item) => item.key === prereq)) {
+          items.splice(targetIndex, 0, {id: `q${nextQueueId++}`, key: prereq, injected: true});
         }
       }
+    }
+
+    function withCollisionScenePrereq(queue) {
+      const items = queue.map((item) => ({...item}));
+      insertPrereqsBefore(items, "side_grip", ["lift_robot", "start_camera"]);
+      insertPrereqsBefore(items, "run_dispenser_recipe_sequence", ["start_camera", "scan_dispenser_colors"]);
       if (!items.some((item) => needsCollisionScene(item.key))) return items;
       const withoutScene = items.filter((item) => item.key !== "start_collision_scene");
       return [{id: `q${nextQueueId++}`, key: "start_collision_scene", injected: true}, ...withoutScene];
@@ -1539,6 +1624,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 		          log.textContent = runningHeader;
 		          startLogTail(item.key);
 		          const body = payload();
+              body.skip_prereq_injection = true;
 	          body.selected = [item.key];
 	          const res = await fetch("/api/run", {
 	            method: "POST",

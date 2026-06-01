@@ -1,6 +1,10 @@
 # Wiki Index
 
-> 3 pages | Last updated: 2026-05-28T02:01:49.699Z
+> 4 pages | Last updated: 2026-06-01T09:00:02.897Z
+
+## reference
+
+- [MoveIt RViz dispenser simulation procedure](moveit-rviz-dispenser-simulation-procedure.md) — # MoveIt RViz dispenser simulation procedure
 
 ## session-log
 

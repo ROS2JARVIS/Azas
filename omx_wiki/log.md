@@ -54,3 +54,11 @@
 - **Pages:** session-log-2026-05-28-3-adlm15.md
 - **Summary:** Auto-captured session log for omx-1779933651513-adlm15
 
+## [2026-06-01T09:00:02.895Z] ingest
+- **Pages:** moveit-rviz-dispenser-simulation-procedure.md
+- **Summary:** Created new page "MoveIt RViz dispenser simulation procedure"
+
+## [2026-06-01T09:00:02.898Z] add
+- **Pages:** moveit-rviz-dispenser-simulation-procedure.md
+- **Summary:** Created wiki page moveit-rviz-dispenser-simulation-procedure.md
+

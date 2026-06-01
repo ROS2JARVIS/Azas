@@ -29,6 +29,7 @@ from dsr_msgs2.srv import GetCurrentPosx, Ikin, MoveLine
 
 ROOT = Path("/home/ssu/Azas")
 DEFAULT_CONFIG = ROOT / "src" / "azas_bringup" / "config" / "measured_dispenser_collision.yaml"
+DEFAULT_PRESS_CONFIG = ROOT / "src" / "azas_bringup" / "config" / "measured_dispenser_press.yaml"
 MOVE_FRONT_HOLD = ROOT / "tools" / "run" / "move_to_measured_dispenser_front_hold.py"
 PICK_FRONT_HOLD = ROOT / "tools" / "run" / "pick_from_measured_dispenser_front_hold.py"
 RG2_OPEN = ROOT / "tools" / "run" / "rg2_full_open_verify.sh"
@@ -43,6 +44,7 @@ DISPENSER_TARGETS = {
     "4": "blue",
 }
 DISPENSER_IDS_BY_COLOR = {color: dispenser_id for dispenser_id, color in DISPENSER_TARGETS.items()}
+ALLOWED_COLORS = {"red", "green", "yellow", "blue"}
 
 DR_BASE = 0
 MOVE_MODE_ABSOLUTE = 0
@@ -51,28 +53,67 @@ BLENDING_SPEED_TYPE_DUPLICATE = 0
 Pose = tuple[list[float], list[list[float]]]
 
 
-def parse_dispenser_ids(raw: str) -> list[str]:
-    """Parse STT/recipe dispenser order into numeric dispenser IDs.
+def parse_color_map(raw: str) -> dict[str, str]:
+    """Parse runtime bottle color -> physical dispenser slot mapping.
+
+    Accepted forms: ``red=4,green=2,yellow=1,blue=3`` or ``red:4;...``.
+    Defaults preserve the legacy physical layout.
+    """
+    mapping = dict(DISPENSER_IDS_BY_COLOR)
+    raw = (raw or "").strip()
+    if not raw:
+        return mapping
+    if raw.lower() == "auto":
+        raise ValueError("DISPENSER_COLOR_MAP=auto requested but no detected map was supplied; run detect_dispenser_color_map first")
+    invalid: list[str] = []
+    for item in raw.replace(";", ",").split(","):
+        item = item.strip().lower()
+        if not item:
+            continue
+        if "=" in item:
+            color, slot = [part.strip() for part in item.split("=", 1)]
+        elif ":" in item:
+            color, slot = [part.strip() for part in item.split(":", 1)]
+        else:
+            invalid.append(item)
+            continue
+        if color not in ALLOWED_COLORS or slot not in DISPENSER_TARGETS:
+            invalid.append(item)
+            continue
+        mapping[color] = slot
+    if invalid:
+        raise ValueError(
+            "unsupported color map item(s): "
+            + ", ".join(invalid)
+            + "; expected e.g. red=4,green=2,yellow=1,blue=3"
+        )
+    return mapping
+
+
+def parse_dispenser_ids(raw: str, color_map: dict[str, str] | None = None) -> list[str]:
+    """Parse STT/recipe dispenser order into physical dispenser slot IDs.
 
     The STT/LLM layer may hand off color names such as
-    ``red,yellow,blue,green``.  The motion layer only receives the resulting
-    fixed dispenser IDs and never asks for or generates cup coordinates.
+    ``red,yellow,blue,green``.  Color names are resolved through the runtime
+    color->slot map; numeric IDs are already physical slots.  The motion layer
+    never asks for or generates cup coordinates.
     """
     values = [item.strip().lower() for item in raw.replace(";", ",").split(",") if item.strip()]
     if not values:
         raise ValueError("at least one dispenser id/color is required")
 
+    color_to_slot = color_map or DISPENSER_IDS_BY_COLOR
     parsed: list[str] = []
     invalid: list[str] = []
     for value in values:
         if value in DISPENSER_TARGETS:
             parsed.append(value)
-        elif value in DISPENSER_IDS_BY_COLOR:
-            parsed.append(DISPENSER_IDS_BY_COLOR[value])
+        elif value in color_to_slot:
+            parsed.append(color_to_slot[value])
         else:
             invalid.append(value)
     if invalid:
-        allowed_colors = ",".join(DISPENSER_IDS_BY_COLOR)
+        allowed_colors = ",".join(sorted(color_to_slot))
         raise ValueError(
             f"unsupported dispenser id/color(s): {', '.join(invalid)}; "
             f"allowed ids: 1,2,3,4; allowed colors: {allowed_colors}"
@@ -507,6 +548,7 @@ def press_cmd(args: argparse.Namespace, dispenser_id: str) -> str:
     service_prefix = shlex.quote(args.service_prefix)
     tcp_name = shlex.quote(args.dispenser_tcp_name)
     target_q = shlex.quote(target)
+    press_config = shlex.quote(str(args.press_config))
     return (
         "ros2 run azas_dispenser dispenser_press_node --ros-args "
         f"-p service_prefix:={service_prefix} "
@@ -514,6 +556,8 @@ def press_cmd(args: argparse.Namespace, dispenser_id: str) -> str:
         f"-p tcp_name:={tcp_name} "
         "-p require_tcp_for_taught_posx:=false "
         "-p allow_tcp_set_failure:=true "
+        f"-p taught_posx_config_path:={press_config} "
+        f"-p target_slot:={shlex.quote(dispenser_id)} "
         f"-p target_dispenser:={target_q} "
         "-p move_home_first:=true "
         "-p pre_home_retreat_before_home:=true "
@@ -523,8 +567,8 @@ def press_cmd(args: argparse.Namespace, dispenser_id: str) -> str:
         "-p pre_home_retreat_min_current_x_mm:=450.0 "
         "-p pre_home_retreat_velocity:=20.0 "
         "-p pre_home_retreat_acceleration:=25.0 "
-        "-p joint1_clearance_before_home:=false "
-        "-p joint1_clearance_return_home:=false "
+        "-p joint1_clearance_before_home:=true "
+        "-p joint1_clearance_return_home:=true "
         "-p joint1_clearance_offset_deg:=12.0 "
         "-p return_home:=true "
         "-p close_gripper_at_home:=true "
@@ -604,6 +648,8 @@ def parse_args() -> argparse.Namespace:
         help="comma-separated dispenser IDs or colors from STT, e.g. 1,3,2 or red,yellow,blue",
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--press-config", type=Path, default=DEFAULT_PRESS_CONFIG)
+    parser.add_argument("--color-map", default="", help="runtime bottle color to physical slot map, e.g. red=4,green=2,yellow=1,blue=3")
     parser.add_argument("--service-prefix", default="dsr01")
     parser.add_argument("--dispenser-tcp-name", default="GripperDA_v1_jarvis")
     parser.add_argument("--move-velocity", type=float, default=30.0)
@@ -645,7 +691,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        dispenser_ids = parse_dispenser_ids(args.dispenser_ids)
+        color_map = parse_color_map(args.color_map)
+        dispenser_ids = parse_dispenser_ids(args.dispenser_ids, color_map)
     except ValueError as exc:
         print(f"[FAIL] {exc}")
         return 2
@@ -655,6 +702,9 @@ def main() -> int:
     if not args.config.is_file():
         print(f"[FAIL] measured dispenser config not found: {args.config}")
         return 2
+    if not args.press_config.is_file():
+        print(f"[FAIL] measured dispenser press config not found: {args.press_config}")
+        return 2
     if args.pick_lift_m <= 0.0:
         print("[BLOCKED] --pick-lift-m must be positive for safe retreat after re-grasp")
         return 2
@@ -663,8 +713,9 @@ def main() -> int:
 
     print("[Azas] Measured dispenser recipe sequence")
     print(f"[Azas] dispenser_order_raw={args.dispenser_ids}")
-    print(f"[Azas] dispenser_ids={','.join(dispenser_ids)}")
-    print("[Azas] dispenser_colors=" + ",".join(DISPENSER_TARGETS[item] for item in dispenser_ids))
+    print(f"[Azas] color_map=" + ",".join(f"{k}={v}" for k, v in sorted(color_map.items())))
+    print(f"[Azas] physical_dispenser_ids={','.join(dispenser_ids)}")
+    print("[Azas] legacy_press_targets=" + ",".join(DISPENSER_TARGETS[item] for item in dispenser_ids))
     print(f"[Azas] service_prefix={args.service_prefix}")
     print(f"[Azas] dispenser_tcp_name={args.dispenser_tcp_name}")
     print("[Azas] source=existing measured front_hold poses and taught dispenser press poses")

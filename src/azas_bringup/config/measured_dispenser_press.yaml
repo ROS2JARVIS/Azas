@@ -1,0 +1,34 @@
+# Measured dispenser press poses from real robot teaching.
+#
+# IMPORTANT:
+# - Values are Doosan GetCurrentPosx TCP poses in mm/deg at the pump top pose.
+# - Teach by placing the active TCP at the dispenser pump top and using
+#   tools/run/teach_dispenser_press_pose.py. Do not edit from guessed values.
+# - Slot IDs are physical dispenser positions. Color bottles may be remapped at
+#   runtime via DISPENSER_COLOR_MAP / panel color-map input.
+
+metadata:
+  source: operator_teaching_get_current_posx
+  measured_target_frame: active_tcp
+  units: mm_deg
+  status: measured_draft
+  physical_slot_count: 4
+  legacy_slot_target_names:
+    "1": red
+    "2": green
+    "3": yellow
+    "4": blue
+
+press_poses:
+  dispenser_1:
+    top_posx_mm_deg: [732.102356, 64.330948, 379.150757, 174.047318, -118.163727, -149.736710]
+    source: legacy_feature_dispenser_red_top_posx
+  dispenser_2:
+    top_posx_mm_deg: [733.471008, 3.988441, 379.150757, 168.568924, -117.132538, -149.815811]
+    source: legacy_feature_dispenser_green_top_posx
+  dispenser_3:
+    top_posx_mm_deg: [736.923157, -54.696121, 379.150757, 164.237579, -114.837852, -150.598877]
+    source: legacy_feature_dispenser_yellow_top_posx
+  dispenser_4:
+    top_posx_mm_deg: [730.658020, -109.867943, 379.150757, 158.765900, -114.911736, -156.962708]
+    source: legacy_feature_dispenser_blue_top_posx

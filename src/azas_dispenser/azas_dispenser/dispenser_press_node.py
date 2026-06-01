@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import time
+from pathlib import Path
+
+import yaml
 
 from azas_interfaces.srv import SetGripper
 import rclpy
@@ -71,6 +74,8 @@ class DispenserPressNode:
         )
         self.use_taught_posx = bool(get_param(self.node, "use_taught_posx", False))
         self.target_dispenser = str(get_param(self.node, "target_dispenser", "red"))
+        self.target_slot = int(get_param(self.node, "target_slot", 0) or 0)
+        self.taught_posx_config_path = str(get_param(self.node, "taught_posx_config_path", "")).strip()
         self.close_gripper_at_home = bool(
             get_param(self.node, "close_gripper_at_home", True)
         )
@@ -132,6 +137,7 @@ class DispenserPressNode:
                 )
             ],
         }
+        self.taught_posx_by_slot = self.load_taught_posx_by_slot(self.taught_posx_config_path)
         self.dispenser_x_mm = float(get_param(self.node, "dispenser_x", 0.50)) * 1000.0
         self.dispenser_y_mm = float(get_param(self.node, "dispenser_y", 0.00)) * 1000.0
         self.dispenser_y_offset_mm = (
@@ -220,10 +226,10 @@ class DispenserPressNode:
             )
         )
         self.joint1_clearance_before_home = bool(
-            get_param(self.node, "joint1_clearance_before_home", False)
+            get_param(self.node, "joint1_clearance_before_home", True)
         )
         self.joint1_clearance_return_home = bool(
-            get_param(self.node, "joint1_clearance_return_home", False)
+            get_param(self.node, "joint1_clearance_return_home", True)
         )
         self.joint1_clearance_offset_deg = float(
             get_param(self.node, "joint1_clearance_offset_deg", 12.0)
@@ -264,6 +270,29 @@ class DispenserPressNode:
 
     def destroy(self):
         self.node.destroy_node()
+
+
+    def load_taught_posx_by_slot(self, config_path):
+        if not config_path:
+            return {}
+        path = Path(config_path).expanduser()
+        if not path.is_file():
+            self.logger.error(f"taught_posx_config_path not found: {path}")
+            return {}
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            poses = data.get("press_poses") or {}
+            by_slot = {}
+            for slot in (1, 2, 3, 4):
+                block = poses.get(f"dispenser_{slot}") or {}
+                values = block.get("top_posx_mm_deg")
+                if isinstance(values, list) and len(values) >= 6:
+                    by_slot[str(slot)] = [float(value) for value in values[:6]]
+            self.logger.info(f"Loaded measured dispenser press config: {path} slots={sorted(by_slot)}")
+            return by_slot
+        except Exception as exc:
+            self.logger.error(f"Failed to load taught_posx_config_path {path}: {exc}")
+            return {}
 
     def wait_for_services(self):
         deadline = time.monotonic() + max(self.service_wait_timeout_sec, 0.1)
@@ -736,17 +765,26 @@ class DispenserPressNode:
             if current_pose is None:
                 return None
 
-            top_pose = self.taught_posx_by_name.get(self.target_dispenser)
-            if top_pose is None:
-                self.logger.error(
-                    f"Unknown target_dispenser '{self.target_dispenser}'. "
-                    f"Choose one of {sorted(self.taught_posx_by_name)}."
-                )
-                return None
+            if self.target_slot in (1, 2, 3, 4):
+                top_pose = self.taught_posx_by_slot.get(str(self.target_slot))
+                target_label = f"physical slot {self.target_slot}"
+                if top_pose is None:
+                    self.logger.error(
+                        f"target_slot={self.target_slot} was requested but measured press config "
+                        f"does not contain press_poses.dispenser_{self.target_slot}."
+                    )
+                    return None
+            else:
+                top_pose = self.taught_posx_by_name.get(self.target_dispenser)
+                target_label = self.target_dispenser
+                if top_pose is None:
+                    self.logger.error(
+                        f"Unknown target_dispenser '{self.target_dispenser}'. "
+                        f"Choose one of {sorted(self.taught_posx_by_name)} or set target_slot 1..4."
+                    )
+                    return None
             if len(top_pose) < 6:
-                self.logger.error(
-                    f"{self.target_dispenser}_top_posx must have 6 values."
-                )
+                self.logger.error(f"{target_label} top_posx must have 6 values.")
                 return None
 
             x_mm, y_mm, top_z, self.rx, self.ry, self.rz = top_pose[:6]
@@ -755,7 +793,7 @@ class DispenserPressNode:
             transit_z = max(current_pose[2], approach_z) + self.transit_height_mm
 
             self.logger.info(
-                f"학습된 {self.target_dispenser} 디스펜서 top 포즈를 사용합니다. "
+                f"학습된 {target_label} 디스펜서 top 포즈를 사용합니다. "
                 f"top=({x_mm:.1f}, {y_mm:.1f}, {top_z:.1f}), "
                 f"transit_z={transit_z:.1f} mm, approach_z={approach_z:.1f} mm, "
                 f"pressed_z={pressed_z:.1f} mm, "

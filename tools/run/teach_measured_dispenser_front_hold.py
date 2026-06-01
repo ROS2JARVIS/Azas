@@ -17,6 +17,7 @@ import sys
 import time
 from pathlib import Path
 
+import yaml
 import rclpy
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -24,6 +25,17 @@ from tf2_ros import Buffer, TransformException, TransformListener
 ROOT = Path("/home/ssu/Azas")
 DEFAULT_CONFIG = ROOT / "src" / "azas_bringup" / "config" / "measured_dispenser_collision.yaml"
 CONFIRM_PHRASE = "ENABLE_TEACH_MEASURED_DISPENSER_FRONT_HOLD"
+# Measured relative offsets from taught front-hold link_6 poses to conservative
+# dispenser body/nozzle collision boxes. Reapplied when the front line is re-taught.
+# Kept for explicit maintenance use only.  Normal color recognition must not
+# re-anchor cup/front-hold/collision coordinates; it only maps color names to
+# existing physical dispenser slots.
+COLLISION_OFFSETS_BY_SLOT = {
+    1: {"body": [0.1396, -0.0393, 0.0380], "nozzle": [0.0090, -0.0025, 0.3390]},
+    2: {"body": [0.1396, -0.0393, 0.0340], "nozzle": [0.0090, -0.0025, 0.3350]},
+    3: {"body": [0.1396, -0.0393, 0.0240], "nozzle": [0.0090, -0.0025, 0.3250]},
+    4: {"body": [0.1396, -0.0393, 0.0220], "nozzle": [0.0090, -0.0025, 0.3230]},
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,6 +52,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-sec", type=float, default=5.0)
     parser.add_argument("--write", action="store_true", help="write the taught pose into the YAML file")
     parser.add_argument("--backup", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--sync-perception-config", action=argparse.BooleanOptionalAction, default=True, help="also copy the updated YAML to src/azas_perception/config for package consistency")
+    parser.add_argument("--update-collision-from-front", action=argparse.BooleanOptionalAction, default=False, help="explicit maintenance only: re-anchor dispenser body/nozzle collision boxes from measured front_hold poses")
     parser.add_argument("--confirm", default="", help=f"must equal {CONFIRM_PHRASE} with --write")
     return parser.parse_args()
 
@@ -115,6 +129,24 @@ def replace_front_hold_block(
     return new_text
 
 
+def update_collision_objects_from_front_holds(text: str) -> str:
+    data = yaml.safe_load(text) or {}
+    poses = data.get("front_hold_poses") or {}
+    objects = data.setdefault("estimated_collision_objects", {})
+    for slot, offsets in COLLISION_OFFSETS_BY_SLOT.items():
+        front = poses.get(f"dispenser_{slot}") or {}
+        position = front.get("position_xyz_m")
+        if not isinstance(position, list) or len(position) < 3:
+            continue
+        body = objects.get(f"dispenser_{slot}_body_box_v2")
+        nozzle = objects.get(f"dispenser_{slot}_head_nozzle_box")
+        if isinstance(body, dict):
+            body["center_xyz_m"] = [round(float(position[i]) + offsets["body"][i], 4) for i in range(3)]
+        if isinstance(nozzle, dict):
+            nozzle["center_xyz_m"] = [round(float(position[i]) + offsets["nozzle"][i], 4) for i in range(3)]
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+
 def main() -> int:
     args = parse_args()
     if not args.config.is_file():
@@ -154,6 +186,12 @@ def main() -> int:
         rpy_deg=rpy_deg,
     )
 
+    if args.update_collision_from_front:
+        updated = update_collision_objects_from_front_holds(updated)
+        print("[Azas] Re-anchored dispenser body/nozzle collision boxes from measured front_hold poses.")
+    else:
+        print("[Azas] Collision boxes were NOT changed; color/slot mapping must not alter cup/front-hold/collision coordinates.")
+
     if not args.write:
         print("[DRY-RUN] --write not set; config was not modified.")
         print(f"[Azas] To write: --write --confirm {CONFIRM_PHRASE}")
@@ -165,6 +203,11 @@ def main() -> int:
         print(f"[Azas] backup={backup}")
     args.config.write_text(updated, encoding="utf-8")
     print(f"[PASS] updated front_hold_poses.dispenser_{args.dispenser_id} in {args.config}")
+    if args.sync_perception_config and args.config == DEFAULT_CONFIG:
+        perception_config = ROOT / "src" / "azas_perception" / "config" / args.config.name
+        if perception_config.parent.is_dir():
+            shutil.copy2(args.config, perception_config)
+            print(f"[Azas] synced perception config={perception_config}")
     print("[Azas] Restart start_collision_scene/RViz publishers if you need refreshed markers.")
     return 0
 

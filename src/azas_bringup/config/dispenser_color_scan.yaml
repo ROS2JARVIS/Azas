@@ -1,0 +1,16 @@
+metadata:
+  source: operator_teaching_get_current_posj_and_posx
+  status: joint_pose_measured_tcp_metadata_missing
+  joint_units: deg
+  tcp_posx_units: mm_deg
+color_scan_pose:
+  joints_deg:
+  - 6.21
+  - -22.91
+  - 87.48
+  - -10.56
+  - 66.85
+  - 93.63
+  tcp_posx_mm_deg: null
+  note: Measured operator-provided joint pose for viewing dispenser colors; TCP metadata
+    not recorded yet.
