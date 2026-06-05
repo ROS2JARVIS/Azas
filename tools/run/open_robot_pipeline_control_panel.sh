@@ -11,6 +11,34 @@ PID_FILE="/tmp/azas-panel-8765.pid"
 COMMAND_DIR="${AZAS_PANEL_COMMAND_DIR:-$HOME/.local/bin}"
 COMMAND_PATH="$COMMAND_DIR/azas-panel"
 PANEL_ROS_DOMAIN_ID="${AZAS_PANEL_ROS_DOMAIN_ID:-9}"
+SERVER_SCRIPT="$ROOT/tools/run/robot_pipeline_control_server.py"
+FORCE_RESTART=0
+
+case "${1:-}" in
+  --restart|restart)
+    FORCE_RESTART=1
+    ;;
+  -h|--help)
+    cat <<MSG
+Usage: azas-panel [--restart]
+
+Opens the Azas robot pipeline panel. If the panel server is not running, starts it.
+If robot_pipeline_control_server.py changed after the running panel server started,
+azas-panel automatically restarts only the panel server so new HTML/API code is used.
+
+Options:
+  --restart   Force-restart the panel server before opening the browser.
+MSG
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    echo "[Azas] unknown option: $1" >&2
+    echo "Usage: azas-panel [--restart]" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "$LOG_DIR"
 
@@ -34,6 +62,50 @@ install_command_symlink() {
 
 panel_ready() {
   curl -fsS --max-time 1 "$URL" >/dev/null 2>&1
+}
+
+server_pid() {
+  if [[ -f "$PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && ps -p "$pid" -o args= 2>/dev/null | grep -q "robot_pipeline_control_server.py"; then
+      echo "$pid"
+      return 0
+    fi
+  fi
+  pgrep -f "python3 .*tools/run/robot_pipeline_control_server.py|python3 tools/run/robot_pipeline_control_server.py" | head -n 1
+}
+
+server_needs_restart() {
+  local pid="$1"
+  [[ "$FORCE_RESTART" == "1" ]] && return 0
+  [[ -z "$pid" ]] && return 1
+  [[ ! -f "$SERVER_SCRIPT" ]] && return 1
+  local etimes now started script_mtime
+  etimes="$(ps -p "$pid" -o etimes= 2>/dev/null | tr -d ' ' || true)"
+  [[ ! "$etimes" =~ ^[0-9]+$ ]] && return 1
+  now="$(date +%s)"
+  started=$((now - etimes))
+  script_mtime="$(stat -c %Y "$SERVER_SCRIPT" 2>/dev/null || echo 0)"
+  [[ "$script_mtime" -gt "$started" ]]
+}
+
+stop_panel_server() {
+  local pid="${1:-}"
+  if [[ -n "$pid" ]]; then
+    echo "[Azas] 기존 패널 서버 종료: pid=$pid"
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      if ! ps -p "$pid" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.1
+    done
+    if ps -p "$pid" >/dev/null 2>&1; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$PID_FILE"
 }
 
 ensure_workspace_built() {
@@ -92,6 +164,16 @@ open_browser() {
 
 install_command_symlink
 ensure_workspace_built
+
+PID="$(server_pid || true)"
+if [[ -n "$PID" ]] && server_needs_restart "$PID"; then
+  if [[ "$FORCE_RESTART" == "1" ]]; then
+    echo "[Azas] 요청에 따라 패널 서버를 재시작합니다."
+  else
+    echo "[Azas] 패널 서버 코드 변경 감지: 새 코드로 자동 재시작합니다."
+  fi
+  stop_panel_server "$PID"
+fi
 
 if ! panel_ready; then
   echo "[Azas] 패널 서버 시작 중..."
