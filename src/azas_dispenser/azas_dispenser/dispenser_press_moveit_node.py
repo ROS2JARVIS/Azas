@@ -8,11 +8,13 @@ from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import Constraints, JointConstraint, MoveItErrorCodes
 from moveit_msgs.srv import GetPositionIK
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.action import ActionClient
 
 
 def get_param(node, name, default):
-    node.declare_parameter(name, default)
+    descriptor = ParameterDescriptor(dynamic_typing=True)
+    node.declare_parameter(name, default, descriptor)
     return node.get_parameter(name).value
 
 
@@ -123,6 +125,9 @@ class DispenserPressMoveItNode:
         self.dispenser_top_z = float(get_param(self.node, "dispenser_top_z", 0.38))
         # Support taught PRESS poses (x, y, z, rx, ry, rz) in millimetres/degrees
         self.use_taught_posx = bool(get_param(self.node, "use_taught_posx", False))
+        self.use_taught_orientation = bool(
+            get_param(self.node, "use_taught_orientation", False)
+        )
         self.target_dispenser = str(get_param(self.node, "target_dispenser", "red"))
         self.taught_posx_by_name = {
             "red": [float(v) for v in get_param(self.node, "red_top_posx", [])],
@@ -361,15 +366,16 @@ class DispenserPressMoveItNode:
                 y_m = top_pose[1] / 1000.0
                 top_z_m = top_pose[2] / 1000.0
                 rx_deg, ry_deg, rz_deg = top_pose[3:6]
+                taught_rpy = [rx_deg, ry_deg, rz_deg] if self.use_taught_orientation else None
                 approach_z = top_z_m + self.approach_height
                 pressed_z = top_z_m - self.press_depth
 
                 steps = [
                     (self.home_tcp[0], self.home_tcp[1], self.home_tcp[2] + self.home_lift_height, "lift above HOME", None),
-                    (x_m, y_m, approach_z, "approach above dispenser", [rx_deg, ry_deg, rz_deg]),
-                    (x_m, y_m, top_z_m, "move to dispenser top", [rx_deg, ry_deg, rz_deg]),
-                    (x_m, y_m, pressed_z, "press dispenser pump", [rx_deg, ry_deg, rz_deg]),
-                    (x_m, y_m, approach_z, "retreat above dispenser", [rx_deg, ry_deg, rz_deg]),
+                    (x_m, y_m, approach_z, "approach above dispenser", taught_rpy),
+                    (x_m, y_m, top_z_m, "move to dispenser top", taught_rpy),
+                    (x_m, y_m, pressed_z, "press dispenser pump", taught_rpy),
+                    (x_m, y_m, approach_z, "retreat above dispenser", taught_rpy),
                 ]
                 for x_value, y_value, z_value, label, _ in steps:
                     self.logger.info(
@@ -394,7 +400,7 @@ class DispenserPressMoveItNode:
             (x, y, pressed_z, "press dispenser pump", None),
             (x, y, approach_z, "retreat above dispenser", None),
         ]
-        for x_value, y_value, z_value, label in steps:
+        for x_value, y_value, z_value, label, _ in steps:
             self.logger.info(
                 f"Queued step: {label} -> "
                 f"x={x_value:.3f}, y={y_value:.3f}, z={z_value:.3f}"
