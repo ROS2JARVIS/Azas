@@ -11,17 +11,25 @@ except ImportError:  # pragma: no cover - lets pure sanitizer tests run without 
     String = None
     Node = object
 
-from azas_voice.command_parser import RecipeDecision, parse_recipe_command
-from azas_voice.recipe_catalog import COLOR_ALIASES, RECIPE_DISPENSERS, RECIPE_DISPLAY_NAMES
+from azas_voice.command_parser import RecipeDecision, amounts_from_traits, parse_recipe_command, profile_from_amounts
+from azas_voice.recipe_catalog import (
+    COLOR_ALIASES,
+    DISPENSER_TRAITS,
+    RECIPE_DESCRIPTIONS,
+    RECIPE_DISPENSERS,
+    RECIPE_DISPLAY_NAMES,
+)
 
 
 ALLOWED_INTENTS = {"make_cocktail", "confirm", "cancel", "unknown"}
+ALLOWED_CUSTOM_RECIPE_IDS = {"custom_color_selection", "custom_preference_mix"}
 DISPENSER_NUMBER_TO_COLOR = {
     "1": "red",
     "2": "yellow",
     "3": "green",
     "4": "blue",
 }
+ALLOWED_TRAITS = set().union(*DISPENSER_TRAITS.values())
 
 
 def _normalize_dispenser_id(value: object) -> str:
@@ -35,6 +43,17 @@ def _normalize_dispenser_id(value: object) -> str:
         if any("".join(alias.lower().split()) == normalized for alias in aliases):
             return dispenser_id
     return ""
+
+
+def _normalize_traits(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    traits: list[str] = []
+    for item in value:
+        trait = str(item).strip().lower()
+        if trait in ALLOWED_TRAITS and trait not in traits:
+            traits.append(trait)
+    return tuple(traits)
 
 
 def _fallback_decision(text: str, reason: str = "") -> RecipeDecision:
@@ -58,16 +77,43 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
     if intent not in ALLOWED_INTENTS:
         return _fallback_decision(text, f"invalid_intent:{intent}")
 
+    fallback = parse_recipe_command(text)
+    if fallback.valid and fallback.intent in {"confirm", "cancel"}:
+        return fallback
+    if fallback.valid and fallback.intent == "make_cocktail" and fallback.recipe_id in RECIPE_DISPENSERS and "추천" in fallback.confirmation:
+        return fallback
+
     dispenser_ids = tuple(
         dispenser_id
         for dispenser_id in (_normalize_dispenser_id(item) for item in payload.get("dispenser_ids", []))
         if dispenser_id
     )
+    amounts_payload = payload.get("dispenser_amounts", {})
+    dispenser_amounts: dict[str, int] = {}
+    if isinstance(amounts_payload, dict):
+        for color in ("red", "yellow", "green", "blue"):
+            try:
+                amount = int(amounts_payload.get(color, 0))
+            except (TypeError, ValueError):
+                amount = 0
+            dispenser_amounts[color] = max(0, min(amount, 3))
+
+    wanted_traits = _normalize_traits(payload.get("wanted_traits", []))
+    avoided_traits = _normalize_traits(payload.get("avoided_traits", []))
+    if intent == "make_cocktail" and (wanted_traits or avoided_traits):
+        dispenser_amounts = amounts_from_traits(wanted_traits, avoided_traits, fallback.normalized)
+        dispenser_ids = tuple(color for color in ("red", "yellow", "green", "blue") if dispenser_amounts[color] > 0)
+
+    if not dispenser_ids and any(dispenser_amounts.values()):
+        dispenser_ids = tuple(color for color in ("red", "yellow", "green", "blue") if dispenser_amounts[color] > 0)
+
     recipe_id = payload.get("recipe_id")
     recipe_id = str(recipe_id).strip() if recipe_id else None
-    if recipe_id and not recipe_id.startswith("recipe_") and recipe_id != "custom_color_selection":
+    if intent == "make_cocktail" and (wanted_traits or avoided_traits):
+        recipe_id = "custom_preference_mix"
+    if recipe_id and not recipe_id.startswith("recipe_") and recipe_id not in ALLOWED_CUSTOM_RECIPE_IDS:
         recipe_id = None
-    if recipe_id and recipe_id != "custom_color_selection" and not dispenser_ids:
+    if recipe_id and recipe_id not in ALLOWED_CUSTOM_RECIPE_IDS:
         dispenser_ids = RECIPE_DISPENSERS.get(recipe_id, ())
 
     if intent == "make_cocktail" and recipe_id is None and not dispenser_ids:
@@ -75,19 +121,48 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
 
     valid = intent in {"make_cocktail", "confirm", "cancel"}
     if intent == "make_cocktail" and recipe_id is None:
-        recipe_id = "custom_color_selection"
+        recipe_id = "custom_preference_mix" if dispenser_amounts else "custom_color_selection"
+
+    if intent == "make_cocktail" and fallback.recipe_id == "custom_preference_mix":
+        recipe_id = "custom_preference_mix"
+        if not any(dispenser_amounts.values()) and fallback.dispenser_amounts:
+            dispenser_amounts = dict(fallback.dispenser_amounts)
+        if any(dispenser_amounts.values()):
+            dispenser_ids = tuple(
+                color for color in ("red", "yellow", "green", "blue") if dispenser_amounts[color] > 0
+            )
+        elif not dispenser_ids and fallback.dispenser_ids:
+            dispenser_ids = fallback.dispenser_ids
 
     confirmation = str(payload.get("confirmation", "")).strip()
+    if confirmation.lower() in {"false", "none", "null"}:
+        confirmation = ""
     if valid and not confirmation:
         if intent == "cancel":
             confirmation = "칵테일 제조 요청을 취소합니다."
         elif intent == "confirm":
             confirmation = "선택한 칵테일 제조를 확인했습니다."
+        elif recipe_id == "custom_preference_mix" and fallback.confirmation:
+            confirmation = fallback.confirmation
+        elif fallback.confirmation and "추천" in fallback.confirmation:
+            recipe_name = RECIPE_DISPLAY_NAMES.get(str(recipe_id), str(recipe_id))
+            description = RECIPE_DESCRIPTIONS.get(str(recipe_id), "")
+            confirmation = f"{recipe_name}를 추천드릴게요. {description} 진행할까요?"
         else:
             recipe_name = RECIPE_DISPLAY_NAMES.get(str(recipe_id), str(recipe_id))
             confirmation = f"{recipe_name} 요청을 인식했습니다. 진행할까요?"
 
-    fallback = parse_recipe_command(text)
+    profile = payload.get("profile")
+    if recipe_id == "custom_preference_mix" and any(dispenser_amounts.values()):
+        profile = profile_from_amounts(dispenser_amounts)
+    if recipe_id != "custom_preference_mix":
+        profile = None
+    if not isinstance(profile, dict):
+        profile = fallback.profile if recipe_id == "custom_preference_mix" else None
+    if recipe_id == "custom_preference_mix" and fallback.profile:
+        expected_profile_keys = {"rum", "syrup", "liqueur", "juice"}
+        if not profile or set(profile.keys()) != expected_profile_keys:
+            profile = fallback.profile
     return RecipeDecision(
         valid,
         text.strip(),
@@ -97,6 +172,8 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
         dispenser_ids,
         confirmation,
         None if valid else "llm returned unknown intent",
+        profile={str(k): str(v) for k, v in profile.items()} if profile else None,
+        dispenser_amounts=dispenser_amounts if any(dispenser_amounts.values()) else None,
     )
 
 
@@ -184,17 +261,22 @@ class LlmRecipeMapperNode(Node):
                     "role": "system",
                     "content": (
                         "Return only JSON for Azas cocktail intent parsing. "
-                        "Allowed fields: valid, intent, recipe_id, dispenser_ids, confirmation. "
+                        "Allowed fields: valid, intent, recipe_id, dispenser_ids, confirmation, wanted_traits, avoided_traits. "
                         "Allowed intents: make_cocktail, confirm, cancel, unknown. "
-                        "The user does not know dispenser colors; infer them internally. "
-                        "If the user describes mood or asks for a recommendation, choose one recipe_01..recipe_04. "
+                        "For descriptive preference or recommendation requests, extract wanted_traits and avoided_traits instead of calculating amounts. "
+                        "Allowed traits: sweetness, fruitiness, freshness, aroma, alcohol, bitterness, softness, light, depth, herbal. "
+                        "Examples of preferences: not too strong, light, easy to drink, rich aroma, sweet, not sweet, fruity. "
+                        "For a plain recommendation with no preferences, choose one recipe_01..recipe_04. "
+                        "Only choose recipe_01..recipe_04 when the user explicitly asks for a numbered/color menu or gives no preferences. "
                         "Allowed dispenser_ids values: red, yellow, green, blue only. "
+                        "Do not output dispenser_amounts; the application calculates amounts from traits. "
                         "Never output robot coordinates, calibration values, trajectories, or safety approvals."
                     ),
                 },
                 {"role": "user", "content": text},
             ],
             "temperature": 0.0,
+            "response_format": {"type": "json_object"},
         }
         data = json.dumps(body).encode("utf-8")
         req = request.Request(
