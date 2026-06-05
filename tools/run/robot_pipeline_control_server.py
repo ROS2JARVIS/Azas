@@ -1518,7 +1518,7 @@ def requires_collision_scene_step(key: str) -> bool:
 
 
 def with_collision_scene_prereq(selected: list[str]) -> list[str]:
-    ordered = list(selected)
+    ordered = list(dict.fromkeys(selected))
     if "side_grip" in ordered:
         # PR #20 node also moves to camera-home internally, but the supervised
         # panel must make the operator-visible sequence explicit and safe:
@@ -1782,7 +1782,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"--service-prefix {service_prefix} --dispenser-id {shlex.quote(dispenser_id)} "
             "--timeout-sec 180 --verify-target --verify-timeout-sec 70 "
             "--ikin-timeout-sec 20 --ikin-retries 2 "
-            "--target-tolerance-mm 15 --compensate-current-tcp --verify-link6-target --no-moveit-planning-guard "
+            "--target-tolerance-mm 15 --set-current-tcp-before-move --no-compensate-current-tcp "
+            "--verify-link6-target --no-moveit-planning-guard "
         )
         # Newly taught side-grip front-hold poses are the verified reachable poses.
         # Do not synthesize an above/retreat pose here: for the current side-grip
