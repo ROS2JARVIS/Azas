@@ -150,6 +150,25 @@ def test_sanitize_llm_decision_maps_traits_to_amounts():
     assert decision.profile["syrup"] == "많게"
 
 
+def test_sanitize_llm_decision_prefers_explicit_stronger_followup():
+    decision = _sanitize_llm_decision(
+        "더 쎈거는 없어?",
+        {
+            "intent": "make_cocktail",
+            "wanted_traits": ["sweetness", "fruitiness"],
+            "avoided_traits": ["bitterness"],
+            "confirmation": "",
+        },
+    )
+
+    assert decision.valid
+    assert decision.recipe_id == "custom_preference_mix"
+    assert decision.dispenser_amounts
+    assert decision.dispenser_amounts["blue"] == 3
+    assert decision.profile
+    assert decision.profile["rum"] == "강하게"
+
+
 def test_sanitize_llm_decision_prefers_local_confirm_intent():
     decision = _sanitize_llm_decision(
         "진행해줘",
