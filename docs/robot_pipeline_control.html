@@ -668,7 +668,7 @@
 
       <div class="quick-row" aria-label="quick selection">
         <button id="quickStartBtn" class="quick-start-btn" title="로봇 연결 → 카메라 시작 → 안전영역+사이드그립 한번에 실행">⚡ 빠른시작</button>
-        <button id="cocktailCycleBtn" class="quick-start-btn" style="background:#6a0dad" title="색상스캔 → STT레시피 → 컵집기 → 디스펜서 → 컵홀더 → 셰이킹 전체 사이클">🍹 칵테일 사이클</button>
+        <button id="cocktailCycleBtn" class="quick-start-btn" style="background:#6a0dad" title="스캔포즈이동 → 색상스캔 → STT레시피 → 컵집기 → 디스펜서 → 컵홀더 → 셰이킹 전체 사이클">🍹 칵테일 사이클</button>
         <button class="recipe-preset" data-recipe-preset="1">칵테일 1</button>
         <button class="recipe-preset" data-recipe-preset="2">칵테일 2</button>
         <button class="recipe-preset" data-recipe-preset="3">칵테일 3</button>
@@ -686,9 +686,10 @@
       <div id="cocktailCyclePanel">
         <div class="cycle-label">🍹 칵테일 사이클 — 실행할 단계 선택</div>
         <div class="cycle-checks" style="border-bottom:1px dashed #c4b5fd; padding-bottom:8px; margin-bottom:8px;">
-          <label style="color:#1e40af; font-weight:700;"><input type="checkbox" id="cycleIncludeConnect"> ⚡ 로봇 연결 포함 <span style="font-weight:400; color:#475569;">(connect → status_check → lift_robot → start_camera)</span></label>
+          <label style="color:#1e40af; font-weight:700;"><input type="checkbox" id="cycleIncludeConnect"> ⚡ 로봇 연결 포함 <span style="font-weight:400; color:#475569;">(connect → status_check → lift_robot → start_camera → 충돌영역)</span></label>
         </div>
         <div class="cycle-checks">
+          <label><input type="checkbox" class="cycle-step" value="move_to_color_scan_pose" checked> 스캔 포즈 이동 [0,10,20,0,90,0]°</label>
           <label><input type="checkbox" class="cycle-step" value="color_scan" checked> 색상 스캔</label>
           <label><input type="checkbox" class="cycle-step" value="voice_input" checked> 음성 입력 (STT)</label>
           <label><input type="checkbox" class="cycle-step" value="listen_stt_recipe" checked> STT 레시피 수신</label>
@@ -821,7 +822,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	      <div class="flow-head">
 	        <div>
 	          <h2>선택 실행 순서</h2>
-	          <div class="flow-help">큐 순서대로 실행됩니다. 레시피 디스펜서 단계는 컵 놓기/프레스/다시 잡기를 통합 루프로 실행합니다.</div>
+	          <div class="flow-help">큐 순서대로 실행됩니다. 필요한 충돌 장면 단계는 실행 전에 자동으로 보강됩니다.</div>
 	        </div>
 	        <span class="pill info" id="flowMode">대기</span>
 	      </div>
@@ -906,7 +907,6 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       if (key === "start_camera" || key === "detect_cup_lid") return "camera";
       if (key.includes("gripper")) return "grip";
       if (key.startsWith("teach_front_hold_")) return "teach";
-      if (key === "run_dispenser_recipe_sequence") return "press";
       if (key === "start_collision_scene") return "core";
       if (key.startsWith("move_to_dispenser") || key.includes("cup") || key.includes("holder") || key.includes("side_grip") || key.includes("home") || key.includes("lift")) return "move";
       if (key.startsWith("press_dispenser")) return "press";
@@ -962,8 +962,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
     });
 
     function needsCollisionScene(key) {
-      return key === "run_dispenser_recipe_sequence"
-        || key === "shake_closed_cup"
+      return key === "shake_closed_cup"
         || key.startsWith("move_to_dispenser_")
         || key.startsWith("pick_from_dispenser_");
     }
@@ -1414,7 +1413,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       }
       const includeConnect = document.getElementById("cycleIncludeConnect").checked;
       const connectKeys = includeConnect
-        ? ["connect_robot", "status_check", "lift_robot", "start_camera"]
+        ? ["connect_robot", "status_check", "lift_robot", "start_camera", "start_collision_scene"]
         : [];
       const keys = [...connectKeys, ...cycleKeys];
       selectedQueue = [];

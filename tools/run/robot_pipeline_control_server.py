@@ -141,13 +141,22 @@ STEPS = [
         "MoveLine IK 대신 실측 관절 자세 사용: joint_2=-5°, joint_3=50°, joint_5=135° 상한으로 테이블 보기",
     ),
     Step(
+        "move_to_color_scan_pose",
+        "색상 스캔 포즈 이동 [0,10,20,0,90,0]°",
+        "run",
+        "tools/run/direct_movej_joints.py --j1 0 --j2 10 --j3 20 --j4 0 --j5 90 --j6 0 --velocity 30 --acceleration 30 --execute --confirm ENABLE_DIRECT_MOVEJ",
+        True,
+        True,
+        "색상 스캔 전 카메라가 디스펜서를 향하는 포즈로 이동. color_scan_pose: [0,10,20,0,90,0]°",
+    ),
+    Step(
         "color_scan",
         "디스펜서 색상 스캔",
         "run",
         "tools/run/dispenser_color_scan_ros.sh",
         True,
         False,
-        "카메라+TF로 디스펜서 1~4 색상을 판별해 outputs/dispenser_color_map.json 저장. 로봇이 color_scan_pose에 있어야 함",
+        "카메라+TF로 디스펜서 1~4 색상을 판별해 outputs/dispenser_color_map.json 저장. 로봇이 color_scan_pose [0,10,20,0,90,0]°에 있어야 함",
     ),
     Step("voice_input", "음성 입력 (STT+LLM 노드 시작)", "background", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT → /stt_result → llm_recipe_mapper → /azas/voice/recipe_decision"),
     Step(
@@ -172,13 +181,12 @@ STEPS = [
         "side_grip",
         "PR #20 RealSense 컵 인식 후 side grip",
         "background",
-        "ros2 launch dsr_practice yolo_cup_pick_node.launch.py auto_pick:=false grasp_mode:=side",
+        "ros2 launch dsr_practice yolo_cup_pick_node.launch.py auto_pick:=true grasp_mode:=side moveit_controller_name:=/dsr01/dsr_moveit_controller",
         True,
         True,
-        "PR #20 merged manual side-grip flow: 카메라 창에서 cup 탐지 후 p 키로 side-grip 실행",
+        "auto_pick=true: 컵 감지 즉시 자동 side-grip. 서버 command_for()가 실제 파라미터를 오버라이드함. 패널에서 OpenCV 창에서 확인 후 ESC 종료",
     ),
     Step("gripper_soft_grasp", "그리퍼 살짝 잡기", "run", "ros2 service call /jarvis/rg2/set_width azas_interfaces/srv/SetGripper", True, True, "큰 컵용: 완전 close 대신 폭 75mm/약한 힘으로 살짝 오므림"),
-    Step("gripper_open", "그리퍼 full open / 컵 놓기 검증", "run", "tools/run/rg2_full_open_verify.sh", True, True, "컵을 배출구 아래에 둔 뒤 RG2 full-open 명령 success=True 검증"),
     Step(
         "move_to_dispenser_1",
         "고정 디스펜서 1 배출구 아래로 컵 이동",
@@ -288,17 +296,6 @@ STEPS = [
         "front_hold_poses.dispenser_4 재사용: RG2 open→측정 front-hold 접근→soft side-grip→수직 lift",
     ),
     Step(
-        "run_dispenser_recipe_sequence",
-        "레시피 디스펜서 통합 실행 / move→press→pick",
-        "run",
-        "tools/run/run_measured_dispenser_recipe_sequence.py --dispenser-ids 1,2,3,4",
-        True,
-        True,
-        "설정의 RECIPE_DISPENSER_IDS 순서대로 실행. 컵 이동/놓기와 다시 side-grip 집기는 통합 ROS 클라이언트로 처리해 반복 명령 실행 시간을 줄임",
-    ),
-    Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
-    Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
-    Step(
         "place_cup_holder",
         "컵을 컵홀더에 놓기 / side grip",
         "run",
@@ -307,7 +304,6 @@ STEPS = [
         True,
         "실제모션 후보: 측정된 side_grip_place pre_place→place_final→RG2 full-open→retreat",
     ),
-    Step("attach_lid", "뚜껑을 컵에 끼우기", "blocked", "", False, True, "뚜껑 체결 동작 미구현"),
     Step(
         "shake_rviz_preview",
         "쉐이킹 RViz 미리보기 / 무모션",
@@ -318,8 +314,6 @@ STEPS = [
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
     Step("shake_closed_cup", "컵홀더 컵 다시 잡기 후 쉐이킹", "run", "tools/run/pick_from_cup_holder_side_grip.py && tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 측정된 cup_holder.side_grip_place pose로 다시 side-grip 픽업한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행"),
-    Step("remove_lid", "뚜껑을 열기/제거하기", "blocked", "", False, True, "뚜껑 제거 동작 미구현"),
-    Step("pour_cocktail", "칵테일을 다른 컵에 붓기", "blocked", "", False, True, "따르기 경로 미구현"),
 ]
 
 processes: dict[str, subprocess.Popen[str]] = {}
@@ -897,8 +891,6 @@ def text_output(output: str | bytes | None) -> str:
 
 def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
     clean = service_prefix.strip("/") or "dsr01"
-    if step.key == "gripper_open":
-        return ["/jarvis/rg2/set_width"]
     if step.key == "gripper_soft_grasp":
         return ["/jarvis/rg2/set_width"]
     if step.key.startswith("teach_front_hold_"):
@@ -952,19 +944,6 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/aux_control/get_current_posj",
             f"/{clean}/aux_control/get_current_posx",
         ]
-    if step.key == "run_dispenser_recipe_sequence":
-        return [
-            "/jarvis/rg2/set_width",
-            f"/{clean}/motion/move_joint",
-            f"/{clean}/motion/move_line",
-            f"/{clean}/motion/move_wait",
-            f"/{clean}/motion/ikin",
-            f"/{clean}/motion/check_motion",
-            f"/{clean}/system/get_robot_state",
-            f"/{clean}/tcp/get_current_tcp",
-            f"/{clean}/tcp/set_current_tcp",
-            f"/{clean}/aux_control/get_current_posx",
-        ]
     if step.key == "place_cup_holder":
         return [
             "/jarvis/rg2/set_width",
@@ -1003,13 +982,12 @@ def required_service_wait_timeout(step: Step) -> float:
         step.key.startswith("move_to_dispenser_")
         or step.key.startswith("press_dispenser_")
         or step.key.startswith("pick_from_dispenser_")
-        or step.key == "run_dispenser_recipe_sequence"
         or step.key == "place_cup_holder"
     ):
         return 35.0
     if step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}:
         return 30.0
-    if step.key in {"gripper_open", "gripper_soft_grasp"}:
+    if step.key == "gripper_soft_grasp":
         return 12.0
     return 8.0
 
@@ -1370,7 +1348,6 @@ def requires_doosan_motion(step: Step) -> bool:
         or step.key.startswith("move_to_dispenser_")
         or step.key.startswith("press_dispenser_")
         or step.key.startswith("pick_from_dispenser_")
-        or step.key == "run_dispenser_recipe_sequence"
         or step.key == "place_cup_holder"
     )
 
@@ -1525,8 +1502,7 @@ def target_xyz_for_step(step_key: str) -> list[float] | None:
 
 def requires_collision_scene_step(key: str) -> bool:
     return (
-        key == "run_dispenser_recipe_sequence"
-        or key == "shake_closed_cup"
+        key == "shake_closed_cup"
         or key.startswith("move_to_dispenser_")
         or key.startswith("pick_from_dispenser_")
     )
@@ -1548,8 +1524,6 @@ def with_collision_scene_prereq(selected: list[str]) -> list[str]:
     return ordered
 
 def run_timeout_for_step(step: Step) -> float:
-    if step.key == "run_dispenser_recipe_sequence":
-        return 900.0
     if step.key == "side_grip":
         return 900.0
     if step.key == "place_cup_holder":
@@ -1668,9 +1642,12 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key == "connect_gripper":
         rg2_ip = str(payload.get("rg2_ip") or os.environ.get("RG2_IP") or "192.168.1.1")
+        gripper_pkg_bash = ROOT / "install" / "azas_gripper" / "share" / "azas_gripper" / "package.bash"
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
-            f"ros2 launch azas_gripper rg2_trigger.launch.py ip:={shlex.quote(rg2_ip)} "
+            f"source {shlex.quote(str(gripper_pkg_bash))} && "
+            f"ros2 launch {shlex.quote(str(ROOT / 'install' / 'azas_gripper' / 'share' / 'azas_gripper' / 'launch' / 'rg2_trigger.launch.py'))} "
+            f"ip:={shlex.quote(rg2_ip)} "
             "port:=502 connect:=true open_width:=1100 close_width:=0 force:=300 settle_seconds:=0.6"
         )
     if step.key == "start_collision_scene":
@@ -1761,11 +1738,6 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"dispenser_collision_config_path:={shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'measured_dispenser_collision.yaml'))} "
             "moveit_controller_name:=/dsr01/dsr_moveit_controller "
             "start_joint_state_relay:=true"
-        )
-    if step.key == "gripper_open":
-        return (
-            f"cd {ROOT} && {ROS_SETUP} && "
-            "tools/run/rg2_full_open_verify.sh"
         )
     if step.key == "gripper_soft_grasp":
         return (
@@ -1879,24 +1851,6 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--execute --confirm ENABLE_PICK_FROM_MEASURED_DISPENSER_FRONT_HOLD"
             f" && {tumbler_scene_once('remove_world', object_id=f'tumbler_at_dispenser_{dispenser_id}', dispenser_id=dispenser_id)}"
             f" && {tumbler_scene_once('attach', object_id='carried_tumbler', dispenser_id=dispenser_id)}"
-        )
-    if step.key == "run_dispenser_recipe_sequence":
-        recipe_ids = str(
-            payload.get("recipe_dispenser_ids")
-            or os.environ.get("RECIPE_DISPENSER_IDS")
-            or "1,2,3,4"
-        ).strip()
-        tcp_name = str(
-            payload.get("dispenser_tcp_name")
-            or os.environ.get("DISPENSER_TCP_NAME")
-            or DEFAULT_DISPENSER_TCP_NAME
-        ).strip()
-        return (
-            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/run_measured_dispenser_recipe_sequence.py "
-            f"--service-prefix {service_prefix} "
-            f"--dispenser-ids {shlex.quote(recipe_ids)} "
-            f"--dispenser-tcp-name {shlex.quote(tcp_name)} "
-            "--execute --confirm ENABLE_MEASURED_DISPENSER_RECIPE_SEQUENCE"
         )
     if step.key == "place_cup_holder":
         place_final_z_offset_m = str(
