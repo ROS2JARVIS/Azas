@@ -1824,7 +1824,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"--service-prefix {service_prefix} --dispenser-id {shlex.quote(dispenser_id)} "
             "--timeout-sec 180 --verify-target --verify-timeout-sec 70 "
             "--ikin-timeout-sec 20 --ikin-retries 2 "
-            "--target-tolerance-mm 15 --set-current-tcp-before-move --no-compensate-current-tcp "
+            "--target-tolerance-mm 15 --no-set-current-tcp-before-move --compensate-current-tcp "
+            "--direct-x-max 0.95 "
             "--verify-link6-target --no-moveit-planning-guard "
         )
         # Newly taught side-grip front-hold poses are the verified reachable poses.
