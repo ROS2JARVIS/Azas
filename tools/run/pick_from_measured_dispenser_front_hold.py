@@ -240,6 +240,18 @@ def run_front_hold_move(
         f"{args.wait_service_sec:.6f}",
         "--verify-timeout-sec",
         f"{args.verify_timeout_sec:.6f}",
+        "--direct-x-min",
+        f"{args.x_min:.6f}",
+        "--direct-x-max",
+        f"{args.x_max:.6f}",
+        "--direct-y-min",
+        f"{args.y_min:.6f}",
+        "--direct-y-max",
+        f"{args.y_max:.6f}",
+        "--direct-z-min",
+        f"{args.z_min:.6f}",
+        "--direct-z-max",
+        f"{args.z_max:.6f}",
         "--target-tolerance-mm",
         f"{args.target_tolerance_mm:.6f}",
         "--target-offset-x-m",
@@ -398,7 +410,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--joint1-clearance-velocity", type=float, default=20.0)
     parser.add_argument("--joint1-clearance-acceleration", type=float, default=25.0)
     parser.add_argument("--x-min", type=float, default=0.10)
-    parser.add_argument("--x-max", type=float, default=0.72)
+    parser.add_argument("--x-max", type=float, default=0.95)
     parser.add_argument("--y-min", type=float, default=-0.35)
     parser.add_argument("--y-max", type=float, default=0.15)
     parser.add_argument("--z-min", type=float, default=0.05)

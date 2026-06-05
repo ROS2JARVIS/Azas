@@ -1854,7 +1854,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         tcp_name = str(
             payload.get("dispenser_tcp_name")
             or os.environ.get("DISPENSER_TCP_NAME")
-            or DEFAULT_LINK6_TCP_NAME
+            or DEFAULT_DISPENSER_TCP_NAME
         ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
@@ -1915,7 +1915,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--lift-m 0.100 --lift-velocity 18.0 --lift-acceleration 24.0 "
             "--timeout-sec 120 --wait-service-sec 8 --verify-timeout-sec 45 "
             "--target-tolerance-mm 15 --gripper-grasp-width-m 0.075 --gripper-force-n 25.0 "
-            "--x-min 0.10 "
+            "--x-min 0.10 --x-max 0.95 "
             "--execute --confirm ENABLE_PICK_FROM_MEASURED_DISPENSER_FRONT_HOLD"
             f" && {tumbler_scene_once('remove_world', object_id=f'tumbler_at_dispenser_{dispenser_id}', dispenser_id=dispenser_id)}"
             f" && {tumbler_scene_once('attach', object_id='carried_tumbler', dispenser_id=dispenser_id)}"
@@ -2349,6 +2349,15 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                         "returncode": 1,
                         "output": output,
                     }
+            if step.key == "color_scan":
+                try:
+                    color_map = json.loads(DISPENSER_COLOR_MAP_PATH.read_text(encoding="utf-8"))
+                    lines = ["--- 색상 스캔 결과 ---"]
+                    for did in sorted(color_map.keys(), key=lambda x: int(x) if x.isdigit() else x):
+                        lines.append(f"  디스펜서 {did}: {color_map[did]}")
+                    output = f"{output}\n" + "\n".join(lines) + "\n"
+                except Exception as exc:
+                    output = f"{output}\n[color_scan] 결과 파일 읽기 실패: {exc}\n"
             target_xyz = target_xyz_for_step(step.key)
             if target_xyz is not None:
                 reached, verify_output = wait_for_xyz_target(env["SERVICE_PREFIX"], target_xyz)
