@@ -5,15 +5,28 @@
 frames:
   base_frame: base_link
   camera_frame: null        # 확인 필요: 실제 depth camera frame_id
-  ee_link: null             # 확인 필요: M0609 MoveIt EE_LINK
+  ee_link: link_6           # M0609 EE link (yolo_cup_pick_node.py 확인)
   planning_group: null      # 확인 필요: M0609 MoveIt GROUP_NAME
   gripper_tcp: gripper_tcp  # 확인 필요: 실제 TCP frame 구성 후 확정
   cup_mouth_center: cup_mouth_center
 hand_eye:
   parent_frame: base_link
   child_frame: null         # 확인 필요: camera_frame
-  xyz_m: null               # 확인 필요: calibrated transform
-  rpy_rad: null             # 확인 필요: calibrated transform
+  npy_path: src/dsr_practice/config/T_gripper2camera.npy  # measured (May 15), used by yolo_cup_pick_node
+  npy_path_alt: src/azas_perception/config/T_gripper2camera.npy  # re-calibrated (May 20)
+  xyz_m: null               # 확인 필요: fill from npy after deciding canonical file
+  rpy_rad: null             # 확인 필요: fill from npy after deciding canonical file
+
+# Saved robot pose for dispenser color scanning.
+# Joint values from yolo_cup_pick_node.launch.py camera_home_joint_*_deg defaults (measured).
+color_scan_pose:
+  source: yolo_cup_pick_node.launch.py camera_home defaults
+  ee_link: link_6
+  joints_deg: [3.0, -12.7, 44.0, -9.0, 133.0, 90.0]
+  joints_rad: [0.0524, -0.2217, 0.7679, -0.1571, 2.3213, 1.5708]
+  joint_order: [joint_1, joint_2, joint_3, joint_4, joint_5, joint_6]
+  cartesian_xyz_m: [0.45, 0.0, 0.64]
+  cartesian_frame: base_link
 cup_offsets:
   default:
     tcp_to_cup_mouth_m: null  # 확인 필요: jig/dry-run으로 측정

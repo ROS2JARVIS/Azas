@@ -102,7 +102,6 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                         value_type=str,
                     ),
                     "auto_pick_interval": LaunchConfiguration("auto_pick_interval"),
-                    "pick_depth_ratio": LaunchConfiguration("pick_depth_ratio"),
                     "depth_patch_radius": LaunchConfiguration("depth_patch_radius"),
                     "min_depth_valid_ratio": LaunchConfiguration("min_depth_valid_ratio"),
                     "min_depth_m": LaunchConfiguration("min_depth_m"),
@@ -319,9 +318,6 @@ def generate_launch_description():
     target_class_arg = DeclareLaunchArgument("target_class", default_value="cup")
     auto_pick_interval_arg = DeclareLaunchArgument(
         "auto_pick_interval", default_value="3.0"
-    )
-    pick_depth_ratio_arg = DeclareLaunchArgument(
-        "pick_depth_ratio", default_value="0.55"
     )
     depth_patch_radius_arg = DeclareLaunchArgument(
         "depth_patch_radius", default_value="7"
@@ -707,7 +703,6 @@ def generate_launch_description():
             device_arg,
             target_class_arg,
             auto_pick_interval_arg,
-            pick_depth_ratio_arg,
             depth_patch_radius_arg,
             min_depth_valid_ratio_arg,
             min_depth_m_arg,

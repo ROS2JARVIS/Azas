@@ -162,6 +162,14 @@
       border-color: #a7f3d0;
       color: #047857;
     }
+    .quick-start-btn {
+      background: #1e40af !important;
+      border-color: #1e40af !important;
+      color: #fff !important;
+      font-weight: 600 !important;
+      letter-spacing: 0.02em;
+    }
+    .quick-start-btn:hover { background: #1d3faa !important; }
     .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
 
     details.settings {
@@ -612,6 +620,7 @@
       </div>
 
       <div class="quick-row" aria-label="quick selection">
+        <button id="quickStartBtn" class="quick-start-btn" title="로봇 연결 → 카메라 시작 → 안전영역+사이드그립 한번에 실행">⚡ 빠른시작</button>
         <button class="recipe-preset" data-recipe-preset="1">칵테일 1</button>
         <button class="recipe-preset" data-recipe-preset="2">칵테일 2</button>
         <button class="recipe-preset" data-recipe-preset="3">칵테일 3</button>
@@ -676,15 +685,14 @@ source /home/ssu/ros2_ws/install/setup.bash
 source /home/ssu/Azas/install/setup.bash
 export PYTHONPATH=/home/ssu/Azas/tools/run/python_compat:${PYTHONPATH:-}
 
-ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
-  model_path:=/home/ssu/Azas/best.pt \
+ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_cup_pick_node.launch.py \
+  model_path:=/home/ssu/Azas/local_models/best.pt \
   conf:=0.35 \
   imgsz:=640 \
   device:=cpu \
   target_class:=cup \
-  auto_pick:=false \
+  auto_pick:=true \
   auto_pick_interval:=3.0 \
-  pick_depth_ratio:=0.55 \
   depth_patch_radius:=7 \
   min_depth_valid_ratio:=0.03 \
   min_depth_m:=0.15 \
@@ -692,77 +700,37 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   redetect_on_approach:=false \
   redetect_settle_sec:=0.5 \
   grasp_mode:=side \
-  side_grasp_axis:=y_axis \
-  side_grasp_direction:=1.0 \
-  side_auto_direction_by_cup_y:=true \
   side_far_stage_enabled:=false \
-  side_staging_offset:=0.30 \
   side_approach_offset:=0.18 \
   side_short_stage_backoff_m:=0.08 \
-  side_stage_y_min:=-0.35 \
-  side_stage_y_max:=0.35 \
-  side_grasp_offset:=0.025 \
-  side_grasp_z_offset:=0.05 \
   side_grasp_stop_backoff_m:=0.04 \
-  side_close_underreach_m:=0.05 \
+  side_close_underreach_m:=0.03 \
   side_low_retry_lift_m:=0.03 \
   side_low_retry_attempts:=5 \
-  side_linear_approach_enabled:=false \
+  side_linear_approach_enabled:=true \
   side_final_slide_enabled:=false \
   side_fixed_grasp_z_enabled:=true \
   side_fixed_grasp_z:=0.07 \
   side_project_bbox_center_to_fixed_z:=true \
-  side_orientation_mode:=approach \
-  side_tool_roll_deg:=0.0 \
-  side_roll_deg:=0.0 \
-  side_pitch_deg:=90.0 \
-  side_yaw_deg:=0.0 \
-  table_collision_enabled:=true \
-  table_surface_z:=0.0 \
-  table_thickness:=0.04 \
-  table_size_x:=1.20 \
-  table_size_y:=1.00 \
-  table_center_x:=0.45 \
-  table_center_y:=0.0 \
-  dispenser_collision_enabled:=true \
-  dispenser_collision_config_path:=/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml \
-  dispenser_collision_publish_period_sec:=1.0 \
-  dispenser_collision_publish_objects:=true \
-  dispenser_collision_publish_markers:=true \
-  center_check_enabled:=false \
-  center_check_settle_sec:=0.6 \
-  center_check_x:=0.45 \
-  center_check_y:=0.0 \
-  center_check_z:=0.64 \
-  side_prepose_enabled:=false \
-  side_prepose_split_z:=0.18 \
+  side_candidate_plan_check_enabled:=true \
   side_move_to_initial_center_before_close:=false \
-  pre_pick_joint1_clearance_deg:=0.0 \
   verify_motion:=true \
-  motion_verify_tolerance:=0.03 \
-  joint_goal_tolerance_rad:=0.02 \
   move_to_camera_home:=true \
   move_joint_home_before_camera_home:=false \
   camera_home_mode:=joint \
-  camera_home_joint_1_deg:=3.0 \
-  camera_home_joint_2_deg:=-12.7 \
-  camera_home_joint_3_deg:=44.0 \
-  camera_home_joint_4_deg:=-9.0 \
-  camera_home_joint_5_deg:=133.0 \
-  camera_home_joint_6_deg:=90.0 \
-  camera_home_x:=0.45 \
-  camera_home_y:=0.0 \
-  camera_home_z:=0.64 \
-  camera_home_search_max_z:=0.64 \
-  camera_home_search_min_z:=0.54 \
-  camera_home_search_step_z:=0.02 \
   min_motion_z:=0.07 \
   workspace_xy_clamp_enabled:=false \
   return_home_after_task:=false \
   return_to_camera_home_after_attempt:=true \
-  place_x:=0.45 \
-  place_y:=0.0 \
-  place_z:=0.30 \
+  table_collision_enabled:=true \
+  table_surface_z:=0.0 \
+  table_thickness:=0.04 \
+  table_size_x:=1.10 \
+  table_size_y:=0.65 \
+  table_center_x:=0.29 \
+  table_center_y:=0.0 \
+  dispenser_collision_enabled:=true \
+  dispenser_collision_config_path:=/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml \
   moveit_controller_name:=/dsr01/dsr_moveit_controller \
   start_joint_state_relay:=true</code></pre>
         </div>
@@ -1355,6 +1323,17 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	      if (mode) selectByMode(mode);
 	    });
     document.getElementById("focusLog").addEventListener("click", focusLog);
+    document.getElementById("quickStartBtn").addEventListener("click", () => {
+      const keys = ["connect_robot", "status_check", "lift_robot", "start_camera", "start_collision_scene", "side_grip"];
+      selectedQueue = [];
+      addQueueItems(keys);
+      itemStatuses = new Map();
+      updateSelectedCount();
+      renderSteps();
+      flowEl.closest(".flow-panel")?.scrollIntoView({behavior: "smooth", block: "start"});
+      log.textContent = `⚡ 빠른시작: ${keys.length}개 단계를 큐에 올렸습니다. 실행 버튼을 누르세요.`;
+      focusLog();
+    });
 
 	    document.getElementById("run").addEventListener("click", async () => {
 	      const selected = withCollisionScenePrereq(selectedQueue);

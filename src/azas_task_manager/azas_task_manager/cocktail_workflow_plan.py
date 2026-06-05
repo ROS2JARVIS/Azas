@@ -41,7 +41,7 @@ def build_cocktail_steps(dispenser_ids: list[str], include_human_handover: bool 
         TaskStep(
             "VERIFY_RECIPE",
             "accept symbolic recipe and ordered dispenser color targets",
-            required_inputs=("/azas/voice/recipe_decision",),
+            required_inputs=("/azas/voice/confirmed_recipe_decision",),
             produces=("ordered_dispenser_colors",),
         ),
         TaskStep(

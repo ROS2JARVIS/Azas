@@ -251,7 +251,10 @@ class MeasuredDispenserCollisionSceneNode(Node):
             markers = self._make_markers(collision_objects)
             self.marker_pub.publish(markers)
             if self.publish_rviz_visual_tools_compat:
-                self.rviz_visual_tools_pub.publish(markers)
+                rviz_markers = MarkerArray(
+                    markers=[m for m in markers.markers if m.action != Marker.DELETEALL]
+                )
+                self.rviz_visual_tools_pub.publish(rviz_markers)
 
     def _make_collision_object(
         self, object_id: str, object_config: dict[str, Any]

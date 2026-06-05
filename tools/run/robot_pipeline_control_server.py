@@ -43,7 +43,7 @@ ROS_SETUP = (
 DEFAULT_ROBOT_HOST = "192.168.1.100"
 DEFAULT_ROS_DOMAIN_ID = "9"
 DEFAULT_YOLO_MODEL_PATH = ROOT / "local_models" / "best.pt"
-PR20_YOLO_MODEL_PATH = Path("/home/ssu/Azas/best.pt")
+PR20_YOLO_MODEL_PATH = DEFAULT_YOLO_MODEL_PATH
 DEFAULT_DISPENSER_TCP_NAME = "GripperDA_v1_jarvis"
 FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
@@ -71,12 +71,28 @@ CAMERA_TABLE_VIEW_JOINTS = {
     "j5": "135",
     "j6": "0",
 }
-DISPENSER_PRESS_TARGETS = {
+_DISPENSER_PRESS_TARGETS_DEFAULT: dict[str, str] = {
     "1": "red",
     "2": "green",
     "3": "yellow",
     "4": "blue",
 }
+DISPENSER_COLOR_MAP_PATH = ROOT / "outputs" / "dispenser_color_map.json"
+
+
+def _load_dispenser_press_targets() -> dict[str, str]:
+    base = dict(_DISPENSER_PRESS_TARGETS_DEFAULT)
+    if DISPENSER_COLOR_MAP_PATH.exists():
+        try:
+            loaded = json.loads(DISPENSER_COLOR_MAP_PATH.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                base.update({str(k): str(v) for k, v in loaded.items()})
+        except Exception:
+            pass
+    return base
+
+
+DISPENSER_PRESS_TARGETS: dict[str, str] = _load_dispenser_press_targets()
 
 
 @dataclass(frozen=True)
@@ -1635,19 +1651,18 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "if [ \"${AZAS_SIDE_GRIP_BUILD:-0}\" = \"1\" ]; then "
             "colcon build --symlink-install --packages-select dsr_practice; "
             "fi && "
-            "source /home/ssu/Azas/install/setup.bash && "
+            f"source {shlex.quote(str(ROOT / 'install' / 'local_setup.bash'))} && "
             f"export PYTHONPATH={shlex.quote(str(ROOT / 'tools' / 'run' / 'python_compat'))}:${{PYTHONPATH:-}} && "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
-            "ros2 launch dsr_practice yolo_cup_pick_node.launch.py "
-            "model_path:=/home/ssu/Azas/best.pt "
+            f"ros2 launch {shlex.quote(str(ROOT / 'install' / 'dsr_practice' / 'share' / 'dsr_practice' / 'launch' / 'yolo_cup_pick_node.launch.py'))} "
+            f"model_path:={shlex.quote(str(DEFAULT_YOLO_MODEL_PATH))} "
             "conf:=0.35 "
             "imgsz:=640 "
             "device:=cpu "
             "target_class:=cup "
-            "auto_pick:=false "
+            "auto_pick:=true "
             "auto_pick_interval:=3.0 "
-            "pick_depth_ratio:=0.55 "
             "depth_patch_radius:=7 "
             "min_depth_valid_ratio:=0.03 "
             "min_depth_m:=0.15 "
@@ -1655,77 +1670,37 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "redetect_on_approach:=false "
             "redetect_settle_sec:=0.5 "
             "grasp_mode:=side "
-            "side_grasp_axis:=y_axis "
-            "side_grasp_direction:=1.0 "
-            "side_auto_direction_by_cup_y:=true "
             "side_far_stage_enabled:=false "
-            "side_staging_offset:=0.30 "
             "side_approach_offset:=0.18 "
             "side_short_stage_backoff_m:=0.08 "
-            "side_stage_y_min:=-0.35 "
-            "side_stage_y_max:=0.35 "
-            "side_grasp_offset:=0.025 "
-            "side_grasp_z_offset:=0.05 "
             "side_grasp_stop_backoff_m:=0.04 "
-            "side_close_underreach_m:=0.05 "
+            "side_close_underreach_m:=0.03 "
             "side_low_retry_lift_m:=0.03 "
             "side_low_retry_attempts:=5 "
-            "side_linear_approach_enabled:=false "
+            "side_linear_approach_enabled:=true "
             "side_final_slide_enabled:=false "
             "side_fixed_grasp_z_enabled:=true "
             "side_fixed_grasp_z:=0.07 "
             "side_project_bbox_center_to_fixed_z:=true "
-            "side_orientation_mode:=approach "
-            "side_tool_roll_deg:=0.0 "
-            "side_roll_deg:=0.0 "
-            "side_pitch_deg:=90.0 "
-            "side_yaw_deg:=0.0 "
-            "table_collision_enabled:=true "
-            "table_surface_z:=0.0 "
-            "table_thickness:=0.04 "
-            "table_size_x:=1.20 "
-            "table_size_y:=1.00 "
-            "table_center_x:=0.45 "
-            "table_center_y:=0.0 "
-            "dispenser_collision_enabled:=true "
-            f"dispenser_collision_config_path:={shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'measured_dispenser_collision.yaml'))} "
-            "dispenser_collision_publish_period_sec:=1.0 "
-            "dispenser_collision_publish_objects:=true "
-            "dispenser_collision_publish_markers:=true "
-            "center_check_enabled:=false "
-            "center_check_settle_sec:=0.6 "
-            "center_check_x:=0.45 "
-            "center_check_y:=0.0 "
-            "center_check_z:=0.64 "
-            "side_prepose_enabled:=false "
-            "side_prepose_split_z:=0.18 "
+            "side_candidate_plan_check_enabled:=true "
             "side_move_to_initial_center_before_close:=false "
-            "pre_pick_joint1_clearance_deg:=0.0 "
             "verify_motion:=true "
-            "motion_verify_tolerance:=0.03 "
-            "joint_goal_tolerance_rad:=0.02 "
             "move_to_camera_home:=true "
             "move_joint_home_before_camera_home:=false "
             "camera_home_mode:=joint "
-            "camera_home_joint_1_deg:=3.0 "
-            "camera_home_joint_2_deg:=-12.7 "
-            "camera_home_joint_3_deg:=44.0 "
-            "camera_home_joint_4_deg:=-9.0 "
-            "camera_home_joint_5_deg:=133.0 "
-            "camera_home_joint_6_deg:=90.0 "
-            "camera_home_x:=0.45 "
-            "camera_home_y:=0.0 "
-            "camera_home_z:=0.64 "
-            "camera_home_search_max_z:=0.64 "
-            "camera_home_search_min_z:=0.54 "
-            "camera_home_search_step_z:=0.02 "
             "min_motion_z:=0.07 "
             "workspace_xy_clamp_enabled:=false "
             "return_home_after_task:=false "
             "return_to_camera_home_after_attempt:=true "
-            "place_x:=0.45 "
-            "place_y:=0.0 "
-            "place_z:=0.30 "
+            "table_collision_enabled:=true "
+            "table_surface_z:=0.0 "
+            "table_thickness:=0.04 "
+            "table_size_x:=1.10 "
+            "table_size_y:=0.65 "
+            "table_center_x:=0.29 "
+            "table_center_y:=0.0 "
+            "dispenser_collision_enabled:=true "
+            f"dispenser_collision_config_path:={shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'measured_dispenser_collision.yaml'))} "
             "moveit_controller_name:=/dsr01/dsr_moveit_controller "
             "start_joint_state_relay:=true"
         )
@@ -2383,6 +2358,9 @@ class Handler(BaseHTTPRequestHandler):
                 data.append(item)
             self.send_json(data)
             return
+        if path == "/api/dispenser_color_map":
+            self.send_json({"map": DISPENSER_PRESS_TARGETS})
+            return
         if path == "/api/camera_snapshot.jpg":
             ok, body, error = camera_snapshot_jpeg()
             if not ok:
@@ -2415,6 +2393,21 @@ class Handler(BaseHTTPRequestHandler):
                 if key in steps_by_key
             ]
             self.send_json({"results": results})
+            return
+        if path == "/api/dispenser_color_map":
+            new_map = payload.get("map")
+            if not isinstance(new_map, dict):
+                self.send_json({"error": "body must be {\"map\": {\"1\": \"red\", ...}}"}, 400)
+                return
+            validated = {str(k): str(v) for k, v in new_map.items()}
+            DISPENSER_PRESS_TARGETS.clear()
+            DISPENSER_PRESS_TARGETS.update(validated)
+            DISPENSER_COLOR_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+            DISPENSER_COLOR_MAP_PATH.write_text(
+                json.dumps(validated, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            self.send_json({"map": DISPENSER_PRESS_TARGETS})
             return
         if path == "/api/stop":
             self.send_json(stop_all())

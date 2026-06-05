@@ -209,7 +209,6 @@ class YoloCupPickNode(Node):
         self.declare_parameter("target_class", "cup")
         self.declare_parameter("auto_pick", False)
         self.declare_parameter("auto_pick_interval", 3.0)
-        self.declare_parameter("pick_depth_ratio", 0.55)
         self.declare_parameter("depth_patch_radius", 7)
         self.declare_parameter("min_depth_valid_ratio", 0.03)
         self.declare_parameter("min_depth_m", 0.15)
@@ -375,7 +374,6 @@ class YoloCupPickNode(Node):
         self.target_class = self.get_parameter("target_class").value
         self.auto_pick = parse_bool(self.get_parameter("auto_pick").value)
         self.auto_pick_interval = float(self.get_parameter("auto_pick_interval").value)
-        self.pick_depth_ratio = float(self.get_parameter("pick_depth_ratio").value)
         self.depth_patch_radius = int(self.get_parameter("depth_patch_radius").value)
         self.min_depth_valid_ratio = float(
             self.get_parameter("min_depth_valid_ratio").value
