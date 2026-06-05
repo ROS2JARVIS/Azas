@@ -50,6 +50,80 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
             )
         )
 
+    if _as_bool(LaunchConfiguration("workspace_collision_scene_enabled").perform(context)):
+        nodes.append(
+            Node(
+                package="azas_motion",
+                executable="workspace_collision_scene_node",
+                name="workspace_collision_scene_node",
+                output="screen",
+                parameters=[
+                    {
+                        "safety_config_path": ParameterValue(
+                            LaunchConfiguration("safety_config_path"),
+                            value_type=str,
+                        ),
+                        "publish_period_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "workspace_collision_publish_period_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "table_collision_enabled": ParameterValue(
+                            LaunchConfiguration("table_collision_enabled"),
+                            value_type=bool,
+                        ),
+                        "table_surface_z": ParameterValue(
+                            LaunchConfiguration("table_surface_z"),
+                            value_type=float,
+                        ),
+                        "table_thickness": ParameterValue(
+                            LaunchConfiguration("table_thickness"),
+                            value_type=float,
+                        ),
+                        "table_size_x": ParameterValue(
+                            LaunchConfiguration("table_size_x"),
+                            value_type=float,
+                        ),
+                        "table_size_y": ParameterValue(
+                            LaunchConfiguration("table_size_y"),
+                            value_type=float,
+                        ),
+                        "table_center_x": ParameterValue(
+                            LaunchConfiguration("table_center_x"),
+                            value_type=float,
+                        ),
+                        "table_center_y": ParameterValue(
+                            LaunchConfiguration("table_center_y"),
+                            value_type=float,
+                        ),
+                        "table_collision_expand_to_workspace_walls": ParameterValue(
+                            LaunchConfiguration(
+                                "table_collision_expand_to_workspace_walls"
+                            ),
+                            value_type=bool,
+                        ),
+                        "workspace_boundary_collision_enabled": ParameterValue(
+                            LaunchConfiguration("workspace_boundary_collision_enabled"),
+                            value_type=bool,
+                        ),
+                        "workspace_boundary_collision_prefix": ParameterValue(
+                            LaunchConfiguration("workspace_boundary_collision_prefix"),
+                            value_type=str,
+                        ),
+                        "workspace_boundary_wall_thickness": ParameterValue(
+                            LaunchConfiguration("workspace_boundary_wall_thickness"),
+                            value_type=float,
+                        ),
+                        "workspace_boundary_wall_clearance": ParameterValue(
+                            LaunchConfiguration("workspace_boundary_wall_clearance"),
+                            value_type=float,
+                        ),
+                    }
+                ],
+            )
+        )
+
     if _as_bool(LaunchConfiguration("dispenser_collision_enabled").perform(context)):
         nodes.append(
             Node(
@@ -475,6 +549,16 @@ def generate_launch_description():
         default_value="true",
         description="Publish a base_link table collision box so MoveIt avoids robot-link/table collisions.",
     )
+    workspace_collision_scene_enabled_arg = DeclareLaunchArgument(
+        "workspace_collision_scene_enabled",
+        default_value="true",
+        description="Start the shared workspace collision scene node for table and boundary walls.",
+    )
+    workspace_collision_publish_period_sec_arg = DeclareLaunchArgument(
+        "workspace_collision_publish_period_sec",
+        default_value="2.0",
+        description="Republish period for shared workspace collision objects.",
+    )
     table_surface_z_arg = DeclareLaunchArgument(
         "table_surface_z",
         default_value="0.0",
@@ -736,6 +820,8 @@ def generate_launch_description():
             dispenser_collision_publish_period_sec_arg,
             dispenser_collision_publish_objects_arg,
             dispenser_collision_publish_markers_arg,
+            workspace_collision_scene_enabled_arg,
+            workspace_collision_publish_period_sec_arg,
             table_collision_enabled_arg,
             table_surface_z_arg,
             table_thickness_arg,
