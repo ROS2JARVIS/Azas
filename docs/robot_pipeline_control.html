@@ -171,6 +171,53 @@
     }
     .quick-start-btn:hover { background: #1d3faa !important; }
     .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
+    #cocktailCyclePanel {
+      display: none;
+      margin-top: 8px;
+      padding: 10px 14px 12px;
+      background: #f3eaff;
+      border: 1px solid #c4b5fd;
+      border-radius: 10px;
+      font-size: 13px;
+    }
+    #cocktailCyclePanel .cycle-label {
+      font-weight: 700;
+      color: #5b21b6;
+      margin-bottom: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #cocktailCyclePanel .cycle-checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+      margin-bottom: 10px;
+    }
+    #cocktailCyclePanel label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      color: #3b0764;
+      user-select: none;
+    }
+    #cocktailCyclePanel input[type="checkbox"] {
+      accent-color: #7c3aed;
+      width: 15px; height: 15px;
+      cursor: pointer;
+    }
+    #cocktailCycleApplyBtn {
+      background: #7c3aed !important;
+      color: #fff !important;
+      border: none !important;
+      padding: 0 14px !important;
+      min-height: 30px !important;
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      border-radius: 8px !important;
+    }
+    #cocktailCycleApplyBtn:hover { background: #6d28d9 !important; }
 
     details.settings {
       border-top: 1px dashed var(--line);
@@ -621,6 +668,7 @@
 
       <div class="quick-row" aria-label="quick selection">
         <button id="quickStartBtn" class="quick-start-btn" title="로봇 연결 → 카메라 시작 → 안전영역+사이드그립 한번에 실행">⚡ 빠른시작</button>
+        <button id="cocktailCycleBtn" class="quick-start-btn" style="background:#6a0dad" title="색상스캔 → STT레시피 → 컵집기 → 디스펜서 → 컵홀더 → 셰이킹 전체 사이클">🍹 칵테일 사이클</button>
         <button class="recipe-preset" data-recipe-preset="1">칵테일 1</button>
         <button class="recipe-preset" data-recipe-preset="2">칵테일 2</button>
         <button class="recipe-preset" data-recipe-preset="3">칵테일 3</button>
@@ -633,6 +681,23 @@
         <button data-select="clear" class="danger-light">선택 해제</button>
         <button id="refresh" class="plain-btn">단계 새로고침</button>
         <button id="focusLog" class="plain-btn">로그로 이동</button>
+      </div>
+
+      <div id="cocktailCyclePanel">
+        <div class="cycle-label">🍹 칵테일 사이클 — 실행할 단계 선택</div>
+        <div class="cycle-checks" style="border-bottom:1px dashed #c4b5fd; padding-bottom:8px; margin-bottom:8px;">
+          <label style="color:#1e40af; font-weight:700;"><input type="checkbox" id="cycleIncludeConnect"> ⚡ 로봇 연결 포함 <span style="font-weight:400; color:#475569;">(connect → status_check → lift_robot → start_camera)</span></label>
+        </div>
+        <div class="cycle-checks">
+          <label><input type="checkbox" class="cycle-step" value="color_scan" checked> 색상 스캔</label>
+          <label><input type="checkbox" class="cycle-step" value="voice_input" checked> 음성 입력 (STT)</label>
+          <label><input type="checkbox" class="cycle-step" value="listen_stt_recipe" checked> STT 레시피 수신</label>
+          <label><input type="checkbox" class="cycle-step" value="side_grip" checked> 컵 집기 (side grip)</label>
+          <label><input type="checkbox" class="cycle-step" value="run_color_recipe_sequence" checked> 디스펜서 시퀀스</label>
+          <label><input type="checkbox" class="cycle-step" value="place_cup_holder" checked> 컵홀더 배치</label>
+          <label><input type="checkbox" class="cycle-step" value="shake_closed_cup" checked> 셰이킹</label>
+        </div>
+        <button id="cocktailCycleApplyBtn">▶ 큐에 올리고 바로 실행</button>
       </div>
 
       <details class="settings">
@@ -1333,6 +1398,36 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       flowEl.closest(".flow-panel")?.scrollIntoView({behavior: "smooth", block: "start"});
       log.textContent = `⚡ 빠른시작: ${keys.length}개 단계를 큐에 올렸습니다. 실행 버튼을 누르세요.`;
       focusLog();
+    });
+
+    document.getElementById("cocktailCycleBtn").addEventListener("click", () => {
+      const panel = document.getElementById("cocktailCyclePanel");
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+    });
+
+    document.getElementById("cocktailCycleApplyBtn").addEventListener("click", () => {
+      const cycleKeys = [...document.querySelectorAll(".cycle-step:checked")].map(cb => cb.value);
+      if (!cycleKeys.length) {
+        log.textContent = "⚠️ 선택된 단계가 없습니다. 최소 하나를 체크하세요.";
+        focusLog();
+        return;
+      }
+      const includeConnect = document.getElementById("cycleIncludeConnect").checked;
+      const connectKeys = includeConnect
+        ? ["connect_robot", "status_check", "lift_robot", "start_camera"]
+        : [];
+      const keys = [...connectKeys, ...cycleKeys];
+      selectedQueue = [];
+      addQueueItems(keys);
+      itemStatuses = new Map();
+      updateSelectedCount();
+      renderSteps();
+      document.getElementById("cocktailCyclePanel").style.display = "none";
+      flowEl.closest(".flow-panel")?.scrollIntoView({behavior: "smooth", block: "start"});
+      log.textContent = `🍹 ${includeConnect ? "연결+" : ""}칵테일 사이클 (${keys.length}개 단계): ${keys.join(" → ")}`;
+      focusLog();
+      // 바로 실행 시작
+      document.getElementById("run").click();
     });
 
 	    document.getElementById("run").addEventListener("click", async () => {

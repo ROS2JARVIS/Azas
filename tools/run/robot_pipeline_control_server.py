@@ -140,8 +140,34 @@ STEPS = [
         True,
         "MoveLine IK 대신 실측 관절 자세 사용: joint_2=-5°, joint_3=50°, joint_5=135° 상한으로 테이블 보기",
     ),
-    Step("voice_input", "음성 입력", "run", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT/레시피 노드"),
-    Step("recipe_generate", "레시피 생성", "blocked", "", False, False, "음성/레시피 토픽 통합 버튼은 별도 연결 필요"),
+    Step(
+        "color_scan",
+        "디스펜서 색상 스캔",
+        "run",
+        "tools/run/dispenser_color_scan_ros.sh",
+        True,
+        False,
+        "카메라+TF로 디스펜서 1~4 색상을 판별해 outputs/dispenser_color_map.json 저장. 로봇이 color_scan_pose에 있어야 함",
+    ),
+    Step("voice_input", "음성 입력 (STT+LLM 노드 시작)", "background", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT → /stt_result → llm_recipe_mapper → /azas/voice/recipe_decision"),
+    Step(
+        "listen_stt_recipe",
+        "STT 레시피 수신 대기 (60초)",
+        "run",
+        "tools/run/listen_stt_recipe.py --timeout 60",
+        True,
+        False,
+        "사용자가 말하면 /azas/voice/recipe_decision 수신 → outputs/latest_recipe.json 저장",
+    ),
+    Step(
+        "run_color_recipe_sequence",
+        "색상 레시피 디스펜서 시퀀스 실행",
+        "run",
+        "tools/run/run_color_recipe_sequence.py",
+        True,
+        True,
+        "latest_recipe.json + dispenser_color_map.json → 색깔→디스펜서ID 매핑 → 순서대로 move+press 실행",
+    ),
     Step(
         "side_grip",
         "PR #20 RealSense 컵 인식 후 side grip",
@@ -446,6 +472,8 @@ def cleanup_doosan_stack(*, grace_sec: float = 3.0) -> list[str]:
     if old is not None:
         events.extend(terminate_process_tree(old, label="stored connect_robot", grace_sec=grace_sec))
 
+    _service_ready_cache.clear()
+
     if psutil is None:
         return events
 
@@ -547,6 +575,7 @@ def cleanup_rg2_stack(*, grace_sec: float = 2.0) -> list[str]:
     if old is not None:
         events.extend(terminate_process_tree(old, label="stored connect_gripper", grace_sec=grace_sec))
     events.extend(cleanup_matching_processes(RG2_STACK_PATTERNS, label="rg2 cleanup", grace_sec=grace_sec))
+    _service_ready_cache.clear()
     return events
 
 
@@ -721,6 +750,25 @@ def ros_service_names(timeout_sec: float = 6.0) -> tuple[set[str], str]:
     return {line.strip() for line in output.splitlines() if line.strip().startswith("/")}, output
 
 
+# Per-process service cache: once a service is confirmed ready, skip re-checking
+# for SERVICE_CACHE_TTL seconds. Avoids ~2s `ros2 service list` calls per step.
+_service_ready_cache: dict[str, float] = {}
+SERVICE_CACHE_TTL = 600.0
+
+
+def _cache_services(confirmed: set[str] | list[str]) -> None:
+    now = time.monotonic()
+    for svc in confirmed:
+        _service_ready_cache[svc] = now
+
+
+def _all_cached(required: list[str]) -> bool:
+    if not required:
+        return True
+    cutoff = time.monotonic() - SERVICE_CACHE_TTL
+    return all(_service_ready_cache.get(svc, 0.0) > cutoff for svc in required)
+
+
 def action_server_count(action_name: str, timeout_sec: float = 4.0) -> tuple[int, str]:
     rc, output = ros2_call(f"ros2 action info {shlex.quote(action_name)}", timeout_sec=timeout_sec)
     if rc != 0:
@@ -743,7 +791,7 @@ def wait_for_action_server(action_name: str, *, timeout_sec: float = 15.0) -> tu
     return False, f"action server did not become ready within {timeout_sec:.1f}s: {action_name}\n{last_output}"
 
 
-def motion_services_ready(service_prefix: str) -> tuple[bool, str]:
+def motion_services_ready(service_prefix: str) -> tuple[bool, str, set[str]]:
     clean = service_prefix.strip("/") or "dsr01"
     required = {
         f"/{clean}/motion/move_line",
@@ -754,8 +802,8 @@ def motion_services_ready(service_prefix: str) -> tuple[bool, str]:
     services, output = ros_service_names(timeout_sec=6.0)
     missing = sorted(required - services)
     if missing:
-        return False, "missing motion services: " + ", ".join(missing) + "\n--- services ---\n" + output
-    return True, "motion services are present"
+        return False, "missing motion services: " + ", ".join(missing) + "\n--- services ---\n" + output, set()
+    return True, "motion services are present", services
 
 
 def wait_for_motion_services_ready(
@@ -769,9 +817,11 @@ def wait_for_motion_services_ready(
     attempt = 0
     while time.monotonic() < deadline:
         attempt += 1
-        ready, output = motion_services_ready(service_prefix)
+        ready, output, services = motion_services_ready(service_prefix)
         last_output = output
         if ready:
+            if services:
+                _cache_services(services)
             return True, f"motion services became ready after {attempt} check(s)\n{output}"
         if proc is not None and proc.poll() is not None:
             return False, f"connect process exited while waiting for motion services\n{output}"
@@ -1000,6 +1050,13 @@ def wait_for_required_services(
     timeout_sec: float = 20.0,
     proc: subprocess.Popen[str] | None = None,
 ) -> tuple[bool, str]:
+    # Fast path: all required services were recently confirmed → skip ros2 service list.
+    # Skip when proc is given: the caller is waiting for a freshly-spawned process to
+    # register its services, so a cached entry from the previous run must not mask the
+    # fact that the new process has not finished initialising yet.
+    if proc is None and _all_cached(required):
+        return True, f"required services confirmed via cache (TTL {SERVICE_CACHE_TTL:.0f}s): {', '.join(required)}"
+
     deadline = time.monotonic() + max(timeout_sec, 0.1)
     last_output = ""
     attempt = 0
@@ -1009,6 +1066,7 @@ def wait_for_required_services(
         missing = [service for service in required if service not in services]
         last_output = output
         if not missing:
+            _cache_services(services)
             return True, f"required services became ready after {attempt} check(s): {', '.join(required)}"
         if proc is not None and proc.poll() is not None:
             return (
@@ -2007,7 +2065,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
     if step.kind == "background":
         restart_output = ""
         if step.key == "connect_robot":
-            ready, ready_output = motion_services_ready(env["SERVICE_PREFIX"])
+            ready, ready_output, _svc = motion_services_ready(env["SERVICE_PREFIX"])
             if ready:
                 robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
                 if not robot_ready:
