@@ -24,6 +24,10 @@ def generate_launch_description():
     shake_cycles = LaunchConfiguration("shake_cycles")
     collision_config_path = LaunchConfiguration("collision_config_path")
     collision_publish_period_sec = LaunchConfiguration("collision_publish_period_sec")
+    safety_config_path = LaunchConfiguration("safety_config_path")
+    workspace_collision_publish_period_sec = LaunchConfiguration(
+        "workspace_collision_publish_period_sec"
+    )
 
     doosan_moveit = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -159,6 +163,25 @@ def generate_launch_description():
         ],
     )
 
+    workspace_collision_scene = Node(
+        package="azas_motion",
+        executable="workspace_collision_scene_node",
+        name="workspace_collision_scene_node",
+        output="screen",
+        parameters=[
+            {
+                "safety_config_path": ParameterValue(
+                    safety_config_path,
+                    value_type=str,
+                ),
+                "publish_period_sec": ParameterValue(
+                    workspace_collision_publish_period_sec,
+                    value_type=float,
+                ),
+            }
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("mode", default_value="virtual"),
@@ -214,6 +237,13 @@ def generate_launch_description():
             DeclareLaunchArgument("max_acceleration_scaling_factor", default_value="0.10"),
             DeclareLaunchArgument("controller_action_wait_sec", default_value="20.0"),
             DeclareLaunchArgument(
+                "safety_config_path",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("azas_bringup"), "config", "safety.yaml"]
+                ),
+            ),
+            DeclareLaunchArgument("workspace_collision_publish_period_sec", default_value="2.0"),
+            DeclareLaunchArgument(
                 "collision_config_path",
                 default_value=PathJoinSubstitution(
                     [
@@ -225,6 +255,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("collision_publish_period_sec", default_value="2.0"),
             measured_collision_scene,
+            workspace_collision_scene,
             doosan_moveit,
             TimerAction(period=start_delay_sec, actions=[executor]),
         ]
