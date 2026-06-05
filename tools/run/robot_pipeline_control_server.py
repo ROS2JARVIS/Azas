@@ -372,7 +372,6 @@ SIDE_GRIP_STACK_PATTERNS = (
     "joint_state_relay_legacy",
     "dsr_practice/joint_state_relay",
     "joint_state_relay --ros-args",
-    "measured_dispenser_collision_scene_node",
 )
 
 RUN_STEP_STACK_PATTERNS = (
@@ -402,6 +401,16 @@ def command_line(proc: Any) -> str:
     if not cmdline:
         return ""
     return " ".join(str(part) for part in cmdline)
+
+
+def installed_executable(package_name: str, executable_name: str) -> bool:
+    """Best-effort check for an installed ROS package console script."""
+
+    candidates = [
+        ROOT / "install" / package_name / "lib" / package_name / executable_name,
+        Path("/home/ssu/ros2_ws/install") / package_name / "lib" / package_name / executable_name,
+    ]
+    return any(path.exists() and os.access(path, os.X_OK) for path in candidates)
 
 
 def tail_file(path: Path | None, *, max_chars: int = 8000) -> str:
@@ -1737,7 +1746,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "dispenser_collision_enabled:=true "
             f"dispenser_collision_config_path:={shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'measured_dispenser_collision.yaml'))} "
             "moveit_controller_name:=/dsr01/dsr_moveit_controller "
-            "start_joint_state_relay:=true"
+            f"start_joint_state_relay:={'true' if installed_executable('dsr_practice', 'joint_state_relay') else 'false'}"
         )
     if step.key == "gripper_soft_grasp":
         return (
@@ -2404,7 +2413,7 @@ class Handler(BaseHTTPRequestHandler):
                 for key in selected
                 if key in steps_by_key
             ]
-            self.send_json({"results": results})
+            self.send_json({"execution_order": selected, "results": results})
             return
         if path == "/api/dispenser_color_map":
             new_map = payload.get("map")

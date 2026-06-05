@@ -1220,7 +1220,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	        for (const returned of results) {
 	          setStepStatus(returned.key || key, returned.status, returned.key === key ? itemId : "");
 	        }
-	        log.textContent = JSON.stringify({execution_order: body.selected, results}, null, 2);
+	        log.textContent = JSON.stringify({execution_order: data.execution_order || body.selected, results}, null, 2);
 	      } catch (err) {
 	        setStepStatus(key, "failed", itemId);
 	        log.textContent = String(err);
@@ -1474,7 +1474,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	          }
 	          if (shouldStop) break;
 	        }
-	        log.textContent = JSON.stringify({execution_order: selected.map((item) => item.key), results}, null, 2);
+	        log.textContent = JSON.stringify({execution_order: results.map((item) => item.key), results}, null, 2);
 	      } catch (err) {
 	        log.textContent = String(err);
 	      } finally {
