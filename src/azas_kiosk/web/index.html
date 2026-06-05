@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Azas Kiosk</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="order-surface" aria-label="Azas cocktail kiosk">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Azas Cocktail Robot</p>
+            <h1>원하는 메뉴를 선택하세요</h1>
+          </div>
+          <div id="voice-state" class="status-pill">대기 중</div>
+        </header>
+
+        <section id="menu-grid" class="menu-grid" aria-label="메뉴 선택"></section>
+
+        <section class="actions" aria-label="주문 제어">
+          <button id="recommend-button" class="secondary-button" type="button">추천</button>
+          <button id="cancel-button" class="secondary-button danger" type="button">취소</button>
+          <button id="confirm-button" class="primary-button" type="button">제조 시작</button>
+        </section>
+      </section>
+
+      <aside class="status-panel" aria-label="주문 상태">
+        <div>
+          <p class="panel-label">안내</p>
+          <p id="confirmation-text" class="large-status">주문을 기다리고 있습니다.</p>
+        </div>
+        <div class="status-list">
+          <div>
+            <span>최근 입력</span>
+            <strong id="last-command">-</strong>
+          </div>
+          <div>
+            <span>제어 상태</span>
+            <strong id="cocktail-status">대기</strong>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
