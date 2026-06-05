@@ -10,6 +10,7 @@
   <depend>azas_calibration</depend>
   <depend>azas_task_manager</depend>
   <depend>azas_gripper</depend>
+  <depend>azas_kiosk</depend>
   <depend>azas_motion</depend>
   <depend>azas_perception</depend>
   <depend>sensor_msgs</depend>

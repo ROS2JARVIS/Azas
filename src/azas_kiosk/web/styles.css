@@ -1,0 +1,243 @@
+:root {
+  color-scheme: light;
+  font-family:
+    Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  background: #f3f5f1;
+  color: #17201d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(238, 243, 234, 0.94)),
+    url("data:image/svg+xml,%3Csvg width='160' height='160' viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23d7ded2' stroke-width='1'%3E%3Cpath d='M0 80h160M80 0v160'/%3E%3Ccircle cx='80' cy='80' r='52'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+button {
+  border: 0;
+  font: inherit;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.order-surface,
+.status-panel {
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(23, 32, 29, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(31, 42, 36, 0.11);
+}
+
+.order-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.eyebrow,
+.panel-label {
+  margin: 0 0 8px;
+  color: #617067;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(32px, 5vw, 58px);
+  line-height: 1.04;
+  letter-spacing: 0;
+}
+
+.status-pill {
+  flex: 0 0 auto;
+  min-width: 92px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #17201d;
+  color: white;
+  font-weight: 800;
+  text-align: center;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  flex: 1;
+}
+
+.menu-card {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 12px;
+  min-height: 230px;
+  padding: 24px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  color: #15201c;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.menu-card:hover,
+.menu-card:focus-visible,
+.menu-card.selected {
+  border-color: #17201d;
+  box-shadow: 0 14px 28px rgba(23, 32, 29, 0.16);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.menu-card strong {
+  font-size: clamp(26px, 3vw, 38px);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.menu-tone,
+.menu-role {
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  color: rgba(23, 32, 29, 0.74);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.menu-description {
+  align-self: end;
+  color: rgba(23, 32, 29, 0.72);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.tone-red {
+  background: linear-gradient(135deg, #ffebe6, #ffd1c9);
+}
+
+.tone-yellow {
+  background: linear-gradient(135deg, #fff5d8, #f8dc82);
+}
+
+.tone-green {
+  background: linear-gradient(135deg, #def6e7, #9ed8b6);
+}
+
+.tone-blue {
+  background: linear-gradient(135deg, #dcecff, #9fc7ef);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 150px 150px minmax(180px, 1fr);
+  gap: 14px;
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 72px;
+  border-radius: 8px;
+  font-size: 22px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.primary-button {
+  background: #17201d;
+  color: white;
+}
+
+.secondary-button {
+  background: #e6ece3;
+  color: #17201d;
+}
+
+.secondary-button.danger {
+  background: #ffe1dc;
+}
+
+.status-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 24px;
+}
+
+.large-status {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.24;
+  letter-spacing: 0;
+}
+
+.status-list {
+  display: grid;
+  gap: 14px;
+}
+
+.status-list div {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f1f4ef;
+}
+
+.status-list span {
+  color: #617067;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.status-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+@media (max-width: 980px) {
+  .shell {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .menu-grid,
+  .actions {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    flex-direction: column;
+  }
+}
