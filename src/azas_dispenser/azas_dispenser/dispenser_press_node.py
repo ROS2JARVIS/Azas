@@ -849,9 +849,14 @@ class DispenserPressNode:
         return steps
 
     def run(self):
-        if self.press_depth_mm <= 0.0:
-            self.logger.error("press_depth must be greater than 0.0 m.")
+        if self.press_depth_mm < 0.0:
+            self.logger.error("press_depth must be greater than or equal to 0.0 m.")
             return False
+        if self.press_depth_mm == 0.0:
+            self.logger.warning(
+                "press_depth=0.0: measured press pose is treated as the final pressed target; "
+                "the press step will hold at that measured pose instead of deriving a lower legacy Z."
+            )
 
         if not self.wait_for_services():
             return False

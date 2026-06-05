@@ -21,6 +21,11 @@ try:
 except ImportError:  # pragma: no cover - local panel can still run without tree cleanup.
     psutil = None
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - panel can still report a fail-closed blocker.
+    yaml = None
+
 
 ROOT = Path(__file__).resolve().parents[2]
 HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
@@ -45,6 +50,8 @@ DEFAULT_ROS_DOMAIN_ID = "9"
 DEFAULT_YOLO_MODEL_PATH = ROOT / "local_models" / "best.pt"
 PR20_YOLO_MODEL_PATH = DEFAULT_YOLO_MODEL_PATH
 DEFAULT_DISPENSER_TCP_NAME = "GripperDA_v1_jarvis"
+DEFAULT_LINK6_TCP_NAME = "azas_link6_tcp"
+CALIBRATION_CONFIG_PATH = ROOT / "src" / "azas_bringup" / "config" / "calibration.yaml"
 FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
 RVIZ_PREVIEW_ROS_DOMAIN_ID = "79"
@@ -93,6 +100,41 @@ def _load_dispenser_press_targets() -> dict[str, str]:
 
 
 DISPENSER_PRESS_TARGETS: dict[str, str] = _load_dispenser_press_targets()
+
+
+def _number_list(value: Any, *, length: int, label: str) -> list[float]:
+    if not isinstance(value, list) or len(value) < length:
+        raise ValueError(f"{label} must be a list with at least {length} numeric values")
+    try:
+        return [float(item) for item in value[:length]]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} contains a non-numeric value") from exc
+
+
+def measured_dispenser_press_pose(dispenser_id: str) -> tuple[list[float], list[float]]:
+    """Return measured base_link press pose for dispenser_N from calibration.yaml."""
+    if yaml is None:
+        raise RuntimeError("PyYAML is not available, cannot read calibration.yaml")
+    data = yaml.safe_load(CALIBRATION_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    outlets = data.get("dispenser_outlets") or {}
+    block = outlets.get(str(dispenser_id))
+    if not isinstance(block, dict):
+        raise ValueError(f"dispenser_outlets.{dispenser_id} is missing in {CALIBRATION_CONFIG_PATH}")
+    xyz_m = _number_list(
+        block.get("press_pose_xyz_m"),
+        length=3,
+        label=f"dispenser_outlets.{dispenser_id}.press_pose_xyz_m",
+    )
+    rpy_deg = _number_list(
+        block.get("press_pose_rpy_deg"),
+        length=3,
+        label=f"dispenser_outlets.{dispenser_id}.press_pose_rpy_deg",
+    )
+    return xyz_m, rpy_deg
+
+
+def fail_closed_shell(message: str) -> str:
+    return f"echo {shlex.quote('[BLOCKED] ' + message)} >&2; exit 2"
 
 
 @dataclass(frozen=True)
@@ -225,39 +267,39 @@ STEPS = [
     ),
     Step(
         "press_dispenser_1",
-        "디스펜서 1 누르기 / red",
+        "디스펜서 1 누르기 / measured",
         "run",
-        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=red",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "feature/dispenser 원본 taught posx red 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "calibration.yaml dispenser_outlets.1 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
     ),
     Step(
         "press_dispenser_2",
-        "디스펜서 2 누르기 / green",
+        "디스펜서 2 누르기 / measured",
         "run",
-        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=green",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "feature/dispenser 원본 taught posx green 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "calibration.yaml dispenser_outlets.2 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
     ),
     Step(
         "press_dispenser_3",
-        "디스펜서 3 누르기 / yellow",
+        "디스펜서 3 누르기 / measured",
         "run",
-        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=yellow",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "feature/dispenser 원본 taught posx yellow 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "calibration.yaml dispenser_outlets.3 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
     ),
     Step(
         "press_dispenser_4",
-        "디스펜서 4 누르기 / blue",
+        "디스펜서 4 누르기 / measured",
         "run",
-        "ros2 run azas_dispenser dispenser_press_node --ros-args -p target_dispenser:=blue",
+        "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "feature/dispenser 원본 taught posx blue 경로 사용: 컵 놓기 후 뒤로 후퇴→HOME 이동→RG2 full-close→transit→press→retreat→HOME 복귀",
+        "calibration.yaml dispenser_outlets.4 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
     ),
     Step(
         "pick_from_dispenser_1",
@@ -1802,21 +1844,36 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key.startswith("press_dispenser_"):
         dispenser_id = step.key.rsplit("_", 1)[-1]
-        target = DISPENSER_PRESS_TARGETS.get(dispenser_id, "red")
+        try:
+            press_xyz_m, press_rpy_deg = measured_dispenser_press_pose(dispenser_id)
+        except Exception as exc:
+            return fail_closed_shell(
+                f"measured press pose for dispenser_{dispenser_id} is unavailable: {exc}"
+            )
         tcp_name = str(
             payload.get("dispenser_tcp_name")
             or os.environ.get("DISPENSER_TCP_NAME")
-            or DEFAULT_DISPENSER_TCP_NAME
+            or DEFAULT_LINK6_TCP_NAME
         ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
+            f"echo {shlex.quote('[Azas] measured press pose dispenser_' + dispenser_id + ': xyz_m=' + str(press_xyz_m) + ' rpy_deg=' + str(press_rpy_deg) + ' source=calibration.yaml dispenser_outlets.' + dispenser_id + '; legacy taught/color posx disabled')} && "
             "ros2 run azas_dispenser dispenser_press_node --ros-args "
             f"-p service_prefix:={shlex.quote(service_prefix)} "
-            "-p use_taught_posx:=true "
+            "-p use_taught_posx:=false "
+            "-p use_home_as_reference:=false "
+            "-p keep_home_orientation:=false "
+            f"-p dispenser_x:={press_xyz_m[0]:.6f} "
+            f"-p dispenser_y:={press_xyz_m[1]:.6f} "
+            "-p dispenser_y_offset:=0.0 "
+            f"-p dispenser_top_z:={press_xyz_m[2]:.6f} "
+            f"-p rx:={press_rpy_deg[0]:.6f} "
+            f"-p ry:={press_rpy_deg[1]:.6f} "
+            f"-p rz:={press_rpy_deg[2]:.6f} "
+            "-p press_depth:=0.0 "
             f"-p tcp_name:={shlex.quote(tcp_name)} "
             "-p require_tcp_for_taught_posx:=false "
-            "-p allow_tcp_set_failure:=true "
-            f"-p target_dispenser:={shlex.quote(target)} "
+            "-p allow_tcp_set_failure:=false "
             "-p move_home_first:=true "
             "-p pre_home_retreat_before_home:=true "
             "-p pre_home_retreat_dx_mm:=-180.0 "
