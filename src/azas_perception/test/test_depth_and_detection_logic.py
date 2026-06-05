@@ -1,11 +1,17 @@
 import pytest
 import numpy as np
+import cv2
 
+from azas_perception.cup_uprighting_vision import (
+    calculate_cup_major_axis_angle_rad,
+    is_red_marker_aligned_with_angle,
+)
 from azas_perception.depth_projection import CameraIntrinsics, pixel_depth_to_camera_point
 from azas_perception.yolo_tumbler_detector_node import (
     BboxHeightStats,
     Detection2D,
     YoloTumblerDetectorNode,
+    default_yolo_model_path,
 )
 
 
@@ -223,3 +229,24 @@ def test_height_orientation_can_classify_inverted_when_thresholds_are_configured
         stat_name="p90",
         min_valid_ratio=0.1,
     ) == "inverted"
+
+
+def test_packaged_yolo_cup_uprighting_model_is_default_when_available():
+    assert default_yolo_model_path().endswith("yolo_cup_uprighting_best.pt")
+
+
+def test_cup_uprighting_major_axis_angle_uses_image_only():
+    image = np.zeros((120, 120, 3), dtype=np.uint8)
+    cv2.rectangle(image, (20, 50), (100, 70), (255, 255, 255), thickness=-1)
+
+    theta = calculate_cup_major_axis_angle_rad(image, (0, 0, 120, 120))
+
+    assert abs(theta) < 0.1 or abs(abs(theta) - np.pi) < 0.1
+
+
+def test_red_marker_alignment_reports_direction_without_robot_pose():
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+    cv2.circle(image, (75, 50), 8, (0, 0, 255), thickness=-1)
+
+    assert is_red_marker_aligned_with_angle(image, (0, 0, 100, 100), 0.0)
+    assert not is_red_marker_aligned_with_angle(image, (0, 0, 100, 100), np.pi)

@@ -8,6 +8,7 @@ from typing import Optional
 import cv2
 import numpy as np
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from azas_interfaces.msg import CupDetection
 from geometry_msgs.msg import Pose
 from rclpy.node import Node
@@ -25,6 +26,25 @@ try:
     from ultralytics import YOLO
 except ImportError:  # pragma: no cover - depends on deployment environment
     YOLO = None
+
+
+def default_yolo_model_path() -> str:
+    """Return the packaged yolo_cup_uprighting model when installed."""
+
+    try:
+        packaged = (
+            Path(get_package_share_directory("azas_perception"))
+            / "config"
+            / "yolo_cup_uprighting_best.pt"
+        )
+    except Exception:
+        packaged = Path()
+    if packaged.exists():
+        return str(packaged)
+    source_tree = Path(__file__).resolve().parents[1] / "config" / "yolo_cup_uprighting_best.pt"
+    if source_tree.exists():
+        return str(source_tree)
+    return "/home/ssu/Downloads/best.pt"
 
 
 @dataclass(frozen=True)
@@ -76,7 +96,7 @@ class YoloTumblerDetectorNode(Node):
 
     def __init__(self):
         super().__init__("yolo_tumbler_detector_node")
-        self.declare_parameter("model_path", "/home/ssu/Downloads/best.pt")
+        self.declare_parameter("model_path", default_yolo_model_path())
         self.declare_parameter("color_topic", "/camera/camera/color/image_raw")
         self.declare_parameter("depth_topic", "/camera/camera/aligned_depth_to_color/image_raw")
         self.declare_parameter("camera_info_topic", "/camera/camera/color/camera_info")

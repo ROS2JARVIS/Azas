@@ -1,8 +1,9 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -10,7 +11,12 @@ def generate_launch_description():
     # docs. Override these launch args if the camera driver is launched with a
     # different namespace; do not patch coordinates or frames in code.
     return LaunchDescription([
-        DeclareLaunchArgument("model_path", default_value="/home/ssu/Downloads/best.pt"),
+        DeclareLaunchArgument(
+            "model_path",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("azas_perception"), "config", "yolo_cup_uprighting_best.pt"]
+            ),
+        ),
         DeclareLaunchArgument("color_topic", default_value="/camera/camera/color/image_raw"),
         DeclareLaunchArgument("depth_topic", default_value="/camera/camera/aligned_depth_to_color/image_raw"),
         DeclareLaunchArgument("camera_info_topic", default_value="/camera/camera/color/camera_info"),
