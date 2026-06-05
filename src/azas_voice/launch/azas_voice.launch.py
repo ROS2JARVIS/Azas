@@ -24,11 +24,15 @@ def generate_launch_description():
             DeclareLaunchArgument("use_tts", default_value="true"),
             DeclareLaunchArgument("enable_tts_audio", default_value="true"),
             DeclareLaunchArgument("tts_speech_rate", default_value="1.25"),
-            DeclareLaunchArgument("tts_startup_prompt", default_value="주문하시겠어요?"),
+            DeclareLaunchArgument(
+                "tts_startup_prompt",
+                default_value="원하는 맛을 말씀해주시면 추천해드릴게요. 주문하시겠어요?",
+            ),
             DeclareLaunchArgument("enable_llm", default_value="false"),
             DeclareLaunchArgument("llm_model", default_value="gpt-4o-mini"),
             DeclareLaunchArgument("llm_base_url", default_value="https://api.openai.com/v1"),
             DeclareLaunchArgument("llm_api_key_env", default_value="OPENAI_API_KEY"),
+            DeclareLaunchArgument("llm_request_timeout_sec", default_value="20.0"),
             DeclareLaunchArgument("stt_topic", default_value="/stt_result"),
             Node(
                 package="azas_voice",
@@ -55,6 +59,9 @@ def generate_launch_description():
                         "model": LaunchConfiguration("llm_model"),
                         "base_url": LaunchConfiguration("llm_base_url"),
                         "api_key_env": LaunchConfiguration("llm_api_key_env"),
+                        "request_timeout_sec": ParameterValue(
+                            LaunchConfiguration("llm_request_timeout_sec"), value_type=float
+                        ),
                         "publish_confirmation": False,
                     }
                 ],
