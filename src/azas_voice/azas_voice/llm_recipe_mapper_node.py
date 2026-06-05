@@ -72,6 +72,23 @@ def _fallback_decision(text: str, reason: str = "") -> RecipeDecision:
     )
 
 
+def _has_explicit_local_preference(normalized: str) -> bool:
+    explicit_markers = (
+        "더쎈",
+        "더센",
+        "더쌘",
+        "쎈거",
+        "센거",
+        "쌘거",
+        "도수쎈",
+        "도수센",
+        "도수쌘",
+        "강한거",
+        "더강한",
+    )
+    return any(marker in normalized for marker in explicit_markers)
+
+
 def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
     intent = str(payload.get("intent", "unknown")).strip()
     if intent not in ALLOWED_INTENTS:
@@ -125,7 +142,10 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
 
     if intent == "make_cocktail" and fallback.recipe_id == "custom_preference_mix":
         recipe_id = "custom_preference_mix"
-        if not any(dispenser_amounts.values()) and fallback.dispenser_amounts:
+        if (
+            fallback.dispenser_amounts
+            and (not any(dispenser_amounts.values()) or _has_explicit_local_preference(fallback.normalized))
+        ):
             dispenser_amounts = dict(fallback.dispenser_amounts)
         if any(dispenser_amounts.values()):
             dispenser_ids = tuple(

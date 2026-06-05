@@ -114,6 +114,16 @@ def test_bitter_alcohol_dislike_maps_to_sweeter_custom_mix():
     assert decision.dispenser_amounts["red"] == 3
 
 
+def test_stronger_followup_maps_to_high_alcohol_custom_mix():
+    decision = parse_recipe_command("더 쎈거는 없어?")
+    assert decision.valid
+    assert decision.recipe_id == "custom_preference_mix"
+    assert decision.dispenser_amounts
+    assert decision.dispenser_amounts["blue"] == 3
+    assert decision.profile
+    assert decision.profile["rum"] == "강하게"
+
+
 def test_preference_request_maps_to_ingredient_amounts():
     decision = parse_recipe_command("술 약하게 하고 덜 달고 상큼하게 과일맛 진하게 만들어줘")
     assert decision.valid
