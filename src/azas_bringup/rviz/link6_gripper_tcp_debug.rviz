@@ -22,7 +22,7 @@ Visualization Manager:
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /dsr01/robot_description
+        Value: /robot_description
       Enabled: true
       Name: M0609 Robot
       TF Prefix: ""
@@ -85,6 +85,16 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /azas/dispenser_press/tcp_axes
       Name: Press TCP Axes
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /azas/link6_gripper/markers
+      Name: Link6 RG2 Gripper Markers
       Value: true
   Enabled: true
   Global Options:

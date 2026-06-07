@@ -19,14 +19,15 @@ START_DELAY_SEC="${START_DELAY_SEC:-22}"
 JOINT_WAIT_SEC="${JOINT_WAIT_SEC:-60}"
 DISPENSER_ID="${DISPENSER_ID:-1}"
 PRESS_COUNT="${PRESS_COUNT:-2}"
-RVIZ_MODE="${RVIZ_MODE:-bringup}"   # bringup|clean|none
-RVIZ_CONFIG="${RVIZ_CONFIG:-${ROOT_DIR}/src/azas_bringup/rviz/m0609_robot_only.rviz}"
+RVIZ_MODE="${RVIZ_MODE:-clean}"   # bringup|clean|none
+RVIZ_CONFIG="${RVIZ_CONFIG:-${ROOT_DIR}/src/azas_bringup/rviz/link6_gripper_tcp_debug.rviz}"
 DISPENSER_COLLISION_ENABLED="${DISPENSER_COLLISION_ENABLED:-1}"
 # The measured combined box is the glass-bottle/body area, not the press button/head.
 # Keep markers visible in RViz by default, but do not feed this draft body box into
 # MoveIt collision checking for the press stroke unless explicitly requested.
 DISPENSER_COLLISION_OBJECTS="${DISPENSER_COLLISION_OBJECTS:-1}"
 REMOVE_COURSE_WORKSPACE_WALLS="${REMOVE_COURSE_WORKSPACE_WALLS:-1}"
+SHOW_LINK6_GRIPPER="${SHOW_LINK6_GRIPPER:-1}"
 DISPENSER_COLLISION_CONFIG="${DISPENSER_COLLISION_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/measured_dispenser_collision.yaml}"
 if [[ ! -f "${DISPENSER_COLLISION_CONFIG}" ]]; then
   DISPENSER_COLLISION_CONFIG="${ROOT_DIR}/src/azas_bringup/config/measured_dispenser_collision.yaml"
@@ -138,6 +139,14 @@ if [[ "${DISPENSER_COLLISION_ENABLED}" == "1" || "${DISPENSER_COLLISION_ENABLED}
       tail -80 "${LOG_DIR}/measured_dispenser_collision_scene.log" >&2 || true
     fi
   fi
+fi
+
+if [[ "${SHOW_LINK6_GRIPPER}" == "1" || "${SHOW_LINK6_GRIPPER}" == "true" ]]; then
+  ros2 launch azas_bringup rg2_link6_tcp.launch.py \
+    publish_gripper_collision:=true \
+    >"${LOG_DIR}/rg2_link6_tcp.log" 2>&1 &
+  PIDS+=("$!")
+  echo "[Azas] SHOW_LINK6_GRIPPER=${SHOW_LINK6_GRIPPER}: publishing RG2 link_6 TF/markers on /azas/link6_gripper/markers."
 fi
 
 if [[ "${RVIZ_MODE}" == "clean" ]]; then

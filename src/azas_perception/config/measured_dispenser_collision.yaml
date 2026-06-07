@@ -9,8 +9,8 @@ metadata:
     x: 0.02
     y: 0.02
     z: 0.02
-  nozzle_merge_policy: single horizontal spout cuboid spans the combined body Y width
-    and uses the same orientation as dispenser_combined_body_box
+  nozzle_merge_policy: single horizontal spout cuboid uses the same X/Y footprint
+    dimensions and orientation as dispenser_combined_body_box
 front_hold_poses:
   dispenser_1:
     position_xyz_m:
@@ -129,16 +129,16 @@ estimated_collision_objects:
     type: box
     frame_id: base_link
     center_xyz_m:
-    - 0.718
+    - 0.721
     - -0.0155
     - 0.432
     size_xyz_m:
-    - 0.05
+    - 0.044
     - 0.215
     - 0.04
     bounds_xyz_m:
       min:
-      - 0.693
+      - 0.699
       - -0.123
       - 0.412
       max:
@@ -152,6 +152,6 @@ estimated_collision_objects:
     - 1.0
     publish_to_planning_scene: true
     enabled_for_real_motion: false
-    '# note': Merged horizontal nozzle/spout block lengthened to match the dispenser_combined_body_box
-      Y span; orientation is kept identical to the combined body box so both blocks
-      are axis-aligned together.
+    '# note': Merged horizontal nozzle block has the same X/Y footprint dimensions
+      and orientation as dispenser_combined_body_box, with its max X face touching
+      the body min X face.

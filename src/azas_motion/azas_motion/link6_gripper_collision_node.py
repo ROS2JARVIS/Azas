@@ -18,6 +18,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Header
+from visualization_msgs.msg import Marker, MarkerArray
 
 
 def transient_qos(depth: int = 10) -> QoSProfile:
@@ -71,10 +72,17 @@ class Link6GripperCollisionNode(Node):
         )
         self.declare_parameter("publish_period_sec", 1.0)
         self.declare_parameter("publish_once", False)
+        self.declare_parameter("publish_markers", True)
+        self.declare_parameter("marker_topic", "/azas/link6_gripper/markers")
 
         self.publisher = self.create_publisher(
             AttachedCollisionObject,
             "/attached_collision_object",
+            transient_qos(),
+        )
+        self.marker_publisher = self.create_publisher(
+            MarkerArray,
+            str(self.get_parameter("marker_topic").value),
             transient_qos(),
         )
         self._logged = False
@@ -122,11 +130,45 @@ class Link6GripperCollisionNode(Node):
         attached.object = obj
         return attached
 
+    def _marker_array(self) -> MarkerArray:
+        link_name = str(self.get_parameter("attached_link_name").value)
+        stamp = self.get_clock().now().to_msg()
+        specs = [
+            ("mount", Marker.CYLINDER, (0.0, 0.0, 0.025), (0.080, 0.080, 0.050), (0.42, 0.43, 0.45, 0.95)),
+            ("palm", Marker.CUBE, (0.0, 0.0, 0.075), (0.090, 0.140, 0.050), (0.08, 0.08, 0.09, 0.95)),
+            ("left_finger", Marker.CUBE, (0.0, 0.055, 0.155), (0.035, 0.018, 0.160), (0.08, 0.08, 0.09, 0.95)),
+            ("right_finger", Marker.CUBE, (0.0, -0.055, 0.155), (0.035, 0.018, 0.160), (0.08, 0.08, 0.09, 0.95)),
+            ("left_pad", Marker.CUBE, (0.0, 0.040, 0.245), (0.025, 0.012, 0.035), (0.05, 0.35, 0.95, 0.95)),
+            ("right_pad", Marker.CUBE, (0.0, -0.040, 0.245), (0.025, 0.012, 0.035), (0.05, 0.35, 0.95, 0.95)),
+        ]
+        markers: list[Marker] = []
+        for index, (name, marker_type, xyz, scale, rgba) in enumerate(specs):
+            marker = Marker()
+            marker.header.frame_id = link_name
+            marker.header.stamp = stamp
+            marker.ns = "azas_link6_rg2_gripper"
+            marker.id = index
+            marker.type = marker_type
+            marker.action = Marker.ADD
+            marker.pose = make_pose(xyz)
+            marker.scale.x = scale[0]
+            marker.scale.y = scale[1]
+            marker.scale.z = scale[2]
+            marker.color.r = rgba[0]
+            marker.color.g = rgba[1]
+            marker.color.b = rgba[2]
+            marker.color.a = rgba[3]
+            marker.text = name
+            markers.append(marker)
+        return MarkerArray(markers=markers)
+
     def _publish(self) -> None:
         self.publisher.publish(self._attached_object())
+        if bool(self.get_parameter("publish_markers").value):
+            self.marker_publisher.publish(self._marker_array())
         if not self._logged:
             self.get_logger().info(
-                "Publishing RG2-style attached collision envelope on link_6"
+                "Publishing RG2-style attached collision envelope and markers on link_6"
             )
             self._logged = True
 
