@@ -34,6 +34,13 @@ LEGACY_DISPENSER_COLLISION_OBJECT_IDS = (
     "dispenser_4_head_nozzle_box",
 )
 
+COURSE_WORKSPACE_COLLISION_OBJECT_IDS = (
+    "side_grip_workspace_x_min_wall",
+    "side_grip_workspace_x_max_wall",
+    "side_grip_workspace_y_min_wall",
+    "side_grip_workspace_y_max_wall",
+)
+
 
 def transient_qos(depth: int = 10) -> QoSProfile:
     return QoSProfile(
@@ -128,6 +135,7 @@ class MeasuredDispenserCollisionSceneNode(Node):
         self.declare_parameter("publish_rviz_visual_tools_compat", True)
         self.declare_parameter("publish_debug_labels", True)
         self.declare_parameter("remove_legacy_collision_objects", True)
+        self.declare_parameter("remove_course_workspace_collision_objects", False)
         self.declare_parameter("clear_markers_before_publish", True)
 
         config_path = Path(
@@ -164,6 +172,11 @@ class MeasuredDispenserCollisionSceneNode(Node):
         )
         self.remove_legacy_collision_objects = (
             self.get_parameter("remove_legacy_collision_objects")
+            .get_parameter_value()
+            .bool_value
+        )
+        self.remove_course_workspace_collision_objects = (
+            self.get_parameter("remove_course_workspace_collision_objects")
             .get_parameter_value()
             .bool_value
         )
@@ -240,9 +253,17 @@ class MeasuredDispenserCollisionSceneNode(Node):
                 self.remove_legacy_collision_objects
                 and not self._legacy_collision_objects_removed
             ):
-                for object_id in LEGACY_DISPENSER_COLLISION_OBJECT_IDS:
+                remove_ids = list(LEGACY_DISPENSER_COLLISION_OBJECT_IDS)
+                if self.remove_course_workspace_collision_objects:
+                    remove_ids.extend(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
+                for object_id in remove_ids:
                     self.collision_pub.publish(self._make_remove_collision_object(object_id))
                 self._legacy_collision_objects_removed = True
+                if self.remove_course_workspace_collision_objects:
+                    self.get_logger().info(
+                        "Requested removal of course workspace wall collision objects: "
+                        + ", ".join(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
+                    )
             published_ids = []
             for object_id, object_config in collision_objects.items():
                 if not object_config.get("publish_to_planning_scene", True):

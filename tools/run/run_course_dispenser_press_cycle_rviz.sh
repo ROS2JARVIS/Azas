@@ -26,6 +26,7 @@ DISPENSER_COLLISION_ENABLED="${DISPENSER_COLLISION_ENABLED:-1}"
 # Keep markers visible in RViz by default, but do not feed this draft body box into
 # MoveIt collision checking for the press stroke unless explicitly requested.
 DISPENSER_COLLISION_OBJECTS="${DISPENSER_COLLISION_OBJECTS:-1}"
+REMOVE_COURSE_WORKSPACE_WALLS="${REMOVE_COURSE_WORKSPACE_WALLS:-1}"
 DISPENSER_COLLISION_CONFIG="${DISPENSER_COLLISION_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/measured_dispenser_collision.yaml}"
 if [[ ! -f "${DISPENSER_COLLISION_CONFIG}" ]]; then
   DISPENSER_COLLISION_CONFIG="${ROOT_DIR}/src/azas_bringup/config/measured_dispenser_collision.yaml"
@@ -109,11 +110,13 @@ if [[ "${DISPENSER_COLLISION_ENABLED}" == "1" || "${DISPENSER_COLLISION_ENABLED}
     -p config_path:="${DISPENSER_COLLISION_CONFIG}" \
     -p publish_period_sec:=1.0 \
     -p publish_collision_objects:="${DISPENSER_COLLISION_OBJECTS_BOOL}" \
+    -p remove_course_workspace_collision_objects:="${REMOVE_COURSE_WORKSPACE_WALLS}" \
     -p publish_markers:=true \
     >"${LOG_DIR}/measured_dispenser_collision_scene.log" 2>&1 &
   PIDS+=("$!")
   echo "[Azas] Dispenser combined box represents bottle/body only; press pre/contact is derived from press_contact_joints_deg FK, not from this box."
   echo "[Azas] DISPENSER_COLLISION_OBJECTS=${DISPENSER_COLLISION_OBJECTS} (1=add to MoveIt collision scene, 0=RViz markers only)."
+  echo "[Azas] REMOVE_COURSE_WORKSPACE_WALLS=${REMOVE_COURSE_WORKSPACE_WALLS} (1=remove stale side_grip_workspace_* walls that can collide with link_2 in this course path)."
   sleep 2
   if [[ "${DISPENSER_COLLISION_OBJECTS}" == "1" || "${DISPENSER_COLLISION_OBJECTS}" == "true" ]]; then
     timeout 8 ros2 topic echo /collision_object >"${LOG_DIR}/collision_object_samples.txt" 2>/dev/null || true
