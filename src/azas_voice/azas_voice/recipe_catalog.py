@@ -25,6 +25,13 @@ RECIPE_DISPLAY_NAMES = {
     "recipe_04": "블루 메뉴",
 }
 
+RECIPE_DESCRIPTIONS = {
+    "recipe_01": "달콤하고 선명한 레드 계열 메뉴입니다.",
+    "recipe_02": "산뜻하고 가벼운 옐로우 계열 메뉴입니다.",
+    "recipe_03": "리큐르 중심이라 향이 선명하고 깔끔한 느낌입니다.",
+    "recipe_04": "시원하고 부드러운 블루 계열 메뉴입니다.",
+}
+
 RECIPE_DISPENSERS = {
     "recipe_01": ("red",),
     "recipe_02": ("yellow",),

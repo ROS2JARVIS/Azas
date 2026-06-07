@@ -7,6 +7,7 @@ outputs/latest_recipe.json (색깔 목록) + outputs/dispenser_color_map.json (�
 사용법:
   python3 tools/run/run_color_recipe_sequence.py
   python3 tools/run/run_color_recipe_sequence.py --colors red:2,blue:1  # 직접 지정
+  python3 tools/run/run_color_recipe_sequence.py --dispenser-ids 1x1,2x2,3x1
 """
 from __future__ import annotations
 
@@ -27,7 +28,11 @@ def load_color_map() -> dict[str, str]:
     """dispenser_id → color_name 매핑 로드."""
     if not COLOR_MAP_PATH.exists():
         print(f"[run_color_recipe] 색상 맵 없음: {COLOR_MAP_PATH}", file=sys.stderr)
-        print("[run_color_recipe] color_scan 스텝을 먼저 실행하세요.", file=sys.stderr)
+        print(
+            "[run_color_recipe] color_scan 스텝을 먼저 실행하거나, "
+            "패널 DIRECT DISPENSER INPUT에 1x1,2x2,3x1처럼 물리 디스펜서 번호와 횟수를 입력하세요.",
+            file=sys.stderr,
+        )
         sys.exit(1)
     data = json.loads(COLOR_MAP_PATH.read_text(encoding="utf-8"))
     return {str(k): str(v).lower().strip() for k, v in data.items()}
@@ -57,13 +62,75 @@ def parse_colors_arg(raw: str) -> list[tuple[str, int]]:
     return result
 
 
+def parse_direct_dispenser_sequence(raw: str) -> list[str]:
+    """Parse physical dispenser input.
+
+    Accepted forms:
+      1,2,2,3
+      1x1,2x2,3x1
+      1:1,2:2,3:1
+    """
+    result: list[str] = []
+    for part in raw.replace(";", ",").split(","):
+        item = part.strip().lower()
+        if not item:
+            continue
+        if "x" in item:
+            dispenser_id, count_raw = item.split("x", 1)
+        elif ":" in item:
+            dispenser_id, count_raw = item.split(":", 1)
+        else:
+            dispenser_id, count_raw = item, "1"
+        dispenser_id = dispenser_id.strip()
+        if dispenser_id not in {"1", "2", "3", "4"}:
+            raise ValueError(f"unsupported dispenser id: {dispenser_id!r}")
+        try:
+            count = int(count_raw.strip())
+        except ValueError as exc:
+            raise ValueError(f"invalid count for dispenser {dispenser_id}: {count_raw!r}") from exc
+        if count < 1:
+            raise ValueError(f"count must be >= 1 for dispenser {dispenser_id}")
+        result.extend([dispenser_id] * count)
+    if not result:
+        raise ValueError("direct dispenser input is empty")
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--colors", default="",
                         help="직접 색깔 지정: 'red:2,blue:1' (생략 시 latest_recipe.json 사용)")
+    parser.add_argument("--dispenser-ids", default="",
+                        help="직접 물리 디스펜서 지정: '1,2,2,3' 또는 '1x1,2x2,3x1'")
     parser.add_argument("--confirm", action="store_true",
                         help=f"확인 구문({CONFIRM_PHRASE}) 자동 전달")
+    parser.add_argument("--execute", action="store_true",
+                        help="실제 measured dispenser sequence를 실행")
     args = parser.parse_args()
+    if args.execute and not args.confirm:
+        print(f"[BLOCKED] --execute requires --confirm ({CONFIRM_PHRASE})", file=sys.stderr)
+        return 2
+
+    direct_dispenser_ids = args.dispenser_ids.strip()
+    if direct_dispenser_ids:
+        try:
+            sequence = parse_direct_dispenser_sequence(direct_dispenser_ids)
+        except ValueError as exc:
+            print(f"[run_color_recipe] 잘못된 직접 입력: {exc}", file=sys.stderr)
+            return 1
+        dispenser_ids_str = ",".join(sequence)
+        print(f"[run_color_recipe] 직접 디스펜서 실행 순서: {dispenser_ids_str}")
+        cmd = [
+            sys.executable, str(SEQUENCE_SCRIPT),
+            "--dispenser-ids", dispenser_ids_str,
+        ]
+        if args.execute:
+            cmd += ["--execute"]
+        if args.confirm:
+            cmd += ["--confirm", CONFIRM_PHRASE]
+        print(f"[run_color_recipe] 실행: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
 
     color_map = load_color_map()
     print(f"[run_color_recipe] 색상 맵: {color_map}")
@@ -104,6 +171,8 @@ def main() -> int:
         sys.executable, str(SEQUENCE_SCRIPT),
         "--dispenser-ids", dispenser_ids_str,
     ]
+    if args.execute:
+        cmd += ["--execute"]
     if args.confirm:
         cmd += ["--confirm", CONFIRM_PHRASE]
 

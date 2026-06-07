@@ -217,7 +217,7 @@ class TumblerFloorPlaceNode(Node):
         self.declare_parameter("tumbler_height", 0.17)
         self.declare_parameter("tumbler_radius", 0.0375)
         self.declare_parameter("tumbler_bottom_diameter", 0.065)
-        self.declare_parameter("tumbler_top_diameter", 0.075)
+        self.declare_parameter("tumbler_top_diameter", 0.109)
         self.declare_parameter("grasp_height", 0.085)
         self.declare_parameter("side_grasp_approach_offset", 0.10)
         self.declare_parameter("side_grasp_candidate_count", 16)
@@ -251,18 +251,18 @@ class TumblerFloorPlaceNode(Node):
         self.declare_parameter(
             "dispenser_outlet_positions",
             [
-                0.609,
-                0.070,
-                0.087,
-                0.617,
-                0.028,
-                0.082,
-                0.616,
-                -0.026,
-                0.079,
-                0.607,
-                -0.083,
-                0.075,
+                0.555,
+                -0.100,
+                0.093,
+                0.549,
+                -0.150,
+                0.097,
+                0.527,
+                -0.204,
+                0.107,
+                0.517,
+                -0.235,
+                0.109,
             ],
         )
 
@@ -278,6 +278,7 @@ class TumblerFloorPlaceNode(Node):
         self.declare_parameter("line_acceleration", 50.0)
         self.declare_parameter("hold_seconds_after_grasp", 0.2)
         self.declare_parameter("hold_seconds_after_place", 0.2)
+        self.declare_parameter("motion_response_timeout_sec", 45.0)
 
         self.declare_parameter("workspace_x_min", 0.0)
         self.declare_parameter("workspace_x_max", 0.80)
@@ -286,6 +287,7 @@ class TumblerFloorPlaceNode(Node):
         self.declare_parameter("workspace_z_min", 0.0)
         self.declare_parameter("workspace_z_max", 0.80)
 
+        self.declare_parameter("disable_gripper_commands", False)
         self.declare_parameter("gripper_open_service", "")
         self.declare_parameter("gripper_close_service", "")
         self.declare_parameter("gripper_set_service", "/jarvis/rg2/set_width")
@@ -801,7 +803,9 @@ class TumblerFloorPlaceNode(Node):
             return False
         return True
 
-    def wait_for_future(self, future, label: str, timeout_sec: float = 10.0):
+    def wait_for_future(self, future, label: str, timeout_sec: float | None = None):
+        if timeout_sec is None:
+            timeout_sec = max(float(self.get_parameter("motion_response_timeout_sec").value), 0.1)
         deadline = time.monotonic() + timeout_sec
         while rclpy.ok() and not future.done():
             if time.monotonic() > deadline:
@@ -826,16 +830,23 @@ class TumblerFloorPlaceNode(Node):
             return False
 
         for step in steps:
-            if step.gripper == "preopen" and not self.command_gripper(step):
-                return False
+            if step.gripper == "preopen":
+                if bool(self.get_parameter("disable_gripper_commands").value):
+                    self.get_logger().warning("preopen_gripper: disabled for controller/RViz mirror run")
+                elif not self.command_gripper(step):
+                    return False
             if not self.call_movel(step):
                 return False
             if step.gripper == "close":
-                if not self.command_gripper(step):
+                if bool(self.get_parameter("disable_gripper_commands").value):
+                    self.get_logger().warning("close_gripper: disabled for controller/RViz mirror run")
+                elif not self.command_gripper(step):
                     return False
                 time.sleep(float(self.get_parameter("hold_seconds_after_grasp").value))
             elif step.gripper == "open":
-                if not self.command_gripper(step):
+                if bool(self.get_parameter("disable_gripper_commands").value):
+                    self.get_logger().warning("open_gripper: disabled for controller/RViz mirror run")
+                elif not self.command_gripper(step):
                     return False
                 time.sleep(float(self.get_parameter("hold_seconds_after_place").value))
 

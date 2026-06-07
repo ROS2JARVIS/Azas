@@ -283,6 +283,22 @@ def main() -> int:
     else:
         color_map = scan_from_ros()
 
+    unknown_ids = [did for did, color in color_map.items() if str(color).lower() == "unknown"]
+    if unknown_ids:
+        out = Path(args.output)
+        failed_out = out.with_suffix(out.suffix + ".failed")
+        failed_out.parent.mkdir(parents=True, exist_ok=True)
+        failed_out.write_text(json.dumps(color_map, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        if out.exists():
+            out.unlink()
+        print(
+            "[dispenser_color_scan] ERROR: unknown color result for dispenser(s): "
+            + ", ".join(sorted(unknown_ids, key=lambda x: int(x) if str(x).isdigit() else str(x))),
+            file=sys.stderr,
+        )
+        print(f"[dispenser_color_scan] failed result saved: {failed_out}", file=sys.stderr)
+        print(json.dumps(color_map, ensure_ascii=False))
+        return 1
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(color_map, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

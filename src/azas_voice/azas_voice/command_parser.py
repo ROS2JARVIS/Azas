@@ -10,6 +10,7 @@ from azas_voice.recipe_catalog import (
     MOOD_WORDS,
     RANDOM_RECIPE_WORDS,
     RECIPE_ALIASES,
+    RECIPE_DESCRIPTIONS,
     RECIPE_DISPENSERS,
     RECIPE_DISPLAY_NAMES,
 )
@@ -25,9 +26,11 @@ class RecipeDecision:
     dispenser_ids: tuple[str, ...]
     confirmation: str
     error: str | None = None
+    # extra: LLM이 추가 필드(profile, dispenser_amounts 등)를 리턴할 때 pass-through
+    extra: dict | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        d = {
             "valid": self.valid,
             "utterance": self.utterance,
             "normalized": self.normalized,
@@ -37,6 +40,9 @@ class RecipeDecision:
             "confirmation": self.confirmation,
             "error": self.error,
         }
+        if self.extra:
+            d.update(self.extra)
+        return d
 
 
 def normalize_text(text: str) -> str:
@@ -74,11 +80,17 @@ def _recipe_name(recipe_id: str) -> str:
     return RECIPE_DISPLAY_NAMES.get(recipe_id, recipe_id)
 
 
+def _recipe_description(recipe_id: str) -> str:
+    return RECIPE_DESCRIPTIONS.get(recipe_id, "")
+
+
 def _random_recipe_decision(utterance: str, normalized: str) -> RecipeDecision:
     recipe_id = random.choice(tuple(RECIPE_DISPENSERS))
     dispenser_ids = RECIPE_DISPENSERS[recipe_id]
+    description = _recipe_description(recipe_id)
     confirmation = (
-        f"오늘 기분에는 {_recipe_name(recipe_id)}를 추천합니다. "
+        f"{_recipe_name(recipe_id)}를 추천드릴게요. "
+        f"{description} "
         f"진행할까요?"
     )
     return RecipeDecision(True, utterance, normalized, "make_cocktail", recipe_id, dispenser_ids, confirmation)

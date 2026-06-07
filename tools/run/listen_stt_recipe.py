@@ -47,11 +47,16 @@ def main() -> int:
             print(f"[listen_stt_recipe] intent={intent} 무시 (make_cocktail 아님)")
             return
 
-        colors = [str(c).strip().lower() for c in data.get("dispenser_ids", []) if c]
         recipe_id = str(data.get("recipe_id", "custom")).strip()
 
-        # pump 수: LLM이 pump_counts 필드를 생성하면 사용, 없으면 1
-        pumps_raw = data.get("pump_counts") or {}
+        # pump 수: dispenser_amounts(신규) 또는 pump_counts(구형) 중 있는 쪽 사용, 없으면 1
+        pumps_raw = data.get("dispenser_amounts") or data.get("pump_counts") or {}
+
+        # 색상 목록: dispenser_ids 우선, dispenser_amounts 키로 보완
+        ids_from_field = [str(c).strip().lower() for c in data.get("dispenser_ids", []) if c]
+        ids_from_amounts = list(pumps_raw.keys()) if pumps_raw else []
+        colors = ids_from_field or ids_from_amounts
+
         pumps = {c: int(pumps_raw.get(c, 1)) for c in colors}
 
         received = {"colors": colors, "pumps": pumps, "recipe_id": recipe_id}
@@ -62,7 +67,7 @@ def main() -> int:
 
     # azas_voice가 퍼블리시하는 토픽 - 메시지 타입은 std_msgs/String (JSON payload)
     from std_msgs.msg import String
-    node.create_subscription(String, "/azas/voice/recipe_decision", on_msg, qos_profile_sensor_data)
+    node.create_subscription(String, "/azas/voice/confirmed_recipe_decision", on_msg, qos_profile_sensor_data)
 
     print(f"[listen_stt_recipe] 레시피 대기 중... (최대 {args.timeout:.0f}초)")
     deadline = time.time() + args.timeout

@@ -79,7 +79,7 @@ colcon test --packages-select azas_voice
 ```bash
 cd /home/ssu/Azas
 
-# 패널 서버가 없으면 시작하고, 브라우저에서 http://127.0.0.1:8765/ 를 엽니다.
+# 패널 서버를 새로 초기화하고, 브라우저에서 http://127.0.0.1:8765/ 를 엽니다.
 # 첫 실행 때 ~/.local/bin/azas-panel symlink도 자동으로 준비합니다.
 bash tools/run/open_robot_pipeline_control_panel.sh
 ```
@@ -88,6 +88,12 @@ bash tools/run/open_robot_pipeline_control_panel.sh
 
 ```bash
 azas-panel
+```
+
+이미 떠 있는 서버를 그대로 재사용해서 열 때:
+
+```bash
+azas-panel --reuse
 ```
 
 패널 서버만 종료할 때:

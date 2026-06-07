@@ -174,6 +174,7 @@ class MeasuredDispenserCollisionSceneNode(Node):
         self._warn_about_draft_status()
         self._warn_about_front_hold_overlaps()
         self._legacy_collision_objects_removed = False
+        self._published_ids_logged = False
         self._publish_scene()
 
         period = (
@@ -240,12 +241,19 @@ class MeasuredDispenserCollisionSceneNode(Node):
                 for object_id in LEGACY_DISPENSER_COLLISION_OBJECT_IDS:
                     self.collision_pub.publish(self._make_remove_collision_object(object_id))
                 self._legacy_collision_objects_removed = True
+            published_ids = []
             for object_id, object_config in collision_objects.items():
                 if not object_config.get("publish_to_planning_scene", True):
                     continue
                 self.collision_pub.publish(
                     self._make_collision_object(object_id, object_config)
                 )
+                published_ids.append(object_id)
+            if published_ids and not self._published_ids_logged:
+                self.get_logger().info(
+                    "Publishing measured dispenser collision objects: " + ", ".join(published_ids)
+                )
+                self._published_ids_logged = True
 
         if self.publish_markers:
             markers = self._make_markers(collision_objects)

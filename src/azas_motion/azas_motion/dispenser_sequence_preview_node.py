@@ -29,6 +29,7 @@ RGBA = Tuple[float, float, float, float]
 class SequenceStep:
     label: str
     xyz: XYZ
+    cup_base_xyz: XYZ | None = None
 
 
 def point(xyz: XYZ) -> Point:
@@ -66,7 +67,7 @@ class DispenserSequencePreviewNode(Node):
         self.declare_parameter("side_pre_grasp_offset_m", 0.10)
         self.declare_parameter("lift_height_m", 0.04)
         self.declare_parameter("shake_clearance_m", 0.13)
-        self.declare_parameter("shake_swing_m", 0.075)
+        self.declare_parameter("shake_swing_m", 0.109)
         self.declare_parameter("shake_lift_m", 0.055)
         self.declare_parameter("outlet_mouth_clearance_m", 0.0)
         self.declare_parameter("publish_rate_hz", 4.0)
@@ -95,18 +96,18 @@ class DispenserSequencePreviewNode(Node):
         self.declare_parameter(
             "dispenser_outlet_positions",
             [
-                0.609,
-                0.070,
-                0.087,
-                0.617,
-                0.028,
-                0.082,
-                0.616,
-                -0.026,
-                0.079,
-                0.607,
-                -0.083,
-                0.075,
+                0.555,
+                -0.100,
+                0.093,
+                0.549,
+                -0.150,
+                0.097,
+                0.527,
+                -0.204,
+                0.107,
+                0.517,
+                -0.235,
+                0.109,
             ],
         )
 
@@ -176,6 +177,17 @@ class DispenserSequencePreviewNode(Node):
         lift = (grasp[0], grasp[1], low_transfer_z)
         front_lane = (outlet[0] - 0.12, grasp[1], low_transfer_z)
         outlet_front_hold = (outlet[0], outlet[1], low_transfer_z)
+        cup_front_base = (
+            outlet_front_hold[0],
+            outlet_front_hold[1],
+            outlet_front_hold[2] - grasp_height,
+        )
+        empty_lift = (outlet_front_hold[0] - 0.10, outlet_front_hold[1], low_transfer_z + 0.20)
+        press_ready = (outlet[0] - 0.03, outlet[1], low_transfer_z + 0.28)
+        press_down = (outlet[0] - 0.03, outlet[1], max(outlet[2] + 0.035, low_transfer_z + 0.12))
+        regrasp_pre = (outlet_front_hold[0] - 0.10, outlet_front_hold[1], outlet_front_hold[2])
+        regrasp = outlet_front_hold
+        regrasp_lift = (outlet_front_hold[0], outlet_front_hold[1], low_transfer_z + 0.12)
         shake_z = max(low_transfer_z + shake_clearance, 0.55)
         shake_center = (outlet_front_hold[0] - 0.15, outlet_front_hold[1] - 0.38, shake_z + shake_lift)
         shake_left = (
@@ -204,13 +216,20 @@ class DispenserSequencePreviewNode(Node):
             SequenceStep("2 side_grasp", grasp),
             SequenceStep("3 lift_cup", lift),
             SequenceStep("4 carry_to_front_lane", front_lane),
-            SequenceStep("5 outlet_front_hold", outlet_front_hold),
-            SequenceStep("9 shake_center", shake_center),
-            SequenceStep("10 shake_left", shake_left),
-            SequenceStep("11 shake_right", shake_right),
-            SequenceStep("12 shake_forward", shake_forward),
-            SequenceStep("13 shake_back", shake_back),
-            SequenceStep("14 shake_recenter", shake_center),
+            SequenceStep("5 place_cup_front", outlet_front_hold),
+            SequenceStep("6 release_cup_front", outlet_front_hold, cup_front_base),
+            SequenceStep("7 lift_empty_gripper", empty_lift, cup_front_base),
+            SequenceStep("8 press_ready", press_ready, cup_front_base),
+            SequenceStep("9 press_dispenser", press_down, cup_front_base),
+            SequenceStep("10 return_to_cup", regrasp_pre, cup_front_base),
+            SequenceStep("11 regrasp_cup", regrasp, cup_front_base),
+            SequenceStep("12 regrasp_lift", regrasp_lift),
+            SequenceStep("13 shake_center", shake_center),
+            SequenceStep("14 shake_left", shake_left),
+            SequenceStep("15 shake_right", shake_right),
+            SequenceStep("16 shake_forward", shake_forward),
+            SequenceStep("17 shake_back", shake_back),
+            SequenceStep("18 shake_recenter", shake_center),
         ]
 
     def publish_preview(self) -> None:
@@ -341,7 +360,7 @@ class DispenserSequencePreviewNode(Node):
                     Marker.TEXT_VIEW_FACING,
                     "sequence_labels",
                     (step.xyz[0], step.xyz[1], step.xyz[2] + 0.04),
-                    Vector3(x=0.0, y=0.0, z=0.028),
+                    Vector3(x=0.0, y=0.0, z=-0.150),
                     (1.0, 1.0, 1.0, 1.0),
                 )
                 label.text = step.label
@@ -355,7 +374,7 @@ class DispenserSequencePreviewNode(Node):
                 Vector3(x=0.0, y=0.0, z=0.033),
                 (0.2, 1.0, 0.35, 1.0),
             )
-            status.text = "Azas RViz preview: pick cup -> carry to dispenser -> shake"
+            status.text = "Azas RViz preview: pick -> place front -> press -> re-grasp -> shake"
             markers.append(status)
 
         for marker in markers:
@@ -374,7 +393,7 @@ class DispenserSequencePreviewNode(Node):
 
     def make_demo_arm_markers(self, active_step: SequenceStep) -> List[Marker]:
         x, y, z = active_step.xyz
-        wrist = (x - 0.075, y, max(z, 0.10))
+        wrist = (x - 0.109, y, max(z, 0.10))
         shoulder = (0.0, 0.0, 0.225)
         elbow = (
             max(0.10, wrist[0] * 0.48),
@@ -421,7 +440,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CUBE,
             "low_side_grasp_rg2",
             (x - 0.035, y, z - 0.012),
-            Vector3(x=0.070, y=0.045, z=0.025),
+            Vector3(x=-0.100, y=0.045, z=0.025),
             (0.16, 0.17, 0.18, 0.92),
         )
         finger_a = self.marker(
@@ -429,7 +448,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CUBE,
             "low_side_grasp_rg2",
             (x + 0.010, y + 0.038, z - 0.030),
-            Vector3(x=0.075, y=0.010, z=0.052),
+            Vector3(x=0.109, y=0.010, z=0.052),
             (0.06, 0.06, 0.07, 0.92),
         )
         finger_b = self.marker(
@@ -437,7 +456,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CUBE,
             "low_side_grasp_rg2",
             (x + 0.010, y - 0.038, z - 0.030),
-            Vector3(x=0.075, y=0.010, z=0.052),
+            Vector3(x=0.109, y=0.010, z=0.052),
             (0.06, 0.06, 0.07, 0.92),
         )
         markers.extend([palm, finger_a, finger_b])
@@ -453,7 +472,9 @@ class DispenserSequencePreviewNode(Node):
         active_index = min(self.preview_step_index, len(steps) - 1)
         active_step = steps[active_index]
 
-        if active_index == 0:
+        if active_step.cup_base_xyz is not None:
+            base = active_step.cup_base_xyz
+        elif active_index == 0:
             base = original_base
         else:
             base = (
@@ -469,7 +490,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CYLINDER,
             "animated_cup_body",
             body_center,
-            Vector3(x=0.075, y=0.075, z=cup_height),
+            Vector3(x=0.109, y=0.109, z=cup_height),
             (0.1, 0.85, 1.0, 0.72),
         )
         mouth = self.marker(

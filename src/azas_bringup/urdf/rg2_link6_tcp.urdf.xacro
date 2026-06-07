@@ -1,0 +1,125 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="azas_rg2_link6_tcp">
+  <xacro:arg name="open_tcp_offset_m" default="0.15"/>
+  <xacro:arg name="closed_tcp_offset_m" default="0.25"/>
+
+  <material name="azas_rg2_dark">
+    <color rgba="0.08 0.08 0.09 1.0"/>
+  </material>
+  <material name="azas_rg2_tip">
+    <color rgba="0.05 0.35 0.95 1.0"/>
+  </material>
+  <material name="azas_rg2_tcp_open">
+    <color rgba="0.0 0.7 0.2 1.0"/>
+  </material>
+  <material name="azas_rg2_tcp_closed">
+    <color rgba="0.9 0.1 0.1 1.0"/>
+  </material>
+
+  <!-- Root is provided by the Doosan model. This supplemental tree only adds fixed children. -->
+  <link name="link_6"/>
+
+  <joint name="link_6_to_GripperDA_v1_jarvis" type="fixed">
+    <parent link="link_6"/>
+    <child link="GripperDA_v1_jarvis"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="GripperDA_v1_jarvis">
+    <visual>
+      <origin xyz="0 0 0.055" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.080 0.055 0.110"/>
+      </geometry>
+      <material name="azas_rg2_dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.055" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.080 0.055 0.110"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="GripperDA_v1_jarvis_to_rg2_left_finger" type="fixed">
+    <parent link="GripperDA_v1_jarvis"/>
+    <child link="rg2_left_finger_visual"/>
+    <origin xyz="0 0.035 0.145" rpy="0 0 0"/>
+  </joint>
+
+  <link name="rg2_left_finger_visual">
+    <visual>
+      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.020 0.018 0.080"/>
+      </geometry>
+      <material name="azas_rg2_tip"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.020 0.018 0.080"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="GripperDA_v1_jarvis_to_rg2_right_finger" type="fixed">
+    <parent link="GripperDA_v1_jarvis"/>
+    <child link="rg2_right_finger_visual"/>
+    <origin xyz="0 -0.035 0.145" rpy="0 0 0"/>
+  </joint>
+
+  <link name="rg2_right_finger_visual">
+    <visual>
+      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.020 0.018 0.080"/>
+      </geometry>
+      <material name="azas_rg2_tip"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.020 0.018 0.080"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="GripperDA_v1_jarvis_to_rg2_open_tcp" type="fixed">
+    <parent link="GripperDA_v1_jarvis"/>
+    <child link="rg2_open_tcp"/>
+    <origin xyz="0 0 $(arg open_tcp_offset_m)" rpy="0 0 0"/>
+  </joint>
+
+  <link name="rg2_open_tcp">
+    <visual>
+      <geometry>
+        <sphere radius="0.012"/>
+      </geometry>
+      <material name="azas_rg2_tcp_open"/>
+    </visual>
+  </link>
+
+  <joint name="GripperDA_v1_jarvis_to_dispenser_press_tcp" type="fixed">
+    <parent link="GripperDA_v1_jarvis"/>
+    <child link="dispenser_press_tcp"/>
+    <origin xyz="0 0 $(arg closed_tcp_offset_m)" rpy="0 0 0"/>
+  </joint>
+
+  <link name="dispenser_press_tcp">
+    <visual>
+      <geometry>
+        <sphere radius="0.014"/>
+      </geometry>
+      <material name="azas_rg2_tcp_closed"/>
+    </visual>
+  </link>
+
+  <joint name="dispenser_press_tcp_alias_joint" type="fixed">
+    <parent link="dispenser_press_tcp"/>
+    <child link="rg2_closed_tcp"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="rg2_closed_tcp"/>
+</robot>

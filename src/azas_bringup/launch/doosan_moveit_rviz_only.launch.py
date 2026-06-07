@@ -59,11 +59,21 @@ def generate_launch_description():
             ])
         ])
     )
+    gripper_tcp_tree = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare("azas_bringup"),
+                "launch",
+                "rg2_link6_tcp.launch.py",
+            ])
+        ])
+    )
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("model", default_value="m0609"),
             collision_scene,
+            gripper_tcp_tree,
             OpaqueFunction(function=rviz_node_function),
         ]
     )

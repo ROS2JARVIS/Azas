@@ -1,66 +1,199 @@
-# Measured dispenser collision draft from real robot teaching.
-#
-# IMPORTANT:
-# - These values were measured as base_link -> link_6 probe poses while the
-#   gripper/link_6 assembly was placed against the dispenser. They are not
-#   direct surface coordinates and must be reviewed with TCP/gripper offset
-#   before enabling hard real-motion collision enforcement.
-# - The boxes below are conservative primitive estimates for MoveIt Planning
-#   Scene. Keep them disabled until verified in RViz against the real workcell.
-
 metadata:
   frame_id: base_link
   measured_target_frame: link_6
   source: operator_teaching_tf2_echo
   status: measured_draft_single_box_not_enabled
-  body_bottom_z_m: 0.000
+  body_bottom_z_m: 0.0
   body_bottom_reason: dispenser bottles start on same floor plane as robot base
   margin_m:
-    x: 0.020
-    y: 0.020
-    z: 0.020
-
+    x: 0.02
+    y: 0.02
+    z: 0.02
 front_hold_poses:
-  # Cup hold/front limit poses. Cup pose itself still comes from vision.
   dispenser_1:
-    position_xyz_m: [0.609000, 0.070000, 0.087000]
-    quaternion_xyzw: [0.489000, 0.517000, 0.517000, 0.475000]
-    rpy_deg: [90.798, -0.845, 93.984]
+    position_xyz_m:
+    - 0.609
+    - 0.07
+    - 0.087
+    quaternion_xyzw:
+    - 0.489
+    - 0.517
+    - 0.517
+    - 0.475
+    rpy_deg:
+    - 90.798
+    - -0.845
+    - 93.984
   dispenser_2:
-    position_xyz_m: [0.617000, 0.028000, 0.082000]
-    quaternion_xyzw: [0.504000, 0.504000, 0.500000, 0.491000]
-    rpy_deg: [90.946, -0.512, 90.501]
+    position_xyz_m:
+    - 0.617
+    - 0.028
+    - 0.082
+    quaternion_xyzw:
+    - 0.504
+    - 0.504
+    - 0.5
+    - 0.491
+    rpy_deg:
+    - 90.946
+    - -0.512
+    - 90.501
   dispenser_3:
-    position_xyz_m: [0.616000, -0.026000, 0.079000]
-    quaternion_xyzw: [0.504000, 0.504000, 0.498000, 0.494000]
-    rpy_deg: [90.926, -0.278, 90.234]
+    position_xyz_m:
+    - 0.616
+    - -0.026
+    - 0.079
+    quaternion_xyzw:
+    - 0.504
+    - 0.504
+    - 0.498
+    - 0.494
+    rpy_deg:
+    - 90.926
+    - -0.278
+    - 90.234
   dispenser_4:
-    position_xyz_m: [0.607000, -0.083000, 0.075000]
-    quaternion_xyzw: [0.511000, 0.498000, 0.492000, 0.499000]
-    rpy_deg: [91.042, -0.280, 88.871]
-
+    position_xyz_m:
+    - 0.607
+    - -0.083
+    - 0.075
+    quaternion_xyzw:
+    - 0.511
+    - 0.498
+    - 0.492
+    - 0.499
+    rpy_deg:
+    - 91.042
+    - -0.28
+    - 88.871
 raw_probe_poses:
   left_front_bottom_probe:
-    position_xyz_m: [0.767, 0.072, 0.219]
-    quaternion_xyzw: [0.642, 0.732, 0.215, 0.079]
-    rpy_deg: [155.003, -9.233, 99.561]
+    position_xyz_m:
+    - 0.767
+    - 0.072
+    - 0.219
+    quaternion_xyzw:
+    - 0.642
+    - 0.732
+    - 0.215
+    - 0.079
+    rpy_deg:
+    - 155.003
+    - -9.233
+    - 99.561
   right_back_top_probe:
-    position_xyz_m: [0.763, -0.103, 0.412]
-    quaternion_xyzw: [0.658, 0.654, 0.200, 0.313]
-    rpy_deg: [137.024, 8.372, 86.350]
-
+    position_xyz_m:
+    - 0.763
+    - -0.103
+    - 0.412
+    quaternion_xyzw:
+    - 0.658
+    - 0.654
+    - 0.2
+    - 0.313
+    rpy_deg:
+    - 137.024
+    - 8.372
+    - 86.35
 estimated_collision_objects:
   dispenser_combined_body_box:
     type: box
     frame_id: base_link
-    # Single measured draft box from left-front-bottom and right-back-top
-    # link_6 probe poses. X/Y are expanded by metadata.margin_m on each side;
-    # Z uses body_bottom_z_m as the dispenser rests on the base/table plane.
-    center_xyz_m: [0.7650, -0.0155, 0.2160]
-    size_xyz_m: [0.0440, 0.2150, 0.4320]
+    center_xyz_m:
+    - 0.765
+    - -0.0155
+    - 0.216
+    size_xyz_m:
+    - 0.044
+    - 0.215
+    - 0.432
     bounds_xyz_m:
-      min: [0.7430, -0.1230, 0.0000]
-      max: [0.7870, 0.0920, 0.4320]
-    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+      min:
+      - 0.743
+      - -0.123
+      - 0.0
+      max:
+      - 0.787
+      - 0.092
+      - 0.432
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+  dispenser_1_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m:
+    - 0.718
+    - 0.084
+    - 0.432
+    size_xyz_m:
+    - 0.05
+    - 0.01
+    - 0.04
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - -0.1368
+    - 0.9906
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+    '# note': x is aligned to the front face of dispenser_combined_body_box; z/y keep
+      measured lane/height.
+  dispenser_2_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m:
+    - 0.718
+    - 0.043
+    - 0.432
+    size_xyz_m:
+    - 0.05
+    - 0.01
+    - 0.04
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - -0.1368
+    - 0.9906
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+  dispenser_3_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m:
+    - 0.718
+    - -0.002
+    - 0.432
+    size_xyz_m:
+    - 0.05
+    - 0.01
+    - 0.04
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - -0.1368
+    - 0.9906
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+  dispenser_4_head_nozzle_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m:
+    - 0.718
+    - -0.05
+    - 0.432
+    size_xyz_m:
+    - 0.05
+    - 0.01
+    - 0.04
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - -0.1368
+    - 0.9906
     publish_to_planning_scene: true
     enabled_for_real_motion: false

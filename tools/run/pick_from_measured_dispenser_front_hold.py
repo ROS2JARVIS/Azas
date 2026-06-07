@@ -461,8 +461,8 @@ def main() -> int:
     if args.pregrasp_staging:
         print(
             "[Azas] Pre-grasp staging is enabled: first move to a measured-front_hold-derived "
-            "offset pose, then move above the final pose, then descend into final "
-            "front-hold slowly. This uses no "
+            "offset pose behind/above the cup, then move into final front-hold "
+            "slowly. This uses no "
             "operator/LLM-generated cup coordinates."
         )
         rc = run_front_hold_move(
@@ -476,18 +476,6 @@ def main() -> int:
         )
         if rc != 0:
             print("[FAIL] pre-grasp staging approach failed; final cup approach skipped.")
-            return rc
-        rc = run_front_hold_move(
-            args,
-            label="Pre-grasp above-cup alignment",
-            offset_x_m=0.0,
-            offset_y_m=0.0,
-            offset_z_m=args.pregrasp_offset_z_m,
-            velocity=args.pregrasp_staging_velocity,
-            acceleration=args.pregrasp_staging_acceleration,
-        )
-        if rc != 0:
-            print("[FAIL] pre-grasp above-cup alignment failed; final cup approach skipped.")
             return rc
     else:
         print("[Azas] Pre-grasp staging disabled; using direct final front-hold approach.")

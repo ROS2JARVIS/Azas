@@ -65,9 +65,11 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
     )
     recipe_id = payload.get("recipe_id")
     recipe_id = str(recipe_id).strip() if recipe_id else None
-    if recipe_id and not recipe_id.startswith("recipe_") and recipe_id != "custom_color_selection":
+    _ALLOWED_CUSTOM_RECIPE_IDS = {"custom_color_selection", "custom_preference_mix"}
+    if recipe_id and not recipe_id.startswith("recipe_") and recipe_id not in _ALLOWED_CUSTOM_RECIPE_IDS:
         recipe_id = None
-    if recipe_id and recipe_id != "custom_color_selection" and not dispenser_ids:
+    _non_custom = recipe_id and recipe_id not in _ALLOWED_CUSTOM_RECIPE_IDS
+    if _non_custom and not dispenser_ids:
         dispenser_ids = RECIPE_DISPENSERS.get(recipe_id, ())
 
     if intent == "make_cocktail" and recipe_id is None and not dispenser_ids:
@@ -87,6 +89,17 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
             recipe_name = RECIPE_DISPLAY_NAMES.get(str(recipe_id), str(recipe_id))
             confirmation = f"{recipe_name} 요청을 인식했습니다. 진행할까요?"
 
+    # pass-through extra fields from LLM (profile, dispenser_amounts)
+    extra: dict | None = None
+    if recipe_id == "custom_preference_mix":
+        extra = {}
+        if "profile" in payload:
+            extra["profile"] = payload["profile"]
+        if "dispenser_amounts" in payload:
+            extra["dispenser_amounts"] = payload["dispenser_amounts"]
+        if not extra:
+            extra = None
+
     fallback = parse_recipe_command(text)
     return RecipeDecision(
         valid,
@@ -97,6 +110,7 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
         dispenser_ids,
         confirmation,
         None if valid else "llm returned unknown intent",
+        extra,
     )
 
 
@@ -184,11 +198,19 @@ class LlmRecipeMapperNode(Node):
                     "role": "system",
                     "content": (
                         "Return only JSON for Azas cocktail intent parsing. "
-                        "Allowed fields: valid, intent, recipe_id, dispenser_ids, confirmation. "
                         "Allowed intents: make_cocktail, confirm, cancel, unknown. "
-                        "The user does not know dispenser colors; infer them internally. "
-                        "If the user describes mood or asks for a recommendation, choose one recipe_01..recipe_04. "
                         "Allowed dispenser_ids values: red, yellow, green, blue only. "
+                        "BRANCH A — user describes specific taste/strength preference "
+                        "(e.g. '너무 세지 않게', '향이 풍부하게', '달달하게', '가볍게'): "
+                        "set recipe_id='custom_preference_mix', include relevant dispenser_ids, "
+                        "set profile={{rum,syrup,liqueur,juice: '약하게'|'보통'|'많게'}}, "
+                        "set dispenser_amounts={{color: integer pump count}}. "
+                        "BRANCH B — user asks for recommendation or describes mood without ingredient preference "
+                        "(e.g. '추천해줘', '아무거나', '기분에 맞게'): "
+                        "choose one of recipe_01..recipe_04 and set dispenser_ids accordingly. "
+                        "For random recommendations, mention the menu name and a short taste/aroma description; "
+                        "do not answer only with a color name. "
+                        "Always include a natural Korean confirmation sentence in the confirmation field. "
                         "Never output robot coordinates, calibration values, trajectories, or safety approvals."
                     ),
                 },

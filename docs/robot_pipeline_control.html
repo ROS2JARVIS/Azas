@@ -170,6 +170,30 @@
       letter-spacing: 0.02em;
     }
     .quick-start-btn:hover { background: #1d3faa !important; }
+    .direct-dispenser-field {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 0 9px;
+      border: 1px solid #99f6e4;
+      border-radius: 8px;
+      background: #f0fdfa;
+      color: #115e59;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .direct-dispenser-field input {
+      width: 180px;
+      height: 24px;
+      border: 1px solid #5eead4;
+      border-radius: 6px;
+      padding: 0 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      background: #fff;
+    }
     .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
     #cocktailCyclePanel {
       display: none;
@@ -539,6 +563,43 @@
     details.command summary::-webkit-details-marker { display: none; }
     details.command summary::before { content: "▸ "; }
     details.command[open] summary::before { content: "▾ "; }
+    .command-editor {
+      width: 100%;
+      min-height: 150px;
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #0f172a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      resize: vertical;
+    }
+    .command-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .command-tools button {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 850;
+    }
+    .command-save {
+      border: 1px solid #bfdbfe;
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .command-reset {
+      border: 1px solid #fed7aa;
+      background: #ffedd5;
+      color: #9a3412;
+    }
     .step code {
       display: block;
       margin-top: 7px;
@@ -645,7 +706,7 @@
   <header class="topbar">
     <div class="title-wrap">
       <h1>Azas Robot Pipeline Control</h1>
-      <div class="subtitle">넓은 단계판 · 통합 디스펜서 루프 · 오른쪽 상시 로그</div>
+      <div class="subtitle">넓은 단계판 · 프레스 반복 시퀀스 · 오른쪽 상시 로그</div>
     </div>
     <div class="header-meta">
       <span class="pill dark" id="loadedCount">단계 로드 전</span>
@@ -668,7 +729,11 @@
 
       <div class="quick-row" aria-label="quick selection">
         <button id="quickStartBtn" class="quick-start-btn" title="로봇 연결 → 카메라 시작 → 안전영역+사이드그립 한번에 실행">⚡ 빠른시작</button>
-        <button id="cocktailCycleBtn" class="quick-start-btn" style="background:#6a0dad" title="스캔포즈이동 → 색상스캔 → STT레시피 → 컵집기 → 디스펜서 → 컵홀더 → 셰이킹 전체 사이클">🍹 칵테일 사이클</button>
+        <button id="cocktailCycleBtn" class="quick-start-btn" style="background:#6a0dad" title="스캔포즈이동 → 색상스캔 → STT레시피 → 컵집기 → 디스펜서 앞 컵놓기/JSON 횟수 프레스/다시잡기 통합 → 컵홀더 → 셰이킹 전체 사이클">🍹 칵테일 사이클</button>
+        <label class="direct-dispenser-field">DIRECT
+          <input id="recipeDispenserIds" type="text" value="" placeholder="1x1,2x2,3x1">
+        </label>
+        <button id="integratedDispenserBtn" class="quick-start-btn" style="background:#0f766e" title="컵을 이미 잡은 상태에서 직접 입력한 물리 디스펜서 번호/횟수 또는 latest_recipe.json 기준으로 빠른 컵놓기→프레스→다시잡기 통합 시퀀스를 실행">빠른 통합 디스펜서</button>
         <button class="recipe-preset" data-recipe-preset="1">칵테일 1</button>
         <button class="recipe-preset" data-recipe-preset="2">칵테일 2</button>
         <button class="recipe-preset" data-recipe-preset="3">칵테일 3</button>
@@ -685,16 +750,22 @@
 
       <div id="cocktailCyclePanel">
         <div class="cycle-label">🍹 칵테일 사이클 — 실행할 단계 선택</div>
+        <div class="cycle-help" style="margin:-2px 0 8px; color:#4c1d95; line-height:1.45;">
+          확인된 레시피 JSON의 <code>dispenser_amounts</code>가 있으면 같은 디스펜서를 연속 그룹으로 묶고,
+          각 그룹마다 컵을 디스펜서 앞에 놓기 → 해당 횟수만큼 프레스 → 다시 컵 잡고 다음 디스펜서로 이동을 한 단계에서 실행합니다.
+          컵 이동/프레스/다시잡기는 별도 프레스 노드를 새로 띄우지 않고 같은 통합 루프 안에서 빠른 속도 설정으로 바로 실행합니다.
+          DIRECT DISPENSER INPUT을 비우면 색상 스캔 결과 파일이 필요하고, 값을 넣으면 색상 스캔 없이 해당 물리 번호와 횟수로 실행합니다.
+        </div>
         <div class="cycle-checks" style="border-bottom:1px dashed #c4b5fd; padding-bottom:8px; margin-bottom:8px;">
           <label style="color:#1e40af; font-weight:700;"><input type="checkbox" id="cycleIncludeConnect"> ⚡ 로봇 연결 포함 <span style="font-weight:400; color:#475569;">(connect → status_check → lift_robot → start_camera → 충돌영역)</span></label>
         </div>
         <div class="cycle-checks">
-          <label><input type="checkbox" class="cycle-step" value="move_to_color_scan_pose" checked> 스캔 포즈 이동 [0,10,20,0,90,0]°</label>
+          <label><input type="checkbox" class="cycle-step" value="move_to_color_scan_pose" checked> 스캔 포즈 이동 [0,10,32,0,100,90]°</label>
           <label><input type="checkbox" class="cycle-step" value="color_scan" checked> 색상 스캔</label>
           <label><input type="checkbox" class="cycle-step" value="voice_input" checked> 음성 입력 (STT)</label>
           <label><input type="checkbox" class="cycle-step" value="listen_stt_recipe" checked> STT 레시피 수신</label>
           <label><input type="checkbox" class="cycle-step" value="side_grip" checked> 컵 집기 (side grip)</label>
-          <label><input type="checkbox" class="cycle-step" value="run_color_recipe_sequence" checked> 디스펜서 시퀀스</label>
+          <label><input type="checkbox" class="cycle-step" value="run_color_recipe_sequence" checked> 통합 디스펜서 시퀀스 (컵놓기→프레스→다시잡기)</label>
           <label><input type="checkbox" class="cycle-step" value="place_cup_holder" checked> 컵홀더 배치</label>
           <label><input type="checkbox" class="cycle-step" value="shake_closed_cup" checked> 셰이킹</label>
         </div>
@@ -722,9 +793,6 @@
           <label class="field">DISPENSER_TCP_NAME
             <input id="dispenserTcpName" type="text" value="GripperDA_v1_jarvis" placeholder="Doosan controller TCP 이름">
           </label>
-          <label class="field">RECIPE_DISPENSER_IDS
-            <input id="recipeDispenserIds" type="text" value="1,2,3,4" placeholder="예: 1,2,3 또는 4,2,1">
-          </label>
           <label class="field">CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M
             <input id="cupHolderPlaceFinalZOffsetM" type="text" value="-0.020" placeholder="예: -0.020 (홀더에 놓을 때 최종 Z 20mm 낮춤)">
           </label>
@@ -749,6 +817,7 @@ source /home/ssu/ws_moveit/install/setup.bash
 source /home/ssu/ros2_ws/install/setup.bash
 # 코드 변경 후에만 필요: colcon build --symlink-install --packages-select dsr_practice
 source /home/ssu/Azas/install/setup.bash
+source /home/ssu/Azas/install/dsr_practice/share/dsr_practice/package.bash
 export PYTHONPATH=/home/ssu/Azas/tools/run/python_compat:${PYTHONPATH:-}
 
 ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_cup_pick_node.launch.py \
@@ -861,7 +930,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       core: "연결/준비",
       grip: "그리퍼",
       move: "컵 이동/배치",
-      press: "디스펜서 프레스",
+      press: "통합 디스펜서 (컵놓기→프레스→다시잡기)",
       shake: "쉐이킹",
       blocked: "미구현/보류",
       etc: "기타"
@@ -909,7 +978,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       if (key.startsWith("teach_front_hold_")) return "teach";
       if (key === "start_collision_scene") return "core";
       if (key.startsWith("move_to_dispenser") || key.includes("cup") || key.includes("holder") || key.includes("side_grip") || key.includes("home") || key.includes("lift")) return "move";
-      if (key.startsWith("press_dispenser")) return "press";
+      if (key === "run_color_recipe_sequence" || key.startsWith("press_dispenser")) return "press";
       if (key.includes("shake")) return "shake";
       if (!step.implemented || step.kind === "blocked") return "blocked";
       return "etc";
@@ -1093,6 +1162,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
         parts.push(`<div class="group-title"><span>${escapeHtml(groupLabels[group] || group)}</span><span>${steps.length}개</span></div>`);
 	        for (const step of steps) {
 	          const cmd = step.resolved_command || step.command || "실행 명령 없음";
+	          const savedBadge = step.command_saved ? `<span class="pill info">저장 명령</span>` : "";
 	          const status = resultStatuses.get(step.key);
 	          const statusClass = status ? `status-${status}` : "";
 	          const isQueued = queuedKeysSet().has(step.key);
@@ -1109,8 +1179,9 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
                 </div>
                 <div class="step-note">${escapeHtml(step.note)}</div>
                 <div class="step-meta">
-                  <span class="pill ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
+	                  <span class="pill ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
 	                  ${step.real_motion ? `<span class="pill real">실제모션</span>` : ""}
+	                  ${savedBadge}
 	                  ${result}
 	                </div>
 	                <div class="step-actions">
@@ -1118,8 +1189,12 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	                  ${step.key === "side_grip" ? `<button class="step-run-now" type="button" data-run-step="${escapeHtml(step.key)}">PR #20 바로 실행</button>` : ""}
 	                </div>
 	                <details class="command">
-                  <summary>명령 보기</summary>
-                  <code>${escapeHtml(cmd)}</code>
+                  <summary>명령 보기 / 편집</summary>
+                  <textarea class="command-editor" data-command-editor="${escapeHtml(step.key)}" spellcheck="false">${escapeHtml(cmd)}</textarea>
+                  <div class="command-tools">
+                    <button class="command-save" type="button" data-save-command="${escapeHtml(step.key)}">편집 명령 저장</button>
+                    <button class="command-reset" type="button" data-reset-command="${escapeHtml(step.key)}">기본 명령 복원</button>
+                  </div>
                 </details>
               </div>
             </label>
@@ -1203,7 +1278,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	      focusLog();
 	      try {
 	        const body = payload();
-	        body.selected = key === "side_grip" ? ["lift_robot", "start_camera", key] : [key];
+	        body.selected = [key];
 	        const res = await fetch("/api/run", {
 	          method: "POST",
 	          headers: {"Content-Type": "application/json"},
@@ -1291,6 +1366,18 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	      log.textContent = "단계 목록 로드 완료. 상단 검색/필터 또는 빠른 선택을 사용하세요.";
 	    }
 
+	    async function saveCommandOverride(key, command) {
+	      const res = await fetch("/api/command_override", {
+	        method: "POST",
+	        headers: {"Content-Type": "application/json"},
+	        body: JSON.stringify({key, command})
+	      });
+	      const data = await res.json();
+	      if (!res.ok) throw new Error(data.error || "명령 저장 실패");
+	      await loadSteps();
+	      return data;
+	    }
+
 	    document.addEventListener("change", (event) => {
 	      if (!event.target.classList?.contains("step-check")) return;
 	      if (event.target.checked) {
@@ -1301,14 +1388,48 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	      updateSelectedCount();
 	    });
 	    document.addEventListener("click", (event) => {
-	      const runKey = event.target?.dataset?.runStep;
+	      const targetElement = event.target instanceof Element ? event.target : null;
+	      const commandElement = targetElement?.closest(".command-editor, .command-tools, details.command summary");
+	      if (commandElement) event.stopPropagation();
+	      const saveKey = targetElement?.dataset?.saveCommand;
+	      if (saveKey) {
+	        event.preventDefault();
+	        event.stopPropagation();
+	        const editor = document.querySelector(`.command-editor[data-command-editor="${CSS.escape(saveKey)}"]`);
+	        saveCommandOverride(saveKey, editor?.value || "")
+	          .then(() => {
+	            log.textContent = `저장됨: ${saveKey} 편집 명령`;
+	            focusLog();
+	          })
+	          .catch((err) => {
+	            log.textContent = String(err);
+	            focusLog();
+	          });
+	        return;
+	      }
+	      const resetKey = targetElement?.dataset?.resetCommand;
+	      if (resetKey) {
+	        event.preventDefault();
+	        event.stopPropagation();
+	        saveCommandOverride(resetKey, "")
+	          .then(() => {
+	            log.textContent = `복원됨: ${resetKey} 기본 명령`;
+	            focusLog();
+	          })
+	          .catch((err) => {
+	            log.textContent = String(err);
+	            focusLog();
+	          });
+	        return;
+	      }
+	      const runKey = targetElement?.dataset?.runStep;
 	      if (runKey) {
 	        event.preventDefault();
 	        event.stopPropagation();
 	        runSingleStepNow(runKey);
 	        return;
 	      }
-	      const addKey = event.target?.dataset?.addStep;
+	      const addKey = targetElement?.dataset?.addStep;
 	      if (addKey) {
 	        event.preventDefault();
 	        event.stopPropagation();
@@ -1316,7 +1437,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	        updateSelectedCount();
 	        return;
 	      }
-	      const removeId = event.target?.dataset?.removeFlow;
+	      const removeId = targetElement?.dataset?.removeFlow;
 	      if (removeId) {
 	        removeQueueItem(removeId);
 	        updateSelectedCount();
@@ -1402,6 +1523,22 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
     document.getElementById("cocktailCycleBtn").addEventListener("click", () => {
       const panel = document.getElementById("cocktailCyclePanel");
       panel.style.display = panel.style.display === "none" ? "block" : "none";
+    });
+
+    document.getElementById("integratedDispenserBtn").addEventListener("click", () => {
+      const keys = ["connect_gripper", "run_color_recipe_sequence"];
+      const directOrder = document.getElementById("recipeDispenserIds").value.trim();
+      selectedQueue = [];
+      addQueueItems(keys);
+      itemStatuses = new Map();
+      updateSelectedCount();
+      renderSteps();
+      flowEl.closest(".flow-panel")?.scrollIntoView({behavior: "smooth", block: "start"});
+      log.textContent = directOrder
+        ? `빠른 통합 디스펜서: 직접 입력 ${directOrder} 기준으로 컵놓기→프레스→다시잡기를 바로 실행합니다.`
+        : "통합 디스펜서: latest_recipe.json 기준입니다. 색상 스캔 결과가 없으면 먼저 색상 스캔을 실행하거나 DIRECT DISPENSER INPUT에 1x1,2x2,3x1처럼 물리 번호와 횟수를 입력하세요.";
+      focusLog();
+      if (directOrder) document.getElementById("run").click();
     });
 
     document.getElementById("cocktailCycleApplyBtn").addEventListener("click", () => {

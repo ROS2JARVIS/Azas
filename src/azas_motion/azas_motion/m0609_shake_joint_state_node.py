@@ -13,9 +13,10 @@ from sensor_msgs.msg import JointState
 class M0609ShakeJointStateNode(Node):
     def __init__(self) -> None:
         super().__init__("m0609_shake_joint_state_node")
-        self.declare_parameter("publish_rate", 30.0)
-        self.declare_parameter("shake_cycles_per_second", 3.2)
-        self.declare_parameter("preview_mode", "shake")
+        self.declare_parameter("publish_rate", 60.0)
+        self.declare_parameter("shake_cycles_per_second", 0.55)
+        self.declare_parameter("preview_mode", "side_grasp_move_then_shake")
+        self.declare_parameter("loop_motion", True)
         self.declare_parameter(
             "home_joints_rad",
             [0.0, math.radians(-35.0), math.radians(50.0), 0.0, math.radians(70.0), 0.0],
@@ -26,7 +27,7 @@ class M0609ShakeJointStateNode(Node):
         rate = max(float(self.get_parameter("publish_rate").value), 1.0)
         self.timer = self.create_timer(1.0 / rate, self.publish_joint_state)
         self.get_logger().info(
-            "Publishing RViz-only M0609 joint states for side-grasp / shake visualization."
+            "Publishing smooth RViz M0609 robot motion from /joint_states; no path display."
         )
 
     def publish_joint_state(self) -> None:
@@ -55,32 +56,42 @@ class M0609ShakeJointStateNode(Node):
     def high_shake_joints(self, elapsed: float, home: list[float]) -> list[float]:
         freq = max(float(self.get_parameter("shake_cycles_per_second").value), 0.1)
         phase = elapsed * math.tau * freq
-        j5_swing = math.sin(phase)
-        wrist_counter = math.sin(phase + math.pi * 0.5)
-        elbow_pulse = math.sin(phase * 0.5)
-        wrist_snap = math.sin(phase * 1.7 + math.pi * 0.25)
+        # Deliberately slow/small: this is for readable RViz robot motion, not
+        # a high-frequency fake shake. The cup stays generally upright while
+        # the wrist shows a gentle mixing motion.
+        wrist_roll = math.sin(phase)
+        wrist_pitch = math.sin(phase + math.pi * 0.5)
+        wrist_yaw = math.sin(phase * 0.5)
 
         return [
             home[0],
             home[1],
             home[2],
-            home[3] + math.radians(18.0) * wrist_counter,
-            home[4] + math.radians(30.0) * j5_swing,
-            home[5] + math.radians(36.0) * wrist_counter + math.radians(8.0) * wrist_snap,
+            home[3] + math.radians(7.0) * wrist_roll,
+            home[4] + math.radians(10.0) * wrist_pitch,
+            home[5] + math.radians(12.0) * wrist_yaw,
         ]
 
     def side_grasp_move_then_shake_joints(self, elapsed: float, home: list[float]) -> list[float]:
+        # Joint-space storyboard for RViz visibility only.  It follows the
+        # dispenser task shape without publishing Path/markers as the primary
+        # visual: approach -> side grasp -> lift -> dispenser hold -> retreat
+        # -> gentle wrist shake.  Every segment uses minimum-jerk interpolation
+        # so the robot model moves smoothly instead of snapping.
         keyframes = [
             (0.0, home),
-            (2.0, [0.18, -0.76, 1.48, -0.22, 1.18, 0.20]),  # side pre-grasp
-            (4.0, [0.25, -0.82, 1.56, -0.10, 1.12, 0.12]),  # side grasp
-            (7.5, [0.30, -0.55, 1.22, 0.05, 1.05, 0.10]),  # slower lift with cup
-            (9.5, [-0.12, -0.48, 1.10, 0.18, 1.05, -0.10]),  # carry to dispenser
-            (11.0, [-0.20, -0.60, 1.30, 0.10, 1.18, 0.00]),  # outlet front
-            (13.0, [-0.05, -0.42, 1.05, 0.00, 1.02, 0.00]),  # retreat before shake
+            (3.0, [0.16, -0.70, 1.36, -0.16, 1.17, 0.12]),  # side pre-grasp
+            (5.8, [0.24, -0.76, 1.46, -0.08, 1.13, 0.08]),  # side grasp
+            (8.8, [0.28, -0.58, 1.25, 0.02, 1.08, 0.07]),  # lift with cup
+            (12.8, [-0.08, -0.52, 1.18, 0.10, 1.07, -0.05]),  # carry to dispenser
+            (15.8, [-0.18, -0.62, 1.32, 0.06, 1.18, 0.00]),  # outlet front hold
+            (18.8, [-0.06, -0.48, 1.12, 0.00, 1.08, 0.00]),  # retreat before shake
         ]
-        cycle_seconds = 19.0
-        t = elapsed % cycle_seconds
+        cycle_seconds = 30.0
+        if bool(self.get_parameter("loop_motion").value):
+            t = elapsed % cycle_seconds
+        else:
+            t = min(elapsed, cycle_seconds)
         if t >= keyframes[-1][0]:
             shake_elapsed = t - keyframes[-1][0]
             shake_home = keyframes[-1][1]
@@ -91,7 +102,7 @@ class M0609ShakeJointStateNode(Node):
             end_t, end_joints = keyframes[index + 1]
             if start_t <= t < end_t:
                 ratio = (t - start_t) / max(end_t - start_t, 1e-6)
-                smooth = 0.5 - 0.5 * math.cos(math.pi * ratio)
+                smooth = self.minimum_jerk(ratio)
                 return [
                     start + (end - start) * smooth
                     for start, end in zip(start_joints, end_joints)
@@ -118,12 +129,17 @@ class M0609ShakeJointStateNode(Node):
             end_t, end_joints = keyframes[index + 1]
             if start_t <= t < end_t:
                 ratio = (t - start_t) / max(end_t - start_t, 1e-6)
-                smooth = 0.5 - 0.5 * math.cos(math.pi * ratio)
+                smooth = self.minimum_jerk(ratio)
                 return [
                     start + (end - start) * smooth
                     for start, end in zip(start_joints, end_joints)
                 ]
         return home
+
+    @staticmethod
+    def minimum_jerk(ratio: float) -> float:
+        ratio = max(0.0, min(1.0, ratio))
+        return ratio * ratio * ratio * (10.0 - 15.0 * ratio + 6.0 * ratio * ratio)
 
 
 def main(args: list[str] | None = None) -> None:

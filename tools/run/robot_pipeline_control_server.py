@@ -56,6 +56,7 @@ FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
 RVIZ_PREVIEW_ROS_DOMAIN_ID = "79"
 BACKGROUND_LOG_DIR = ROOT / "log" / "panel"
+COMMAND_OVERRIDES_PATH = ROOT / "outputs" / "panel_command_overrides.json"
 ROBOT_STATE_NAMES = {
     0: "STATE_INITIALIZING",
     1: "STATE_STANDBY",
@@ -72,11 +73,11 @@ ROBOT_STATE_NAMES = {
 }
 CAMERA_TABLE_VIEW_JOINTS = {
     "j1": "0",
-    "j2": "-5",
-    "j3": "50",
+    "j2": "10",
+    "j3": "32",
     "j4": "0",
-    "j5": "135",
-    "j6": "0",
+    "j5": "100",
+    "j6": "90",
 }
 _DISPENSER_PRESS_TARGETS_DEFAULT: dict[str, str] = {
     "1": "red",
@@ -85,6 +86,41 @@ _DISPENSER_PRESS_TARGETS_DEFAULT: dict[str, str] = {
     "4": "blue",
 }
 DISPENSER_COLOR_MAP_PATH = ROOT / "outputs" / "dispenser_color_map.json"
+
+
+def load_command_overrides() -> dict[str, str]:
+    if not COMMAND_OVERRIDES_PATH.exists():
+        return {}
+    try:
+        loaded = json.loads(COMMAND_OVERRIDES_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    step_keys = {step.key for step in STEPS} if "STEPS" in globals() else set()
+    return {
+        str(key): str(value)
+        for key, value in loaded.items()
+        if isinstance(value, str) and (not step_keys or str(key) in step_keys)
+    }
+
+
+def save_command_override(step_key: str, command: str) -> dict[str, str]:
+    step_keys = {step.key for step in STEPS}
+    if step_key not in step_keys:
+        raise ValueError(f"unknown step key: {step_key}")
+    overrides = load_command_overrides()
+    command = command.strip()
+    if command:
+        overrides[step_key] = command
+    else:
+        overrides.pop(step_key, None)
+    COMMAND_OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    COMMAND_OVERRIDES_PATH.write_text(
+        json.dumps(overrides, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return overrides
 
 
 def _load_dispenser_press_targets() -> dict[str, str]:
@@ -153,10 +189,10 @@ STEPS = [
         "connect_robot",
         "로봇 연결 / 스마트 재연결",
         "background",
-        "tools/run/run_doosan_real_no_motion_m0609.sh",
+        "tools/run/run_doosan_real_m0609.sh",
         True,
         False,
-        "준비됨/시작중이면 유지하고, stale 상태일 때만 정리 후 시작",
+        "실제 로봇 real-mode bringup. 준비됨/시작중이면 유지하고, stale 상태일 때만 정리 후 시작",
     ),
     Step("status_check", "연결 확인", "run", "ros2 service list | grep /dsr01/motion", True, False, "명령 후보만 있음: /dsr01/motion 서비스가 보여야 통과"),
     Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch azas_gripper rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
@@ -175,21 +211,21 @@ STEPS = [
     Step("home_robot", "로봇 원위치 / HOME", "run", "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 90 --j4 0 --j5 90 --j6 0", True, True, "실제모션 후보: HOME 관절값 [0, 0, 90, 0, 90, 0]"),
     Step(
         "lift_robot",
-        "카메라 테이블 보기 자세 / J5 안전",
+        "기본 카메라 보기 자세",
         "run",
-        "tools/run/direct_movej_joints.py --j1 0 --j2 -5 --j3 50 --j4 0 --j5 135 --j6 0",
+        "tools/run/direct_movej_joints.py --j1 0 --j2 10 --j3 32 --j4 0 --j5 100 --j6 90",
         True,
         True,
-        "MoveLine IK 대신 실측 관절 자세 사용: joint_2=-5°, joint_3=50°, joint_5=135° 상한으로 테이블 보기",
+        "기본 카메라 보기 관절 자세: [0, 10, 32, 0, 100, 90]°",
     ),
     Step(
         "move_to_color_scan_pose",
-        "색상 스캔 포즈 이동 [0,10,20,0,90,0]°",
+        "색상 스캔/카메라 보기 포즈 이동 [0,10,32,0,100,90]°",
         "run",
-        "tools/run/direct_movej_joints.py --j1 0 --j2 10 --j3 20 --j4 0 --j5 90 --j6 0 --velocity 30 --acceleration 30 --execute --confirm ENABLE_DIRECT_MOVEJ",
+        "tools/run/direct_movej_joints.py --j1 0 --j2 10 --j3 32 --j4 0 --j5 100 --j6 90 --velocity 30 --acceleration 30 --execute --confirm ENABLE_DIRECT_MOVEJ",
         True,
         True,
-        "색상 스캔 전 카메라가 디스펜서를 향하는 포즈로 이동. color_scan_pose: [0,10,20,0,90,0]°",
+        "색상 스캔 전 기본 카메라 보기 포즈로 이동. color_scan_pose: [0,10,32,0,100,90]°",
     ),
     Step(
         "color_scan",
@@ -198,7 +234,7 @@ STEPS = [
         "tools/run/dispenser_color_scan_ros.sh",
         True,
         False,
-        "카메라+TF로 디스펜서 1~4 색상을 판별해 outputs/dispenser_color_map.json 저장. 로봇이 color_scan_pose [0,10,20,0,90,0]°에 있어야 함",
+        "카메라+TF로 디스펜서 1~4 색상을 판별해 outputs/dispenser_color_map.json 저장. 로봇이 color_scan_pose [0,10,32,0,100,90]°에 있어야 함",
     ),
     Step("voice_input", "음성 입력 (STT+LLM 노드 시작)", "background", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT → /stt_result → llm_recipe_mapper → /azas/voice/recipe_decision"),
     Step(
@@ -212,12 +248,12 @@ STEPS = [
     ),
     Step(
         "run_color_recipe_sequence",
-        "색상 레시피 디스펜서 시퀀스 실행",
+        "통합 디스펜서 레시피 실행",
         "run",
-        "tools/run/run_color_recipe_sequence.py",
+        "tools/run/run_color_recipe_sequence.py --execute --confirm",
         True,
         True,
-        "latest_recipe.json + dispenser_color_map.json → 색깔→디스펜서ID 매핑 → 순서대로 move+press 실행",
+        "latest_recipe.json + dispenser_color_map.json → 컵 놓기→dispenser_amounts 횟수 프레스→컵 다시 잡기/다음 디스펜서 이동을 한 단계로 실행",
     ),
     Step(
         "side_grip",
@@ -272,7 +308,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "calibration.yaml dispenser_outlets.1 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
+        "calibration.yaml dispenser_outlets.1 press_pose 측정값 사용: 현재 위치 수직상승→프레스 위치→하강 누름→상승→후퇴 대기",
     ),
     Step(
         "press_dispenser_2",
@@ -281,7 +317,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "calibration.yaml dispenser_outlets.2 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
+        "calibration.yaml dispenser_outlets.2 press_pose 측정값 사용: 현재 위치 수직상승→프레스 위치→하강 누름→상승→후퇴 대기",
     ),
     Step(
         "press_dispenser_3",
@@ -290,7 +326,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "calibration.yaml dispenser_outlets.3 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
+        "calibration.yaml dispenser_outlets.3 press_pose 측정값 사용: 현재 위치 수직상승→프레스 위치→하강 누름→상승→후퇴 대기",
     ),
     Step(
         "press_dispenser_4",
@@ -299,7 +335,7 @@ STEPS = [
         "ros2 run azas_dispenser dispenser_press_node --ros-args -p use_taught_posx:=false",
         True,
         True,
-        "calibration.yaml dispenser_outlets.4 press_pose 측정값 사용: 컵 놓기 후 후퇴→HOME→RG2 full-close→measured press pose→HOME",
+        "calibration.yaml dispenser_outlets.4 press_pose 측정값 사용: 현재 위치 수직상승→프레스 위치→하강 누름→상승→후퇴 대기",
     ),
     Step(
         "pick_from_dispenser_1",
@@ -362,6 +398,7 @@ processes: dict[str, subprocess.Popen[str]] = {}
 process_logs: dict[str, Path] = {}
 
 DOOSAN_STACK_PATTERNS = (
+    "run_doosan_real_m0609.sh",
     "run_doosan_real_no_motion_m0609.sh",
     "run_emulator",
     "dsr_bringup2/lib/dsr_bringup2",
@@ -690,6 +727,7 @@ def find_existing_doosan_launch() -> tuple[int | None, str]:
         return None, ""
     current_pid = os.getpid()
     launch_markers = (
+        "run_doosan_real_m0609.sh",
         "run_doosan_real_no_motion_m0609.sh",
         "dsr_bringup2_moveit.launch.py",
     )
@@ -954,7 +992,7 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/motion/check_motion",
             f"/{clean}/system/get_robot_state",
         ]
-    if step.key in {"home_robot", "lift_robot"}:
+    if step.key in {"home_robot", "lift_robot", "move_to_color_scan_pose"}:
         return [
             f"/{clean}/motion/move_joint",
             f"/{clean}/motion/check_motion",
@@ -969,6 +1007,20 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/tcp/get_current_tcp",
             f"/{clean}/aux_control/get_current_posx",
             "/jarvis/rg2/set_width",
+        ]
+    if step.key == "run_color_recipe_sequence":
+        return [
+            "/jarvis/rg2/set_width",
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/move_joint",
+            f"/{clean}/motion/move_wait",
+            f"/{clean}/motion/fkin",
+            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/system/get_robot_state",
+            f"/{clean}/tcp/get_current_tcp",
+            f"/{clean}/aux_control/get_current_posj",
+            f"/{clean}/aux_control/get_current_posx",
         ]
     if step.key.startswith("press_dispenser_"):
         return [
@@ -1033,10 +1085,11 @@ def required_service_wait_timeout(step: Step) -> float:
         step.key.startswith("move_to_dispenser_")
         or step.key.startswith("press_dispenser_")
         or step.key.startswith("pick_from_dispenser_")
+        or step.key == "run_color_recipe_sequence"
         or step.key == "place_cup_holder"
     ):
         return 35.0
-    if step.key in {"home_robot", "lift_robot", "side_grip", "shake_closed_cup"}:
+    if step.key in {"home_robot", "lift_robot", "move_to_color_scan_pose", "side_grip", "shake_closed_cup"}:
         return 30.0
     if step.key == "gripper_soft_grasp":
         return 12.0
@@ -1326,8 +1379,36 @@ def side_grip_preflight(env: dict[str, str], service_prefix: str) -> tuple[bool,
             + ", ".join(str(path) for path in calibration_candidates)
         )
 
-    camera_ready, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=8.0)
-    checks.append("--- camera topics ---\n" + camera_output)
+    camera_ready, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=5.0)
+    if not camera_ready:
+        # 카메라가 depth 없이 켜져 있을 수 있음 → 자동 재시작
+        checks.append("[AUTO] 카메라 토픽 불완전 — depth 포함 자동 재시작 중...")
+        cleanup_camera_stack()
+        time.sleep(1.5)
+        camera_cmd = (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "ros2 launch realsense2_camera rs_launch.py "
+            "camera_name:=camera "
+            "enable_color:=true enable_depth:=true align_depth.enable:=true"
+        )
+        log_path = background_log_path("start_camera")
+        log_handle = log_path.open("w", encoding="utf-8", buffering=1)
+        camera_proc = subprocess.Popen(
+            ["bash", "-lc", camera_cmd],
+            cwd=str(ROOT),
+            env=env,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+        log_handle.close()
+        processes["start_camera"] = camera_proc
+        process_logs["start_camera"] = log_path
+        camera_ready, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=20.0, proc=camera_proc)
+        checks.append("[AUTO] 카메라 재시작 후 토픽 확인:\n" + camera_output)
+    else:
+        checks.append("--- camera topics ---\n" + camera_output)
     if not camera_ready:
         ok = False
 
@@ -1570,13 +1651,36 @@ def with_collision_scene_prereq(selected: list[str]) -> list[str]:
         for prereq in reversed(prerequisites):
             if prereq not in ordered:
                 ordered.insert(side_index, prereq)
+
+    if "color_scan" in ordered:
+        color_index = ordered.index("color_scan")
+        prerequisites = ["move_to_color_scan_pose", "start_camera"]
+        for prereq in reversed(prerequisites):
+            if prereq not in ordered:
+                ordered.insert(color_index, prereq)
+
+    if "run_color_recipe_sequence" in ordered and "connect_gripper" not in ordered:
+        run_index = ordered.index("run_color_recipe_sequence")
+        ordered.insert(run_index, "connect_gripper")
+
     if any(requires_collision_scene_step(key) for key in ordered):
-        ordered = ["start_collision_scene"] + [key for key in ordered if key != "start_collision_scene"]
-    return ordered
+        ordered = [key for key in ordered if key != "start_collision_scene"]
+        first_collision_index = next(
+            (
+                index
+                for index, key in enumerate(ordered)
+                if requires_collision_scene_step(key)
+            ),
+            0,
+        )
+        ordered.insert(first_collision_index, "start_collision_scene")
+    return list(dict.fromkeys(ordered))
 
 def run_timeout_for_step(step: Step) -> float:
     if step.key == "side_grip":
         return 900.0
+    if step.key == "run_color_recipe_sequence":
+        return 1200.0
     if step.key == "place_cup_holder":
         return 240.0
     return 180.0
@@ -1599,7 +1703,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         payload.get("selected_dispenser_id") or env.get("SELECTED_DISPENSER_ID") or "2"
     )
     env["RECIPE_DISPENSER_IDS"] = str(
-        payload.get("recipe_dispenser_ids") or env.get("RECIPE_DISPENSER_IDS") or "1,2,3,4"
+        payload.get("recipe_dispenser_ids") or env.get("RECIPE_DISPENSER_IDS") or ""
     )
     env["CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M"] = str(
         payload.get("cup_holder_place_final_z_offset_m")
@@ -1621,11 +1725,15 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         or infer_rt_host(env["ROBOT_HOST"])
         or "192.168.137.50"
     )
-    env["DOOSAN_NO_MOTION_CONFIRM"] = "CONNECT_DOOSAN_NO_MOTION"
+    env["DOOSAN_REAL_MOTION_CONFIRM"] = "ENABLE_DOOSAN_REAL_MOTION_BRINGUP"
     return env
 
 
 def command_for(step: Step, payload: dict[str, Any]) -> str:
+    command_override = load_command_overrides().get(step.key)
+    if command_override:
+        return command_override
+
     service_prefix = str(payload.get("service_prefix") or "dsr01")
 
     def tumbler_scene_once(action: str, *, object_id: str = "carried_tumbler", dispenser_id: str = "1") -> str:
@@ -1649,7 +1757,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         return (
             f"cd {ROOT} && ROBOT_HOST={shlex.quote(robot_host)} "
             f"ROBOT_NAME={shlex.quote(robot_name)} RT_HOST={shlex.quote(rt_host)} "
-            "DOOSAN_NO_MOTION_CONFIRM=CONNECT_DOOSAN_NO_MOTION "
+            "DOOSAN_REAL_MOTION_CONFIRM=ENABLE_DOOSAN_REAL_MOTION_BRINGUP "
             f"{step.command}"
         )
     if step.key == "status_check":
@@ -1668,6 +1776,16 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"/{clean}/motion/check_motion dsr_msgs2/srv/CheckMotion --timeout 8.0 && "
             "echo '--- trajectory action ---' && "
             f"ros2 action info /{clean}/dsr_moveit_controller/follow_joint_trajectory"
+        )
+    if step.key == "run_color_recipe_sequence":
+        recipe_dispenser_ids = str(payload.get("recipe_dispenser_ids") or "").strip()
+        direct_ids_arg = ""
+        if recipe_dispenser_ids:
+            direct_ids_arg = f" --dispenser-ids {shlex.quote(recipe_dispenser_ids)}"
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "python3 tools/run/run_color_recipe_sequence.py --execute --confirm"
+            f"{direct_ids_arg}"
         )
     if step.key == "lift_robot":
         joints = {
@@ -1689,6 +1807,14 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
             f"--service-prefix {service_prefix} --j1 0 --j2 0 --j3 90 "
             f"--j4 0 --j5 90 --j6 0 --velocity {FAST_MOVE_VELOCITY} --acceleration {FAST_MOVE_ACCELERATION} "
+            "--execute --confirm ENABLE_DIRECT_MOVEJ"
+        )
+    if step.key == "move_to_color_scan_pose":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
+            f"--service-prefix {service_prefix} "
+            "--j1 0 --j2 10 --j3 32 --j4 0 --j5 100 --j6 90 "
+            "--velocity 30 --acceleration 30 --timeout-sec 60 "
             "--execute --confirm ENABLE_DIRECT_MOVEJ"
         )
     if step.key == "connect_gripper":
@@ -1738,6 +1864,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "colcon build --symlink-install --packages-select dsr_practice; "
             "fi && "
             f"source {shlex.quote(str(ROOT / 'install' / 'local_setup.bash'))} && "
+            f"source {shlex.quote(str(ROOT / 'install' / 'dsr_practice' / 'share' / 'dsr_practice' / 'package.bash'))} && "
             f"export PYTHONPATH={shlex.quote(str(ROOT / 'tools' / 'run' / 'python_compat'))}:${{PYTHONPATH:-}} && "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
@@ -1871,12 +1998,15 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"-p rx:={press_rpy_deg[0]:.6f} "
             f"-p ry:={press_rpy_deg[1]:.6f} "
             f"-p rz:={press_rpy_deg[2]:.6f} "
+            "-p press_count:=1 "
+            # calibration.yaml press_pose_xyz_m is the taught final press pose.
+            # Do not subtract an extra legacy pump depth here.
             "-p press_depth:=0.0 "
             f"-p tcp_name:={shlex.quote(tcp_name)} "
             "-p require_tcp_for_taught_posx:=false "
             "-p allow_tcp_set_failure:=false "
-            "-p move_home_first:=true "
-            "-p pre_home_retreat_before_home:=true "
+            "-p move_home_first:=false "
+            "-p pre_home_retreat_before_home:=false "
             "-p pre_home_retreat_dx_mm:=-180.0 "
             "-p pre_home_retreat_dy_mm:=0.0 "
             "-p pre_home_retreat_min_z_mm:=520.0 -p pre_home_retreat_lift_first:=true "
@@ -1886,8 +2016,12 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "-p joint1_clearance_before_home:=false "
             "-p joint1_clearance_return_home:=false "
             "-p joint1_clearance_offset_deg:=12.0 "
-            "-p return_home:=true "
-            "-p close_gripper_at_home:=true "
+            "-p return_home:=false "
+            "-p close_gripper_at_home:=false "
+            "-p post_press_retreat_after_sequence:=true "
+            "-p post_press_retreat_dx_mm:=-120.0 "
+            "-p post_press_retreat_dy_mm:=0.0 "
+            "-p post_press_retreat_wait_seconds:=1.0 "
             "-p gripper_service:=/jarvis/rg2/set_width "
             "-p gripper_close_width:=0.0 "
             "-p gripper_close_force:=30.0 "
@@ -1993,6 +2127,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
         )
+    if step.command.strip():
+        return f"cd {ROOT} && {ROS_SETUP} && {step.command}"
     return ""
 
 
@@ -2356,8 +2492,24 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                     for did in sorted(color_map.keys(), key=lambda x: int(x) if x.isdigit() else x):
                         lines.append(f"  디스펜서 {did}: {color_map[did]}")
                     output = f"{output}\n" + "\n".join(lines) + "\n"
+                    if not color_map:
+                        return {
+                            "key": step.key,
+                            "status": "failed",
+                            "returncode": 1,
+                            "output": output + "[color_scan] 결과가 비어 있습니다.\n",
+                        }
+                    unknown = [str(did) for did, color in color_map.items() if str(color).lower() == "unknown"]
+                    if unknown:
+                        output += "[color_scan] WARNING: unknown result for dispenser(s): " + ", ".join(sorted(unknown)) + "\n"
                 except Exception as exc:
                     output = f"{output}\n[color_scan] 결과 파일 읽기 실패: {exc}\n"
+                    return {
+                        "key": step.key,
+                        "status": "failed",
+                        "returncode": 1,
+                        "output": output,
+                    }
             target_xyz = target_xyz_for_step(step.key)
             if target_xyz is not None:
                 reached, verify_output = wait_for_xyz_target(env["SERVICE_PREFIX"], target_xyz)
@@ -2430,6 +2582,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if path == "/api/steps":
+            command_overrides = load_command_overrides()
             preview_payload = {
                 "robot_host": os.environ.get("ROBOT_HOST", DEFAULT_ROBOT_HOST),
                 "robot_name": os.environ.get("ROBOT_NAME", "dsr01"),
@@ -2444,6 +2597,7 @@ class Handler(BaseHTTPRequestHandler):
             for step in STEPS:
                 item = asdict(step)
                 item["resolved_command"] = command_for(step, preview_payload) if step.implemented else ""
+                item["command_saved"] = step.key in command_overrides
                 data.append(item)
             self.send_json(data)
             return
@@ -2475,6 +2629,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/run":
             selected = with_collision_scene_prereq([str(key) for key in payload.get("selected") or []])
+            selected = list(dict.fromkeys(selected))
             steps_by_key = {step.key: step for step in STEPS}
             results = [
                 run_step(steps_by_key[key], payload)
@@ -2497,6 +2652,16 @@ class Handler(BaseHTTPRequestHandler):
                 encoding="utf-8",
             )
             self.send_json({"map": DISPENSER_PRESS_TARGETS})
+            return
+        if path == "/api/command_override":
+            step_key = str(payload.get("key") or "")
+            command = str(payload.get("command") or "")
+            try:
+                overrides = save_command_override(step_key, command)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"overrides": overrides})
             return
         if path == "/api/stop":
             self.send_json(stop_all())

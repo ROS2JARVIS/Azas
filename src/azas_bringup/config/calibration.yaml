@@ -22,8 +22,8 @@ hand_eye:
 color_scan_pose:
   source: operator_measured
   ee_link: link_6
-  joints_deg: [0.0, 10.0, 20.0, 0.0, 90.0, 0.0]
-  joints_rad: [0.0, 0.1745, 0.3491, 0.0, 1.5708, 0.0]
+  joints_deg: [0.0, 10.0, 32.0, 0.0, 100.0, 90.0]
+  joints_rad: [0.0, 0.1745, 0.5585, 0.0, 1.7453, 1.5708]
   joint_order: [joint_1, joint_2, joint_3, joint_4, joint_5, joint_6]
   cartesian_xyz_m: null
   cartesian_frame: base_link
@@ -58,56 +58,60 @@ table:
 # measured teaching/calibration data in base_link; never from STT, LLM, or VLA.
 dispenser_outlets:
   "1":
-    outlet_pose_xyz_m: [0.609, 0.070, 0.087]  # measured cup placement pose
-    outlet_pose_quaternion_xyzw: [0.489, 0.517, 0.517, 0.475]
-    outlet_pose_rpy_rad: [1.585, -0.015, 1.640]
-    outlet_pose_rpy_deg: [90.798, -0.845, 93.984]
-    press_pose_xyz_m: [0.712, 0.071, 0.530]
-    press_pose_quaternion_xyzw: [0.644, 0.630, 0.339, 0.271]
-    press_pose_rpy_rad: [2.248, -0.095, 1.594]
-    press_pose_rpy_deg: [128.791, -5.434, 91.357]
+    outlet_pose_xyz_m: [0.555, -0.100, 0.093]  # measured cup placement pose
+    outlet_pose_quaternion_xyzw: [0.019717, 0.648068, 0.033158, 0.760605]
+    outlet_pose_rpy_rad: [0.429694, 1.394728, 0.448776]
+    outlet_pose_rpy_deg: [24.620, 79.912, 25.713]
+    press_pose_xyz_m: [0.705, 0.084, 0.520]
+    press_pose_quaternion_xyzw: [-0.060, 0.878, -0.024, 0.474]
+    press_pose_rpy_rad: [-2.962871, 0.977873, -2.910616]
+    press_pose_rpy_deg: [-169.760, 56.028, -166.766]
     press_joint_state:
       name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
       position_rad: [0.08982130140066147, 0.9058733582496643, 0.008466404862701893, 1.3044253587722778, 0.033748552203178406, 1.6839158535003662]
+    press_contact_joints_deg: [15.12, 40.50, 32.87, -33.75, 51.99, 28.07]
     clearance_m: null
   "2":
-    outlet_pose_xyz_m: [0.617, 0.028, 0.082]
-    outlet_pose_quaternion_xyzw: [0.504, 0.504, 0.500, 0.491]
-    outlet_pose_rpy_rad: [1.587, -0.009, 1.580]
-    outlet_pose_rpy_deg: [90.946, -0.512, 90.501]
-    press_pose_xyz_m: [0.718, 0.015, 0.525]
-    press_pose_quaternion_xyzw: [0.649, 0.626, 0.338, 0.269]
-    press_pose_rpy_rad: [2.251, -0.103, 1.583]
-    press_pose_rpy_deg: [128.995, -5.878, 90.707]
+    outlet_pose_xyz_m: [0.549, -0.150, 0.097]
+    outlet_pose_quaternion_xyzw: [-0.021772, 0.650220, 0.060986, 0.756981]
+    outlet_pose_rpy_rad: [0.293265, 1.409774, 0.410750]
+    outlet_pose_rpy_deg: [16.803, 80.774, 23.534]
+    press_pose_xyz_m: [0.706, 0.043, 0.510]
+    press_pose_quaternion_xyzw: [-0.043, 0.878, -0.058, 0.473]
+    press_pose_rpy_rad: [-2.886216, 0.971433, -2.908521]
+    press_pose_rpy_deg: [-165.368, 55.659, -166.646]
     press_joint_state:
       name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
       position_rad: [-0.000876683508977294, 0.9131112098693848, 0.0780220702290535, 1.3043646812438965, 0.032502077519893646, 1.621778964996338]
+    press_contact_joints_deg: [6.36, 39.76, 30.07, -14.08, 55.67, 27.99]
     clearance_m: null
   "3":
-    outlet_pose_xyz_m: [0.616, -0.026, 0.079]
-    outlet_pose_quaternion_xyzw: [0.504, 0.504, 0.498, 0.494]
-    outlet_pose_rpy_rad: [1.587, -0.005, 1.575]
-    outlet_pose_rpy_deg: [90.926, -0.278, 90.234]
-    press_pose_xyz_m: [0.716, -0.040, 0.525]
-    press_pose_quaternion_xyzw: [0.652, 0.623, 0.336, 0.272]
-    press_pose_rpy_rad: [2.252, -0.099, 1.574]
-    press_pose_rpy_deg: [129.006, -5.691, 90.174]
+    outlet_pose_xyz_m: [0.527, -0.204, 0.107]
+    outlet_pose_quaternion_xyzw: [-0.018792, 0.647687, 0.057548, 0.759498]
+    outlet_pose_rpy_rad: [0.279465, 1.403250, 0.387859]
+    outlet_pose_rpy_deg: [16.012, 80.400, 22.223]
+    press_pose_xyz_m: [0.705, -0.002, 0.513]
+    press_pose_quaternion_xyzw: [-0.015, 0.881, -0.075, 0.468]
+    press_pose_rpy_rad: [-2.884226, 0.964050, -2.972819]
+    press_pose_rpy_deg: [-165.254, 55.236, -170.330]
     press_joint_state:
       name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
       position_rad: [-0.08701040595769882, 0.9135012626647949, 0.13757061958312988, 1.3107753992080688, 0.032613810151815414, 1.5555728673934937]
+    press_contact_joints_deg: [-0.29, 40.29, 28.38, -5.98, 55.25, 14.33]
     clearance_m: null
   "4":
-    outlet_pose_xyz_m: [0.607, -0.083, 0.075]
-    outlet_pose_quaternion_xyzw: [0.511, 0.498, 0.492, 0.499]
-    outlet_pose_rpy_rad: [1.589, -0.005, 1.551]
-    outlet_pose_rpy_deg: [91.042, -0.280, 88.871]
-    press_pose_xyz_m: [0.709, -0.084, 0.529]
-    press_pose_quaternion_xyzw: [0.650, 0.626, 0.316, 0.293]
-    press_pose_rpy_rad: [2.251, -0.044, 1.555]
-    press_pose_rpy_deg: [128.978, -2.505, 89.087]
+    outlet_pose_xyz_m: [0.517, -0.235, 0.109]
+    outlet_pose_quaternion_xyzw: [-0.022035, 0.648114, 0.059471, 0.758898]
+    outlet_pose_rpy_rad: [0.268008, 1.405233, 0.383736]
+    outlet_pose_rpy_deg: [15.356, 80.514, 21.986]
+    press_pose_xyz_m: [0.705, -0.050, 0.513]
+    press_pose_quaternion_xyzw: [0.020, 0.883, -0.078, 0.462]
+    press_pose_rpy_rad: [-2.931106, 0.959652, -3.076684]
+    press_pose_rpy_deg: [-167.940, 54.984, -176.281]
     press_joint_state:
       name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
       position_rad: [-0.1493324339389801, 0.9293974041938782, 0.1349058598279953, 1.3465725183486938, -0.016838623210787773, 1.4902210235595703]
+    press_contact_joints_deg: [-7.04, 40.77, 28.37, 4.55, 54.02, 0.22]
     clearance_m: null
 
 cup_holder:

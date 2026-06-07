@@ -12,22 +12,25 @@ COMMAND_DIR="${AZAS_PANEL_COMMAND_DIR:-$HOME/.local/bin}"
 COMMAND_PATH="$COMMAND_DIR/azas-panel"
 PANEL_ROS_DOMAIN_ID="${AZAS_PANEL_ROS_DOMAIN_ID:-9}"
 SERVER_SCRIPT="$ROOT/tools/run/robot_pipeline_control_server.py"
-FORCE_RESTART=0
+RESTART_SERVER=1
 
 case "${1:-}" in
   --restart|restart)
-    FORCE_RESTART=1
+    RESTART_SERVER=1
+    ;;
+  --reuse|reuse)
+    RESTART_SERVER=0
     ;;
   -h|--help)
     cat <<MSG
-Usage: azas-panel [--restart]
+Usage: azas-panel [--restart|--reuse]
 
-Opens the Azas robot pipeline panel. If the panel server is not running, starts it.
-If robot_pipeline_control_server.py changed after the running panel server started,
-azas-panel automatically restarts only the panel server so new HTML/API code is used.
+Restarts the Azas robot pipeline panel server, then opens the browser.
+This is the default so changed HTML/API code is always applied when azas-panel is used.
 
 Options:
-  --restart   Force-restart the panel server before opening the browser.
+  --restart   Restart the panel server before opening the browser. This is the default.
+  --reuse     Reuse a running panel server if it is already ready.
 MSG
     exit 0
     ;;
@@ -35,7 +38,7 @@ MSG
     ;;
   *)
     echo "[Azas] unknown option: $1" >&2
-    echo "Usage: azas-panel [--restart]" >&2
+    echo "Usage: azas-panel [--restart|--reuse]" >&2
     exit 2
     ;;
 esac
@@ -78,7 +81,7 @@ server_pid() {
 
 server_needs_restart() {
   local pid="$1"
-  [[ "$FORCE_RESTART" == "1" ]] && return 0
+  [[ "$RESTART_SERVER" == "1" ]] && return 0
   [[ -z "$pid" ]] && return 1
   [[ ! -f "$SERVER_SCRIPT" ]] && return 1
   local etimes now started script_mtime
@@ -167,8 +170,8 @@ ensure_workspace_built
 
 PID="$(server_pid || true)"
 if [[ -n "$PID" ]] && server_needs_restart "$PID"; then
-  if [[ "$FORCE_RESTART" == "1" ]]; then
-    echo "[Azas] 요청에 따라 패널 서버를 재시작합니다."
+  if [[ "$RESTART_SERVER" == "1" ]]; then
+    echo "[Azas] 패널 서버를 새로 초기화합니다."
   else
     echo "[Azas] 패널 서버 코드 변경 감지: 새 코드로 자동 재시작합니다."
   fi
