@@ -11,7 +11,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOG_DIR="${LOG_DIR:-${ROOT_DIR}/log/manual}"
 MODE="${MODE:-virtual}"
 HOST="${HOST:-127.0.0.1}"
-PORT="${PORT:-12347}"
+PORT="${PORT:-12345}"
 MODEL="${MODEL:-m0609}"
 COLOR="${COLOR:-white}"
 RT_HOST="${RT_HOST:-192.168.137.50}"
@@ -96,6 +96,11 @@ while (( SECONDS < joint_deadline )); do
 done
 if ! grep -q '^header:' "${LOG_DIR}/course_dispenser_joint_state_once.txt" 2>/dev/null; then
   echo '[Azas] No fresh /joint_states. MoveItPy cannot mirror the robot in RViz.' >&2
+  if grep -qE 'Failed to initialize hardware|Wrong state or command interface configuration|INITIAL STATE CALL FAILURE|process has died' "${LOG_DIR}/course_dispenser_bringup.log" 2>/dev/null; then
+    echo '[Azas] Doosan virtual bringup failed before joint_state_broadcaster became available.' >&2
+    echo "[Azas] Current launch args: MODE=${MODE} HOST=${HOST} PORT=${PORT} MODEL=${MODEL}" >&2
+    echo '[Azas] If an emulator was already running, stop stale Doosan emulator/controller processes and rerun.' >&2
+  fi
   tail -100 "${LOG_DIR}/course_dispenser_bringup.log" >&2 || true
   exit 1
 fi
