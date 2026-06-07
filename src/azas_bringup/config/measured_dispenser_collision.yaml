@@ -2,16 +2,16 @@ metadata:
   frame_id: base_link
   measured_target_frame: link_6
   source: operator_teaching_tf2_echo
-  status: measured_draft_horizontal_spout_boxes_not_enabled
+  status: measured_draft_merged_horizontal_spout_block_not_enabled
   body_bottom_z_m: 0.0
   body_bottom_reason: dispenser bottles start on same floor plane as robot base
   margin_m:
     x: 0.02
     y: 0.02
     z: 0.02
-  nozzle_model_policy: four outlets are visualized as separate horizontal x-axis spout
-    boxes; nozzle lane/height are restored from the measured draft boxes and gaps
-    are left open
+  nozzle_merge_policy: four nozzle lanes are represented as one horizontal x-axis
+    spout cuboid; the block spans all four outlet positions and fills the gaps between
+    them
 front_hold_poses:
   dispenser_1:
     position_xyz_m:
@@ -126,17 +126,26 @@ estimated_collision_objects:
     - 1.0
     publish_to_planning_scene: true
     enabled_for_real_motion: false
-  dispenser_1_head_nozzle_box:
+  dispenser_head_nozzle_merged_horizontal_spout_box:
     type: box
     frame_id: base_link
     center_xyz_m:
     - 0.718
-    - 0.084
+    - 0.017
     - 0.432
     size_xyz_m:
     - 0.05
-    - 0.01
+    - 0.144
     - 0.04
+    bounds_xyz_m:
+      min:
+      - 0.693
+      - -0.055
+      - 0.412
+      max:
+      - 0.743
+      - 0.089
+      - 0.452
     orientation_xyzw:
     - 0.0
     - 0.0
@@ -144,66 +153,6 @@ estimated_collision_objects:
     - 1.0
     publish_to_planning_scene: true
     enabled_for_real_motion: false
-    '# note': Restored as a separate horizontal spout box from the pre-merge measured
-      draft; x span protrudes from the dispenser body front face and inter-outlet
-      gaps remain visible/open.
-  dispenser_2_head_nozzle_box:
-    type: box
-    frame_id: base_link
-    center_xyz_m:
-    - 0.718
-    - 0.043
-    - 0.432
-    size_xyz_m:
-    - 0.05
-    - 0.01
-    - 0.04
-    orientation_xyzw:
-    - 0.0
-    - 0.0
-    - 0.0
-    - 1.0
-    publish_to_planning_scene: true
-    enabled_for_real_motion: false
-    '# note': Restored separate horizontal spout box; gaps between outlets remain
-      visible/open.
-  dispenser_3_head_nozzle_box:
-    type: box
-    frame_id: base_link
-    center_xyz_m:
-    - 0.718
-    - -0.002
-    - 0.432
-    size_xyz_m:
-    - 0.05
-    - 0.01
-    - 0.04
-    orientation_xyzw:
-    - 0.0
-    - 0.0
-    - 0.0
-    - 1.0
-    publish_to_planning_scene: true
-    enabled_for_real_motion: false
-    '# note': Restored separate horizontal spout box; gaps between outlets remain
-      visible/open.
-  dispenser_4_head_nozzle_box:
-    type: box
-    frame_id: base_link
-    center_xyz_m:
-    - 0.718
-    - -0.05
-    - 0.432
-    size_xyz_m:
-    - 0.05
-    - 0.01
-    - 0.04
-    orientation_xyzw:
-    - 0.0
-    - 0.0
-    - 0.0
-    - 1.0
-    publish_to_planning_scene: true
-    enabled_for_real_motion: false
-    '# note': Restored separate horizontal spout box; gaps between outlets remain
-      visible/open.
+    '# note': Merged from the four measured nozzle lane boxes into one horizontal
+      spout block. This intentionally fills the empty spaces between outlets while
+      keeping the spout as a horizontal cuboid, not a vertical column.

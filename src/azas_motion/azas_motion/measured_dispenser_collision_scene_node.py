@@ -27,6 +27,7 @@ LEGACY_DISPENSER_COLLISION_OBJECT_IDS = (
     "dispenser_4_body_box_v2",
     "dispenser_head_box",
     "dispenser_head_nozzle_merged_vertical_box",
+    "dispenser_head_nozzle_merged_horizontal_spout_box",
     "dispenser_1_head_nozzle_box",
     "dispenser_2_head_nozzle_box",
     "dispenser_3_head_nozzle_box",
