@@ -6,6 +6,9 @@
   <material name="azas_rg2_dark">
     <color rgba="0.08 0.08 0.09 1.0"/>
   </material>
+  <material name="azas_rg2_metal">
+    <color rgba="0.42 0.43 0.45 1.0"/>
+  </material>
   <material name="azas_rg2_tip">
     <color rgba="0.05 0.35 0.95 1.0"/>
   </material>
@@ -27,16 +30,29 @@
 
   <link name="GripperDA_v1_jarvis">
     <visual>
-      <origin xyz="0 0 0.055" rpy="0 0 0"/>
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
       <geometry>
-        <box size="0.080 0.055 0.110"/>
+        <cylinder radius="0.040" length="0.050"/>
+      </geometry>
+      <material name="azas_rg2_metal"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.075" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.090 0.140 0.050"/>
       </geometry>
       <material name="azas_rg2_dark"/>
     </visual>
     <collision>
-      <origin xyz="0 0 0.055" rpy="0 0 0"/>
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
       <geometry>
-        <box size="0.080 0.055 0.110"/>
+        <cylinder radius="0.040" length="0.050"/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0 0.075" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.090 0.140 0.050"/>
       </geometry>
     </collision>
   </link>
@@ -44,21 +60,34 @@
   <joint name="GripperDA_v1_jarvis_to_rg2_left_finger" type="fixed">
     <parent link="GripperDA_v1_jarvis"/>
     <child link="rg2_left_finger_visual"/>
-    <origin xyz="0 0.035 0.145" rpy="0 0 0"/>
+    <origin xyz="0 0.055 0.155" rpy="0 0 0"/>
   </joint>
 
   <link name="rg2_left_finger_visual">
     <visual>
-      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.020 0.018 0.080"/>
+        <box size="0.035 0.018 0.160"/>
+      </geometry>
+      <material name="azas_rg2_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 -0.015 0.090" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.025 0.012 0.035"/>
       </geometry>
       <material name="azas_rg2_tip"/>
     </visual>
     <collision>
-      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.020 0.018 0.080"/>
+        <box size="0.035 0.018 0.160"/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 -0.015 0.090" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.025 0.012 0.035"/>
       </geometry>
     </collision>
   </link>
@@ -66,21 +95,34 @@
   <joint name="GripperDA_v1_jarvis_to_rg2_right_finger" type="fixed">
     <parent link="GripperDA_v1_jarvis"/>
     <child link="rg2_right_finger_visual"/>
-    <origin xyz="0 -0.035 0.145" rpy="0 0 0"/>
+    <origin xyz="0 -0.055 0.155" rpy="0 0 0"/>
   </joint>
 
   <link name="rg2_right_finger_visual">
     <visual>
-      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.020 0.018 0.080"/>
+        <box size="0.035 0.018 0.160"/>
+      </geometry>
+      <material name="azas_rg2_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0.015 0.090" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.025 0.012 0.035"/>
       </geometry>
       <material name="azas_rg2_tip"/>
     </visual>
     <collision>
-      <origin xyz="0 0 0.040" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.020 0.018 0.080"/>
+        <box size="0.035 0.018 0.160"/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0.015 0.090" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.025 0.012 0.035"/>
       </geometry>
     </collision>
   </link>
