@@ -9,9 +9,8 @@ metadata:
     x: 0.02
     y: 0.02
     z: 0.02
-  nozzle_merge_policy: four nozzle lanes are represented as one horizontal x-axis
-    spout cuboid; the block spans all four outlet positions and fills the gaps between
-    them
+  nozzle_merge_policy: single horizontal spout cuboid spans the combined body Y width
+    and uses the same orientation as dispenser_combined_body_box
 front_hold_poses:
   dispenser_1:
     position_xyz_m:
@@ -131,20 +130,20 @@ estimated_collision_objects:
     frame_id: base_link
     center_xyz_m:
     - 0.718
-    - 0.017
+    - -0.0155
     - 0.432
     size_xyz_m:
     - 0.05
-    - 0.144
+    - 0.215
     - 0.04
     bounds_xyz_m:
       min:
       - 0.693
-      - -0.055
+      - -0.123
       - 0.412
       max:
       - 0.743
-      - 0.089
+      - 0.092
       - 0.452
     orientation_xyzw:
     - 0.0
@@ -153,6 +152,6 @@ estimated_collision_objects:
     - 1.0
     publish_to_planning_scene: true
     enabled_for_real_motion: false
-    '# note': Merged from the four measured nozzle lane boxes into one horizontal
-      spout block. This intentionally fills the empty spaces between outlets while
-      keeping the spout as a horizontal cuboid, not a vertical column.
+    '# note': Merged horizontal nozzle/spout block lengthened to match the dispenser_combined_body_box
+      Y span; orientation is kept identical to the combined body box so both blocks
+      are axis-aligned together.
