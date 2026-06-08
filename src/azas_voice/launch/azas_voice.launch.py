@@ -10,6 +10,7 @@ def generate_launch_description():
     use_live_stt = LaunchConfiguration("use_live_stt")
     use_llm = LaunchConfiguration("use_llm")
     use_conversation_manager = LaunchConfiguration("use_conversation_manager")
+    run_voice_screen = LaunchConfiguration("run_voice_screen")
     use_tts = LaunchConfiguration("use_tts")
     enable_tts_audio = LaunchConfiguration("enable_tts_audio")
     tts_speech_rate = LaunchConfiguration("tts_speech_rate")
@@ -21,6 +22,9 @@ def generate_launch_description():
             DeclareLaunchArgument("use_live_stt", default_value="false"),
             DeclareLaunchArgument("use_llm", default_value="false"),
             DeclareLaunchArgument("use_conversation_manager", default_value="true"),
+            DeclareLaunchArgument("run_voice_screen", default_value="true"),
+            DeclareLaunchArgument("voice_screen_host", default_value="0.0.0.0"),
+            DeclareLaunchArgument("voice_screen_port", default_value="8090"),
             DeclareLaunchArgument("use_tts", default_value="true"),
             DeclareLaunchArgument("enable_tts_audio", default_value="true"),
             DeclareLaunchArgument("tts_speech_rate", default_value="1.25"),
@@ -95,6 +99,22 @@ def generate_launch_description():
                     }
                 ],
                 condition=IfCondition(use_tts),
+            ),
+            Node(
+                package="azas_voice",
+                executable="voice_screen_node",
+                name="azas_voice_screen_node",
+                output="screen",
+                parameters=[
+                    {
+                        "host": LaunchConfiguration("voice_screen_host"),
+                        "port": ParameterValue(
+                            LaunchConfiguration("voice_screen_port"), value_type=int
+                        ),
+                        "stt_topic": stt_topic,
+                    }
+                ],
+                condition=IfCondition(run_voice_screen),
             ),
         ]
     )

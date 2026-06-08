@@ -10,10 +10,10 @@ const cocktailStatus = document.querySelector("#cocktail-status");
 const voiceState = document.querySelector("#voice-state");
 
 const colorLabels = {
-  red: "Red",
-  yellow: "Yellow",
-  green: "Green",
-  blue: "Blue",
+  red: "Berry",
+  yellow: "Citrus",
+  green: "Herb",
+  blue: "Ocean",
 };
 
 async function postJson(path, payload = {}) {
@@ -39,9 +39,21 @@ function renderMenus(menus) {
     button.dataset.recipeId = menu.recipe_id;
     button.innerHTML = `
       <span class="menu-tone">${colorLabels[menu.color] || menu.color}</span>
-      <strong>${menu.name}</strong>
-      <span class="menu-role">${menu.role}</span>
-      <span class="menu-description">${menu.description}</span>
+      <span class="cocktail-art" aria-hidden="true">
+        <span class="glass">
+          <span class="liquid"></span>
+          <span class="ice ice-one"></span>
+          <span class="ice ice-two"></span>
+          <span class="garnish"></span>
+        </span>
+        <span class="stem"></span>
+        <span class="base"></span>
+      </span>
+      <span class="menu-copy">
+        <strong>${menu.name}</strong>
+        <span class="menu-role">${menu.role}</span>
+        <span class="menu-description">${menu.description}</span>
+      </span>
     `;
     button.addEventListener("click", async () => {
       await selectMenu(menu.recipe_id);
@@ -58,6 +70,7 @@ async function selectMenu(recipeId) {
 }
 
 function setSelectedCard(recipeId) {
+  state.selectedRecipeId = recipeId || null;
   for (const card of menuGrid.querySelectorAll(".menu-card")) {
     card.classList.toggle("selected", card.dataset.recipeId === recipeId);
   }
@@ -75,6 +88,9 @@ async function refreshState() {
   const status = payload.cocktail_status || {};
   const prompt = payload.last_confirmation || ui.text || "주문을 기다리고 있습니다.";
 
+  if (payload.selected_recipe_id) {
+    setSelectedCard(payload.selected_recipe_id);
+  }
   confirmationText.textContent = prompt;
   lastCommand.textContent = payload.last_command || "-";
   voiceState.textContent = ui.state === "speaking" ? "안내 중" : "대기 중";
@@ -89,7 +105,10 @@ document.querySelector("#recommend-button").addEventListener("click", async () =
   try {
     state.selectedRecipeId = null;
     setSelectedCard(null);
-    await postJson("/api/recommend");
+    const result = await postJson("/api/recommend");
+    if (result.recipe_id) {
+      setSelectedCard(result.recipe_id);
+    }
     await refreshState();
   } catch (error) {
     showError(error);
