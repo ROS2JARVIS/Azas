@@ -137,6 +137,7 @@ class MeasuredDispenserCollisionSceneNode(Node):
         self.declare_parameter("remove_legacy_collision_objects", True)
         self.declare_parameter("remove_course_workspace_collision_objects", False)
         self.declare_parameter("clear_markers_before_publish", True)
+        self.declare_parameter("collision_object_exclude_ids", "")
 
         config_path = Path(
             self.get_parameter("config_path").get_parameter_value().string_value
@@ -185,6 +186,16 @@ class MeasuredDispenserCollisionSceneNode(Node):
             .get_parameter_value()
             .bool_value
         )
+        exclude_raw = (
+            self.get_parameter("collision_object_exclude_ids")
+            .get_parameter_value()
+            .string_value
+        )
+        self.collision_object_exclude_ids = {
+            item.strip()
+            for item in exclude_raw.replace(";", ",").split(",")
+            if item.strip()
+        }
 
         self._warn_about_draft_status()
         self._warn_about_front_hold_overlaps()
@@ -248,24 +259,31 @@ class MeasuredDispenserCollisionSceneNode(Node):
 
     def _publish_scene(self) -> None:
         collision_objects = self._collision_objects()
+        if (
+            self.remove_legacy_collision_objects
+            and not self._legacy_collision_objects_removed
+        ):
+            remove_ids = list(LEGACY_DISPENSER_COLLISION_OBJECT_IDS)
+            if self.remove_course_workspace_collision_objects:
+                remove_ids.extend(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
+            for object_id in remove_ids:
+                self.collision_pub.publish(self._make_remove_collision_object(object_id))
+            self._legacy_collision_objects_removed = True
+            if self.remove_course_workspace_collision_objects:
+                self.get_logger().info(
+                    "Requested removal of course workspace wall collision objects: "
+                    + ", ".join(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
+                )
         if self.publish_collision_objects:
-            if (
-                self.remove_legacy_collision_objects
-                and not self._legacy_collision_objects_removed
-            ):
-                remove_ids = list(LEGACY_DISPENSER_COLLISION_OBJECT_IDS)
-                if self.remove_course_workspace_collision_objects:
-                    remove_ids.extend(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
-                for object_id in remove_ids:
-                    self.collision_pub.publish(self._make_remove_collision_object(object_id))
-                self._legacy_collision_objects_removed = True
-                if self.remove_course_workspace_collision_objects:
-                    self.get_logger().info(
-                        "Requested removal of course workspace wall collision objects: "
-                        + ", ".join(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
-                    )
             published_ids = []
             for object_id, object_config in collision_objects.items():
+                if object_id in self.collision_object_exclude_ids:
+                    if not self._published_ids_logged:
+                        self.get_logger().info(
+                            f"Skipping PlanningScene collision object {object_id}; "
+                            "it remains visible as an RViz marker only."
+                        )
+                    continue
                 if not object_config.get("publish_to_planning_scene", True):
                     continue
                 self.collision_pub.publish(

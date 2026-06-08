@@ -38,7 +38,11 @@ class M0609ShakeJointStateNode(Node):
             home.append(0.0)
 
         mode = str(self.get_parameter("preview_mode").value).strip().lower()
-        if mode in {"cup_target_move", "side_grasp_target_move", "target_move"}:
+        if mode in {"color_scan_pose_move", "color_scan_move", "camera_view_move"}:
+            positions = self.color_scan_pose_move_joints(elapsed, home)
+        elif mode in {"static_pose", "color_scan_pose", "color_scan", "camera_view_pose"}:
+            positions = home[:6]
+        elif mode in {"cup_target_move", "side_grasp_target_move", "target_move"}:
             positions = self.cup_target_move_joints(elapsed, home)
         elif mode in {"side_grasp_move_then_shake", "side_grasp_then_shake", "move_then_shake"}:
             positions = self.side_grasp_move_then_shake_joints(elapsed, home)
@@ -71,6 +75,25 @@ class M0609ShakeJointStateNode(Node):
             home[4] + math.radians(10.0) * wrist_pitch,
             home[5] + math.radians(12.0) * wrist_yaw,
         ]
+
+    def color_scan_pose_move_joints(self, elapsed: float, target: list[float]) -> list[float]:
+        start = [
+            0.0,
+            0.0,
+            math.radians(90.0),
+            0.0,
+            math.radians(90.0),
+            0.0,
+        ]
+        cycle_seconds = 10.0
+        t = elapsed % cycle_seconds
+        if t < 4.0:
+            ratio = self.minimum_jerk(t / 4.0)
+            return [a + (b - a) * ratio for a, b in zip(start, target[:6])]
+        if t < 7.0:
+            return target[:6]
+        ratio = self.minimum_jerk((t - 7.0) / 3.0)
+        return [a + (b - a) * ratio for a, b in zip(target[:6], start)]
 
     def side_grasp_move_then_shake_joints(self, elapsed: float, home: list[float]) -> list[float]:
         # Joint-space storyboard for RViz visibility only.  It follows the

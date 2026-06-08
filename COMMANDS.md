@@ -117,6 +117,78 @@ ros2 launch dsr_bringup2 dsr_bringup2_moveit.launch.py \
   model:=m0609 mode:=virtual host:=127.0.0.1 port:=12345
 ```
 
+### 칵테일 디스펜서 전체 사이클 RViz preview
+
+컵을 디스펜서 앞에 놓고 → 그리퍼를 완전히 열고 → 안전하게 위로 올라간 뒤
+→ 빈 그리퍼를 닫고 → 측정된 프레스 조인트에서 펌프질 → 컵을 다시 잡는
+통합 사이클을 RViz에서 먼저 봅니다.
+
+```bash
+cd /home/ssu/Azas
+bash tools/run/stop_cocktail_motion_preview.sh
+bash tools/run/show_cocktail_motion_preview.sh 1x1
+```
+
+`show_cocktail_motion_preview.sh`의 기본 RViz는 교안의 MoveIt RViz
+(`RVIZ_MODE=bringup`)라서 주황색 로봇/Trajectory/PlanningScene 화면으로 보입니다.
+하얀 RobotModel 중심의 디버그 화면이 필요할 때만 `RVIZ_MODE=clean`을 붙입니다.
+
+동일한 동작을 환경변수로 직접 실행하려면:
+
+```bash
+cd /home/ssu/Azas
+RECIPE_DISPENSER_IDS=1x1 \
+DISPENSER_COLLISION_OBJECTS=1 \
+KEEP_ALIVE_AFTER_DONE=1 \
+RESET_EXISTING_VIRTUAL_PREVIEW=1 \
+REPLACE_EXISTING_RVIZ=1 \
+bash tools/run/run_cocktail_collision_rviz_preview.sh
+```
+
+예: 1번 디스펜서 2회 프레스
+
+```bash
+RECIPE_DISPENSER_IDS=1x2 \
+DISPENSER_COLLISION_OBJECTS=1 \
+KEEP_ALIVE_AFTER_DONE=1 \
+bash tools/run/run_cocktail_collision_rviz_preview.sh
+```
+
+RViz preview가 떠 있는 상태에서 실제 로봇 one-click 스크립트를 실행하면
+virtual/emulator 세션과 실제 세션이 섞이지 않도록 거부합니다.
+
+preview를 닫고 실제 로봇 실행으로 전환하려면:
+
+```bash
+bash tools/run/stop_cocktail_motion_preview.sh
+```
+
+이 정리 스크립트는 preview shell뿐 아니라 `dsr_bringup2_moveit.launch.py mode:=virtual`,
+`run_emulator`, `DRCF M0609`, 관련 RViz까지 확인합니다. 남은 virtual/emulator가
+있으면 실제 one-click은 계속 거부됩니다.
+
+### 색상 스캔 자세 RViz preview
+
+디스펜서 색상 구분 전에 쓰는 카메라 보기 관절 자세
+`[0, 10, 32, 0, 100, 90]°`를 실제 로봇 명령 없이 RViz에서 표시합니다.
+
+```bash
+cd /home/ssu/Azas
+bash tools/run/show_color_scan_pose_rviz.sh
+```
+
+검증용으로 RViz 창 없이 `/joint_states`만 확인하려면:
+
+```bash
+USE_RVIZ=false bash tools/run/show_color_scan_pose_rviz.sh
+```
+
+현재 상태가 실제 실행 가능한지 확인하려면:
+
+```bash
+bash tools/run/check_one_click_cocktail_ready.sh
+```
+
 ---
 
 ## 4. 비-하드웨어 점검
@@ -308,6 +380,88 @@ bash tools/run/run_connected_robot_control.sh
 
 `run_robot_real.sh`는 strict gate stamp와 측정 config를 다시 확인한 뒤에도, operator 확인 전 `detected:upright` cup pose와 실제 camera-derived tumbler pose를 요구합니다.
 
+### 7-6. 실제 로봇 디스펜서 통합 사이클 one-click
+
+RViz preview로 동작을 확인한 뒤, 실제 로봇 연결부터 통합 디스펜서 사이클까지
+한 번에 실행합니다. 실행 전 virtual/RViz preview 세션은 종료되어 있어야 합니다.
+패널에서는 `실제 실행 준비확인` 버튼으로 상태를 보고, `실제 one-click` 버튼으로
+preview 정리 후 동일한 통합 실행을 시작할 수 있습니다.
+
+```bash
+cd /home/ssu/Azas
+
+# preview/emulator가 남아 있으면 먼저 정리
+bash tools/run/stop_cocktail_motion_preview.sh
+
+# 현재 real/RG2 서비스 상태 확인
+TCP_CHECK_SEC=1 TCP_HARD_BLOCK=1 RECIPE_DISPENSER_IDS=1x1 \
+bash tools/run/check_one_click_cocktail_ready.sh || true
+
+REAL_COCKTAIL_CONFIRM=ENABLE_REAL_COCKTAIL_SEQUENCE \
+RECIPE_DISPENSER_IDS=1x1 \
+ROBOT_HOST=192.168.1.100 \
+bash tools/run/run_cocktail_now_real.sh
+```
+
+`run_cocktail_now_real.sh`는 내부에서도 preview 정리를 한 번 더 수행합니다. 따라서
+운영 명령은 위 한 줄로 충분하지만, RViz preview에서 바로 넘어오는 경우에는 정리 로그가
+`Preview stop complete`인지 확인하고 진행합니다.
+
+예: 1번 디스펜서 2회 프레스
+
+```bash
+REAL_COCKTAIL_CONFIRM=ENABLE_REAL_COCKTAIL_SEQUENCE \
+ROBOT_HOST=192.168.1.100 \
+bash tools/run/run_cocktail_now_real.sh 1x2
+```
+
+이 스크립트는 `/dsr01` 아래 실제 Doosan motion 서비스, `/jarvis/rg2/set_width`
+그리퍼 서비스, 측정 디스펜서 collision publisher를 준비한 뒤
+`run_measured_dispenser_recipe_sequence.py --execute --confirm`으로
+컵놓기→프레스→다시잡기 사이클을 실행합니다. 컵 좌표는 직접 입력하지 않고
+기존 비전/pose 파이프라인과 측정 디스펜서 pose만 사용합니다.
+`calibration.yaml`에 `press_contact_joints_deg`가 있는 디스펜서는
+해당 측정 조인트를 프레스 접촉 자세의 기준으로 사용하고, 설정된 Cartesian
+pre-pose를 먼저 강제로 타지 않습니다. 접촉 조인트 도달 후 live TCP를 읽어
+그 위치의 Z만 올리고/내리며 `RECIPE_DISPENSER_IDS=1x2` 같은 반복 프레스를 수행합니다.
+실제 Doosan bringup 전에 `check_one_click_cocktail_config.sh`가 먼저 실행되어
+해당 레시피의 front-hold pose와 press contact joint가 모두 있는지 확인합니다.
+motion service가 아직 없으면 `check_one_click_cocktail_ready.sh`와
+`run_one_click_cocktail_real.sh`가 `ROBOT_HOST:12345` TCP 연결을 먼저 확인합니다.
+`[WARN] Doosan TCP not reachable now` 또는 연결 timeout 진단이 나오면 프레스 로직으로
+진입하지 못한 상태이므로 로봇 컨트롤러 IP/네트워크/펜던트 상태를 먼저 복구해야 합니다.
+`run_cocktail_now_real.sh`는 실제 실행 모드에서 이 TCP 불가 상태를 hard-block으로
+처리하고, `DRY_RUN=1`일 때만 명령 경로 확인을 위해 계속 진행합니다.
+
+정상 종료 시 콘솔과 `log/manual/one_click_real_integrated_recipe.log`에
+`[PASS] measured dispenser recipe sequence completed`가 남고,
+마지막에 `get_current_posj`/`get_current_posx` 샘플을 출력합니다.
+실패 시에는 실패 stage와 통합 로그 tail을 바로 출력합니다.
+실행 후 로그만 다시 판정하려면:
+
+```bash
+bash tools/run/check_one_click_cocktail_result.sh
+```
+
+로그 tail, 관련 프로세스, 결과 판정을 한 번에 모으려면:
+
+```bash
+bash tools/run/report_cocktail_now_status.sh
+```
+
+프레스 전 안전 상승 높이, 누르는 깊이, RG2 대기시간은 환경변수로 조절할 수 있습니다.
+
+```bash
+REAL_COCKTAIL_CONFIRM=ENABLE_REAL_COCKTAIL_SEQUENCE \
+RECIPE_DISPENSER_IDS=1x2 \
+PRESS_PRE_LIFT_M=0.35 \
+PRESS_TRANSIT_HEIGHT_M=0.30 \
+PRESS_DEPTH_M=0.07 \
+RG2_OPEN_SETTLE_SECONDS=6.0 \
+ROBOT_HOST=192.168.1.100 \
+bash tools/run/run_one_click_cocktail_real.sh
+```
+
 ## 8. 스모크 테스트
 
 하드웨어 없이 실행 가능한 자동화 테스트입니다.
@@ -318,6 +472,9 @@ bash tools/smoke/smoke_pick_and_align_no_motion.sh
 
 # 제어 경로 엔드투엔드 스모크
 bash tools/smoke/smoke_control_path.sh
+
+# 실제 모션 없이 one-click 칵테일 경로/패널 명령 생성 검증
+bash tools/smoke/smoke_one_click_cocktail_no_motion.sh
 
 # 가짜 하드웨어 서비스 스모크
 bash tools/smoke/smoke_fake_hardware_path.sh

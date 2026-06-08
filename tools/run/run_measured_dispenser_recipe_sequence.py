@@ -709,13 +709,19 @@ class IntegratedRecipeMotion:
 
         steps: list[tuple[list[float], str, float, float]] = []
         if joint_space_press:
-            self.move_posx(
-                [x_mm, y_mm, pre_z, rx, ry, rz],
-                label="high pre pose before measured press joint",
-                velocity=self.args.press_travel_velocity,
-                acceleration=self.args.press_travel_acceleration,
-                timeout_sec=self.args.press_timeout_sec,
-            )
+            if self.args.press_move_configured_prepose_before_joint:
+                self.move_posx(
+                    [x_mm, y_mm, pre_z, rx, ry, rz],
+                    label="high pre pose before measured press joint",
+                    velocity=self.args.press_travel_velocity,
+                    acceleration=self.args.press_travel_acceleration,
+                    timeout_sec=self.args.press_timeout_sec,
+                )
+            else:
+                print(
+                    "[Azas] joint-space press: skipping configured Cartesian pre pose; "
+                    "measured press contact joints are authoritative"
+                )
             self.movej(
                 contact_joints,
                 label="move to measured press contact joints exactly",
@@ -1102,6 +1108,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--press-reset-joint-acceleration", type=float, default=50.0)
     parser.add_argument("--press-contact-joint-velocity", type=float, default=12.0)
     parser.add_argument("--press-contact-joint-acceleration", type=float, default=18.0)
+    parser.add_argument(
+        "--press-move-configured-prepose-before-joint",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "When measured press_contact_joints_deg exists, optionally move to "
+            "calibration press_pose_xyz_m + pre_lift before MoveJoint. Default false: "
+            "use the measured joints as the authoritative press target."
+        ),
+    )
     parser.add_argument("--press-post-retreat-after-sequence", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--press-post-retreat-dx-m", type=float, default=-0.120)
     parser.add_argument("--press-post-retreat-dy-m", type=float, default=0.0)

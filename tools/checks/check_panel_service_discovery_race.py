@@ -44,10 +44,28 @@ def main() -> int:
             print(color_scan_required)
             return 1
         color_scan_order = panel.with_collision_scene_prereq(["color_scan"])
-        expected_color_scan_order = ["move_to_color_scan_pose", "start_camera", "color_scan"]
+        expected_color_scan_order = [
+            "connect_robot",
+            "status_check",
+            "move_to_color_scan_pose",
+            "start_camera",
+            "color_scan",
+        ]
         if color_scan_order != expected_color_scan_order:
             print("[FAIL] color_scan does not auto-run camera pose and RealSense prerequisites")
             print(color_scan_order)
+            return 1
+
+        rviz_preview = next(
+            step for step in panel.STEPS if step.key == "rviz_color_scan_pose_preview"
+        )
+        if rviz_preview.real_motion:
+            print("[FAIL] color scan pose RViz preview is marked as real motion")
+            return 1
+        rviz_preview_command = panel.command_for(rviz_preview, {"service_prefix": "dsr01"})
+        if "tools/run/show_color_scan_pose_rviz.sh" not in rviz_preview_command:
+            print("[FAIL] color scan pose RViz preview is not wired to its runner")
+            print(rviz_preview_command)
             return 1
 
         custom_command = "echo custom panel command"

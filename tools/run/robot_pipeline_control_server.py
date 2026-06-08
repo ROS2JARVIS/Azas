@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -46,6 +47,7 @@ ROS_SETUP = (
     f"export PYTHONPATH={shlex.quote(str(ROOT / 'tools' / 'run' / 'python_compat'))}:${{PYTHONPATH:-}}"
 )
 DEFAULT_ROBOT_HOST = "192.168.1.100"
+DEFAULT_RT_HOST = "0.0.0.0"
 DEFAULT_ROS_DOMAIN_ID = "9"
 DEFAULT_YOLO_MODEL_PATH = ROOT / "local_models" / "best.pt"
 PR20_YOLO_MODEL_PATH = DEFAULT_YOLO_MODEL_PATH
@@ -86,6 +88,29 @@ _DISPENSER_PRESS_TARGETS_DEFAULT: dict[str, str] = {
     "4": "blue",
 }
 DISPENSER_COLOR_MAP_PATH = ROOT / "outputs" / "dispenser_color_map.json"
+DISPENSER_COLOR_MAP_FAILED_PATH = ROOT / "outputs" / "dispenser_color_map.json.failed"
+LATEST_RECIPE_PATH = ROOT / "outputs" / "latest_recipe.json"
+
+
+def measured_color_scan_joints() -> dict[str, str]:
+    """Return operator-measured color-scan joints from calibration.yaml.
+
+    Falls back to the legacy camera-view joints only if the measured config is
+    unavailable, so the panel remains usable while still preferring calibration.
+    """
+
+    joints = dict(CAMERA_TABLE_VIEW_JOINTS)
+    if yaml is None or not CALIBRATION_CONFIG_PATH.exists():
+        return joints
+    try:
+        data = yaml.safe_load(CALIBRATION_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        values = data.get("color_scan_pose", {}).get("joints_deg")
+        if not isinstance(values, list) or len(values) != 6:
+            return joints
+        parsed = [float(value) for value in values]
+    except Exception:
+        return joints
+    return {f"j{index + 1}": f"{value:.6g}" for index, value in enumerate(parsed)}
 
 
 def load_command_overrides() -> dict[str, str]:
@@ -136,6 +161,155 @@ def _load_dispenser_press_targets() -> dict[str, str]:
 
 
 DISPENSER_PRESS_TARGETS: dict[str, str] = _load_dispenser_press_targets()
+
+
+def _read_json_file(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _normalize_color_map(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise ValueError("color map must be a JSON object")
+    normalized = {str(key): str(value).lower().strip() for key, value in raw.items()}
+    return {key: normalized.get(key, "") for key in ("1", "2", "3", "4")}
+
+
+def _compact_dispenser_sequence(sequence: list[str]) -> str:
+    groups: list[str] = []
+    index = 0
+    while index < len(sequence):
+        dispenser_id = sequence[index]
+        count = 1
+        index += 1
+        while index < len(sequence) and sequence[index] == dispenser_id:
+            count += 1
+            index += 1
+        groups.append(f"{dispenser_id}x{count}")
+    return ",".join(groups)
+
+
+def dispenser_color_map_status() -> dict[str, Any]:
+    """Read outputs/dispenser_color_map.json and derive physical dispenser order.
+
+    If the color scan result is missing or unusable, fall back to a conservative
+    physical dispenser sweep (1,2,3,4 once each) per operator request.  The
+    `.failed` file is still reported so the operator can see why fallback was
+    selected.
+    """
+
+    issues: list[str] = []
+    failed_map: dict[str, str] | None = None
+    if DISPENSER_COLOR_MAP_FAILED_PATH.exists():
+        try:
+            failed_map = _normalize_color_map(_read_json_file(DISPENSER_COLOR_MAP_FAILED_PATH))
+        except Exception as exc:
+            issues.append(f"failed-file read error: {exc}")
+
+    if not DISPENSER_COLOR_MAP_PATH.exists():
+        issues.append(f"missing color map: {DISPENSER_COLOR_MAP_PATH}")
+        if failed_map and all(value == "unknown" for value in failed_map.values()):
+            issues.append(f"failed map is all unknown: {DISPENSER_COLOR_MAP_FAILED_PATH}")
+        fallback_sequence = ["1", "2", "3", "4"]
+        return {
+            "ok": True,
+            "fallback": True,
+            "fallback_reason": "; ".join(issues),
+            "map": None,
+            "failed_map": failed_map,
+            "recipe": None,
+            "sequence": fallback_sequence,
+            "sequence_csv": ",".join(fallback_sequence),
+            "sequence_compact": _compact_dispenser_sequence(fallback_sequence),
+            "source": str(DISPENSER_COLOR_MAP_PATH),
+            "failed_source": str(DISPENSER_COLOR_MAP_FAILED_PATH),
+            "issues": issues,
+        }
+
+    try:
+        color_map = _normalize_color_map(_read_json_file(DISPENSER_COLOR_MAP_PATH))
+    except Exception as exc:
+        issues.append(f"color map read error: {exc}")
+        fallback_sequence = ["1", "2", "3", "4"]
+        return {
+            "ok": True,
+            "fallback": True,
+            "fallback_reason": "; ".join(issues),
+            "map": None,
+            "failed_map": failed_map,
+            "recipe": None,
+            "sequence": fallback_sequence,
+            "sequence_csv": ",".join(fallback_sequence),
+            "sequence_compact": _compact_dispenser_sequence(fallback_sequence),
+            "source": str(DISPENSER_COLOR_MAP_PATH),
+            "failed_source": str(DISPENSER_COLOR_MAP_FAILED_PATH),
+            "issues": issues,
+        }
+
+    unknown_ids = [did for did, color in color_map.items() if not color or color == "unknown"]
+    if unknown_ids:
+        issues.append(f"unknown dispenser colors: {','.join(unknown_ids)}")
+
+    if not LATEST_RECIPE_PATH.exists():
+        issues.append(f"missing recipe: {LATEST_RECIPE_PATH}")
+        recipe = None
+    else:
+        try:
+            recipe = _read_json_file(LATEST_RECIPE_PATH)
+        except Exception as exc:
+            recipe = None
+            issues.append(f"recipe read error: {exc}")
+
+    color_to_id: dict[str, str] = {}
+    for dispenser_id, color in color_map.items():
+        if not color or color == "unknown":
+            continue
+        if color in color_to_id:
+            issues.append(f"duplicate color mapping: {color}")
+        color_to_id[color] = dispenser_id
+
+    sequence: list[str] = []
+    if isinstance(recipe, dict):
+        colors = recipe.get("colors") or []
+        pumps = recipe.get("pumps") or {}
+        if not isinstance(colors, list) or not colors:
+            issues.append("recipe.colors is empty or invalid")
+        if not isinstance(pumps, dict):
+            pumps = {}
+        for raw_color in colors if isinstance(colors, list) else []:
+            color = str(raw_color).lower().strip()
+            dispenser_id = color_to_id.get(color)
+            if not dispenser_id:
+                issues.append(f"recipe color has no dispenser: {color}")
+                continue
+            try:
+                count = int(pumps.get(color, 1))
+            except (TypeError, ValueError):
+                issues.append(f"invalid pump count for color: {color}")
+                continue
+            if count < 1:
+                issues.append(f"pump count must be >=1 for color: {color}")
+                continue
+            sequence.extend([dispenser_id] * count)
+
+    if not sequence:
+        issues.append("no executable dispenser sequence derived; using fallback 1,2,3,4")
+        sequence = ["1", "2", "3", "4"]
+
+    return {
+        "ok": True,
+        "fallback": bool(issues),
+        "fallback_reason": "; ".join(issues) if issues else "",
+        "map": color_map,
+        "failed_map": failed_map,
+        "recipe": recipe,
+        "sequence": sequence,
+        "sequence_csv": ",".join(sequence),
+        "sequence_compact": _compact_dispenser_sequence(sequence),
+        "source": str(DISPENSER_COLOR_MAP_PATH),
+        "failed_source": str(DISPENSER_COLOR_MAP_FAILED_PATH),
+        "recipe_source": str(LATEST_RECIPE_PATH),
+        "issues": issues,
+    }
 
 
 def _number_list(value: Any, *, length: int, label: str) -> list[float]:
@@ -208,6 +382,60 @@ STEPS = [
         False,
         "디스펜서 박스와 감지 텀블러를 /collision_object로 publish; direct Doosan 명령은 아직 이 장면을 자동 회피에 쓰지 않음",
     ),
+    Step(
+        "rviz_cocktail_collision_preview",
+        "RViz 칵테일 전체 동작 미리보기 / 충돌영역 반영",
+        "run",
+        "tools/run/run_cocktail_collision_rviz_preview.sh",
+        True,
+        False,
+        "가상 Doosan+MoveIt RViz에서 컵 놓기→프레스→다시 잡기 전체 코스를 충돌 오브젝트 포함으로 검증. 실로봇 명령은 보내지 않음",
+    ),
+    Step(
+        "stop_cocktail_motion_preview",
+        "RViz/가상 칵테일 preview 정리",
+        "run",
+        "tools/run/stop_cocktail_motion_preview.sh",
+        True,
+        False,
+        "실제 로봇 실행 전에 virtual/emulator/RViz preview 세션을 정리해 real 서비스와 섞이지 않게 함",
+    ),
+    Step(
+        "check_one_click_cocktail_ready",
+        "실제 통합 칵테일 실행 readiness 확인",
+        "run",
+        "tools/run/check_one_click_cocktail_ready.sh",
+        True,
+        False,
+        "real/virtual 세션, Doosan motion 서비스, RG2 서비스를 확인하고 현재 one-click 실행 가능 상태를 출력",
+    ),
+    Step(
+        "check_one_click_cocktail_result",
+        "실제 통합 칵테일 결과 로그 확인",
+        "run",
+        "tools/run/check_one_click_cocktail_result.sh",
+        True,
+        False,
+        "one-click 실제 실행 로그에서 컵놓기→프레스→다시잡기 완료 증거와 실패 marker를 판정",
+    ),
+    Step(
+        "run_one_click_cocktail_real",
+        "실제 통합 칵테일 one-click 실행",
+        "run",
+        "tools/run/run_one_click_cocktail_real.sh",
+        True,
+        True,
+        "실제 로봇 연결/그리퍼/충돌장면 준비 후 컵놓기→프레스→다시잡기 통합 사이클을 한 번에 실행",
+    ),
+    Step(
+        "run_cocktail_now_real",
+        "실제 칵테일 NOW 실행",
+        "run",
+        "tools/run/run_cocktail_now_real.sh",
+        True,
+        True,
+        "preview 정리, readiness/config 검증, 실제 로봇 연결, 컵놓기→프레스→다시잡기와 결과 판정을 한 진입점으로 실행",
+    ),
     Step("home_robot", "로봇 원위치 / HOME", "run", "tools/run/direct_movej_joints.py --j1 0 --j2 0 --j3 90 --j4 0 --j5 90 --j6 0", True, True, "실제모션 후보: HOME 관절값 [0, 0, 90, 0, 90, 0]"),
     Step(
         "lift_robot",
@@ -226,6 +454,15 @@ STEPS = [
         True,
         True,
         "색상 스캔 전 기본 카메라 보기 포즈로 이동. color_scan_pose: [0,10,32,0,100,90]°",
+    ),
+    Step(
+        "rviz_color_scan_pose_preview",
+        "색상 스캔 자세 RViz 미리보기 / 무모션",
+        "background",
+        "tools/run/show_color_scan_pose_rviz.sh",
+        True,
+        False,
+        "RViz-only /joint_states로 color_scan_pose [0,10,32,0,100,90]°를 표시. 실제 로봇 명령 없음",
     ),
     Step(
         "color_scan",
@@ -423,6 +660,8 @@ AUXILIARY_STACK_PATTERNS = (
     "run_rule_based_shake_real.sh",
     "run_cup_target_then_shake_rviz.sh",
     "cup_target_then_shake_rviz.launch.py",
+    "show_color_scan_pose_rviz.sh",
+    "color_scan_pose_rviz.launch.py",
     "run_rule_based_dispenser_then_shake_sim.sh",
     "tumbler_shake_sequence.launch.py",
     "tumbler_shake_sequence_node",
@@ -831,6 +1070,25 @@ def ros_service_names(timeout_sec: float = 6.0) -> tuple[set[str], str]:
     if rc != 0:
         return set(), output
     return {line.strip() for line in output.splitlines() if line.strip().startswith("/")}, output
+
+
+def ros_node_names(timeout_sec: float = 4.0) -> tuple[set[str], str]:
+    rc, output = ros2_call("ros2 node list --no-daemon", timeout_sec=timeout_sec)
+    if rc != 0:
+        return set(), output
+    return {line.strip() for line in output.splitlines() if line.strip().startswith("/")}, output
+
+
+def doosan_virtual_nodes_present(service_prefix: str, timeout_sec: float = 4.0) -> tuple[bool, str]:
+    clean = service_prefix.strip("/") or "dsr01"
+    nodes, output = ros_node_names(timeout_sec=timeout_sec)
+    found = sorted(
+        node for node in nodes
+        if node in {f"/{clean}/virtual_node", "/virtual_node"} or node.endswith("/virtual_node")
+    )
+    if found:
+        return True, "virtual Doosan node(s) detected: " + ", ".join(found) + "\n" + output
+    return False, output
 
 
 # Per-process service cache: once a service is confirmed ready, skip re-checking
@@ -1635,6 +1893,7 @@ def target_xyz_for_step(step_key: str) -> list[float] | None:
 def requires_collision_scene_step(key: str) -> bool:
     return (
         key == "shake_closed_cup"
+        or key == "run_color_recipe_sequence"
         or key.startswith("move_to_dispenser_")
         or key.startswith("pick_from_dispenser_")
     )
@@ -1642,26 +1901,39 @@ def requires_collision_scene_step(key: str) -> bool:
 
 def with_collision_scene_prereq(selected: list[str]) -> list[str]:
     ordered = list(dict.fromkeys(selected))
-    if "side_grip" in ordered:
-        # PR #20 node also moves to camera-home internally, but the supervised
-        # panel must make the operator-visible sequence explicit and safe:
-        # lift the robot first, then start RealSense, then run manual side-grip.
-        side_index = ordered.index("side_grip")
-        prerequisites = ["lift_robot", "start_camera"]
-        for prereq in reversed(prerequisites):
-            if prereq not in ordered:
-                ordered.insert(side_index, prereq)
 
-    if "color_scan" in ordered:
-        color_index = ordered.index("color_scan")
-        prerequisites = ["move_to_color_scan_pose", "start_camera"]
-        for prereq in reversed(prerequisites):
-            if prereq not in ordered:
-                ordered.insert(color_index, prereq)
+    def ensure_before(target: str, prerequisites: list[str]) -> None:
+        if target not in ordered:
+            return
+        for prereq in prerequisites:
+            if prereq in ordered:
+                continue
+            target_index = ordered.index(target)
+            ordered.insert(target_index, prereq)
 
-    if "run_color_recipe_sequence" in ordered and "connect_gripper" not in ordered:
-        run_index = ordered.index("run_color_recipe_sequence")
-        ordered.insert(run_index, "connect_gripper")
+    # PR #20 side-grip is the cup acquisition step.  Make the real-motion and
+    # perception prerequisites explicit, but do not move already-queued steps;
+    # this preserves the operator's full-flow order.
+    ensure_before(
+        "side_grip",
+        ["connect_robot", "status_check", "connect_gripper", "start_camera", "lift_robot"],
+    )
+
+    # Color classification must aim the robot at the measured color-scan pose
+    # before sampling the dispenser image.  If the camera is already running from
+    # side-grip, keep it there; otherwise start it before color_scan.
+    ensure_before(
+        "color_scan",
+        ["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera"],
+    )
+
+    # The measured dispenser recipe assumes the cup has already been grasped by
+    # side_grip or an equivalent operator-verified step.  Here we only ensure the
+    # real-motion services and gripper service are available before the cycle.
+    ensure_before(
+        "run_color_recipe_sequence",
+        ["connect_robot", "status_check", "connect_gripper"],
+    )
 
     if any(requires_collision_scene_step(key) for key in ordered):
         ordered = [key for key in ordered if key != "start_collision_scene"]
@@ -1681,6 +1953,10 @@ def run_timeout_for_step(step: Step) -> float:
         return 900.0
     if step.key == "run_color_recipe_sequence":
         return 1200.0
+    if step.key == "run_one_click_cocktail_real":
+        return 1500.0
+    if step.key == "rviz_cocktail_collision_preview":
+        return 1500.0
     if step.key == "place_cup_holder":
         return 240.0
     return 180.0
@@ -1722,8 +1998,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["RT_HOST"] = str(
         payload.get("rt_host")
         or env.get("RT_HOST")
-        or infer_rt_host(env["ROBOT_HOST"])
-        or "192.168.137.50"
+        or DEFAULT_RT_HOST
     )
     env["DOOSAN_REAL_MOTION_CONFIRM"] = "ENABLE_DOOSAN_REAL_MOTION_BRINGUP"
     return env
@@ -1751,8 +2026,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         rt_host = str(
             payload.get("rt_host")
             or os.environ.get("RT_HOST")
-            or infer_rt_host(robot_host)
-            or "<RT_HOST>"
+            or DEFAULT_RT_HOST
         )
         return (
             f"cd {ROOT} && ROBOT_HOST={shlex.quote(robot_host)} "
@@ -1787,6 +2061,64 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "python3 tools/run/run_color_recipe_sequence.py --execute --confirm"
             f"{direct_ids_arg}"
         )
+    if step.key == "rviz_cocktail_collision_preview":
+        recipe_dispenser_ids = str(payload.get("recipe_dispenser_ids") or "").strip()
+        recipe_env = ""
+        if recipe_dispenser_ids:
+            recipe_env = f"RECIPE_DISPENSER_IDS={shlex.quote(recipe_dispenser_ids)} "
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            f"{recipe_env}DISPENSER_COLLISION_OBJECTS=1 "
+            "tools/run/run_cocktail_collision_rviz_preview.sh"
+        )
+    if step.key == "stop_cocktail_motion_preview":
+        return f"cd {ROOT} && tools/run/stop_cocktail_motion_preview.sh"
+    if step.key == "check_one_click_cocktail_ready":
+        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
+        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or service_prefix)
+        recipe_dispenser_ids = str(payload.get("recipe_dispenser_ids") or "").strip()
+        recipe_env = ""
+        if recipe_dispenser_ids:
+            recipe_env = f"RECIPE_DISPENSER_IDS={shlex.quote(recipe_dispenser_ids)} "
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            f"{recipe_env}"
+            f"ROBOT_HOST={shlex.quote(robot_host)} ROBOT_NAME={shlex.quote(robot_name)} SERVICE_PREFIX={shlex.quote(service_prefix)} "
+            "tools/run/check_one_click_cocktail_ready.sh"
+        )
+    if step.key == "check_one_click_cocktail_result":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
+            "tools/run/check_one_click_cocktail_result.sh"
+        )
+    if step.key == "run_one_click_cocktail_real":
+        recipe_dispenser_ids = str(payload.get("recipe_dispenser_ids") or "").strip()
+        recipe_env = ""
+        if recipe_dispenser_ids:
+            recipe_env = f"RECIPE_DISPENSER_IDS={shlex.quote(recipe_dispenser_ids)} "
+        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
+        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or service_prefix)
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "REAL_COCKTAIL_CONFIRM=ENABLE_REAL_COCKTAIL_SEQUENCE "
+            f"{recipe_env}"
+            f"ROBOT_HOST={shlex.quote(robot_host)} ROBOT_NAME={shlex.quote(robot_name)} SERVICE_PREFIX={shlex.quote(service_prefix)} "
+            "tools/run/run_one_click_cocktail_real.sh"
+        )
+    if step.key == "run_cocktail_now_real":
+        recipe_dispenser_ids = str(payload.get("recipe_dispenser_ids") or "").strip()
+        recipe_arg = ""
+        if recipe_dispenser_ids:
+            recipe_arg = f" {shlex.quote(recipe_dispenser_ids)}"
+        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
+        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or service_prefix)
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "REAL_COCKTAIL_CONFIRM=ENABLE_REAL_COCKTAIL_SEQUENCE "
+            f"ROBOT_HOST={shlex.quote(robot_host)} ROBOT_NAME={shlex.quote(robot_name)} SERVICE_PREFIX={shlex.quote(service_prefix)} "
+            f"tools/run/run_cocktail_now_real.sh{recipe_arg}"
+        )
     if step.key == "lift_robot":
         joints = {
             name: str(os.environ.get(f"CAMERA_TABLE_VIEW_{name.upper()}", value))
@@ -1810,10 +2142,13 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--execute --confirm ENABLE_DIRECT_MOVEJ"
         )
     if step.key == "move_to_color_scan_pose":
+        joints = measured_color_scan_joints()
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/direct_movej_joints.py "
             f"--service-prefix {service_prefix} "
-            "--j1 0 --j2 10 --j3 32 --j4 0 --j5 100 --j6 90 "
+            f"--j1 {shlex.quote(joints['j1'])} --j2 {shlex.quote(joints['j2'])} "
+            f"--j3 {shlex.quote(joints['j3'])} --j4 {shlex.quote(joints['j4'])} "
+            f"--j5 {shlex.quote(joints['j5'])} --j6 {shlex.quote(joints['j6'])} "
             "--velocity 30 --acceleration 30 --timeout-sec 60 "
             "--execute --confirm ENABLE_DIRECT_MOVEJ"
         )
@@ -2137,7 +2472,7 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         return {"key": step.key, "status": "blocked", "output": step.note}
     if step.real_motion and not payload.get("armed"):
         return {"key": step.key, "status": "blocked", "output": "실제 모션 허용 체크가 꺼져 있습니다."}
-    if step.real_motion:
+    if step.real_motion and step.key not in {"run_one_click_cocktail_real", "run_cocktail_now_real"}:
         service_prefix = str(payload.get("service_prefix") or "dsr01")
         gripper_ready, gripper_output = ensure_gripper_services(step, payload, service_prefix)
         if not gripper_ready:
@@ -2225,29 +2560,40 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         if step.key == "connect_robot":
             ready, ready_output, _svc = motion_services_ready(env["SERVICE_PREFIX"])
             if ready:
-                robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
-                if not robot_ready:
+                virtual_present, virtual_output = doosan_virtual_nodes_present(env["SERVICE_PREFIX"])
+                if virtual_present:
+                    cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
+                    restart_output = (
+                        "기존 Doosan motion 서비스가 보이지만 virtual_node가 감지되어 실제 로봇 연결로 재시작합니다.\n"
+                        f"--- virtual nodes ---\n{virtual_output}\n"
+                        "--- cleanup ---\n"
+                        + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
+                        + "\n"
+                    )
+                else:
+                    robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
+                    if not robot_ready:
+                        return {
+                            "key": step.key,
+                            "status": "blocked",
+                            "output": (
+                                "Doosan motion 서비스는 보이지만 로봇이 motion-ready 상태가 아닙니다. "
+                                "재시작하지 않습니다.\n"
+                                f"{ready_output}\n"
+                                "티치펜던트/컨트롤러에서 빨간 상태(SAFE_OFF/보호정지/서보 상태)를 해제해 "
+                                "STATE_STANDBY(1)로 만든 뒤 다시 확인하세요.\n"
+                                f"{robot_ready_output}"
+                            ),
+                        }
                     return {
                         "key": step.key,
-                        "status": "blocked",
+                        "status": "running",
                         "output": (
-                            "Doosan motion 서비스는 보이지만 로봇이 motion-ready 상태가 아닙니다. "
+                            "이미 실제 Doosan motion 서비스가 보이고 로봇이 STATE_STANDBY(1)입니다. "
                             "재시작하지 않습니다.\n"
-                            f"{ready_output}\n"
-                            "티치펜던트/컨트롤러에서 빨간 상태(SAFE_OFF/보호정지/서보 상태)를 해제해 "
-                            "STATE_STANDBY(1)로 만든 뒤 다시 확인하세요.\n"
-                            f"{robot_ready_output}"
+                            f"{ready_output}\n{robot_ready_output}"
                         ),
                     }
-                return {
-                    "key": step.key,
-                    "status": "running",
-                    "output": (
-                        "이미 Doosan motion 서비스가 보이고 로봇이 STATE_STANDBY(1)입니다. "
-                        "재시작하지 않습니다.\n"
-                        f"{ready_output}\n{robot_ready_output}"
-                    ),
-                }
             old = processes.get(step.key)
             if old and old.poll() is None:
                 ready, waited_output = wait_for_motion_services_ready(
@@ -2278,37 +2624,34 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                         "pid": old.pid,
                     }
                 log_tail = tail_file(process_logs.get(step.key))
-                return {
-                    "key": step.key,
-                    "status": "starting",
-                    "output": (
-                        "로봇 연결 프로세스가 이미 시작 중입니다. 반복 재시작하지 않습니다.\n"
-                        "motion 서비스가 아직 없으면 티치펜던트/컨트롤러 상태, 네트워크, RT_HOST를 확인하세요.\n"
-                        "정말 죽였다가 다시 시작하려면 '실행 중지' 후 '로봇 연결 / 스마트 재연결'을 다시 누르세요.\n"
-                        f"pid={old.pid}\n"
-                        f"--- readiness ---\n{waited_output}\n"
-                        f"--- log tail ---\n{log_tail}"
-                    ),
-                    "pid": old.pid,
-                }
+                cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
+                time.sleep(1.5)
+                restart_output = (
+                    "기존 로봇 연결 프로세스가 motion 서비스를 준비하지 못해 재연결합니다.\n"
+                    f"pid={old.pid}\n"
+                    f"--- readiness ---\n{waited_output}\n"
+                    f"--- previous log tail ---\n{log_tail}\n"
+                    "--- cleanup ---\n"
+                    + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
+                    + "\n"
+                )
             existing_pid, existing_cmd = find_existing_doosan_launch()
-            if existing_pid is not None:
-                return {
-                    "key": step.key,
-                    "status": "starting",
-                    "output": (
-                        "기존 Doosan bringup이 아직 실행/시작 중이라 반복 재시작하지 않습니다.\n"
-                        "motion 서비스가 없으면 로봇 컨트롤러 안전상태/비상정지/보호정지/네트워크/RT_HOST를 먼저 확인하세요.\n"
-                        "정말 중복 노드를 정리하고 다시 시작하려면 '실행 중지' 후 '로봇 연결 / 스마트 재연결'을 다시 누르세요.\n"
-                        f"pid={existing_pid}\ncmd={existing_cmd[:500]}\n"
-                        f"--- readiness ---\n{ready_output}"
-                    ),
-                    "pid": existing_pid,
-                }
-            cleanup_events = cleanup_doosan_stack()
-            # Give DDS/service discovery a short moment to forget killed duplicate nodes.
-            time.sleep(1.5)
-            restart_output = "\n".join(cleanup_events)
+            if existing_pid is not None and not restart_output:
+                cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
+                time.sleep(1.5)
+                restart_output = (
+                    "기존 Doosan bringup이 있으나 motion 서비스가 준비되지 않아 재연결합니다.\n"
+                    f"pid={existing_pid}\ncmd={existing_cmd[:500]}\n"
+                    f"--- readiness ---\n{ready_output}\n"
+                    "--- cleanup ---\n"
+                    + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
+                    + "\n"
+                )
+            if not restart_output:
+                cleanup_events = cleanup_doosan_stack()
+                # Give DDS/service discovery a short moment to forget killed duplicate nodes.
+                time.sleep(1.5)
+                restart_output = "\n".join(cleanup_events)
         elif step.key == "connect_gripper":
             cleanup_events = cleanup_rg2_stack()
             # DDS may keep stale service names briefly after a killed RG2 wrapper.
@@ -2602,7 +2945,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(data)
             return
         if path == "/api/dispenser_color_map":
-            self.send_json({"map": DISPENSER_PRESS_TARGETS})
+            self.send_json(dispenser_color_map_status())
             return
         if path == "/api/camera_snapshot.jpg":
             ok, body, error = camera_snapshot_jpeg()
@@ -2678,7 +3021,15 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     host = os.environ.get("AZAS_PANEL_HOST", "127.0.0.1")
     port = int(os.environ.get("AZAS_PANEL_PORT", "8765"))
-    server = ThreadingHTTPServer((host, port), Handler)
+    try:
+        server = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            print(f"[Azas] panel port is already in use: http://{host}:{port}", flush=True)
+            print("[Azas] Open the existing panel, or start a second one with:", flush=True)
+            print(f"  AZAS_PANEL_PORT={port + 1} bash tools/run/run_robot_pipeline_control_panel.sh", flush=True)
+            return 98
+        raise
     print(f"[Azas] Robot pipeline panel: http://{host}:{port}")
     print("[Azas] Press Ctrl+C to stop the panel server.")
     try:

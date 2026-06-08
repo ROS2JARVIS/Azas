@@ -51,6 +51,8 @@ class Config:
     cup_release_retract_m: float
     cup_place_z: float | None
     planning_time_sec: float
+    moveit_execution_settle_sec: float
+    press_only: bool
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,11 @@ def _env_int(name: str, default: int) -> int:
     return int(_env(name, str(default)))
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = _env(name, "1" if default else "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _env_optional_float(name: str) -> float | None:
     raw = _env(name, "").strip()
     if not raw:
@@ -93,11 +100,13 @@ def read_config() -> Config:
         ee_link=_env("EE_LINK", EE_LINK),
         calibration_path=Path(_env("CALIBRATION_PATH", str(DEFAULT_CALIBRATION))),
         cup_lift_m=_env_float("CUP_LIFT_M", 0.08),
-        press_up_m=_env_float("PRESS_UP_M", 0.02),
+        press_up_m=_env_float("PRESS_UP_M", 0.05),
         cup_pre_grasp_backoff_m=max(_env_float("CUP_PRE_GRASP_BACKOFF_M", 0.08), 0.0),
         cup_release_retract_m=max(_env_float("CUP_RELEASE_RETRACT_M", 0.05), 0.0),
         cup_place_z=_env_optional_float("CUP_PLACE_Z"),
         planning_time_sec=_env_float("PLANNING_TIME_SEC", 5.0),
+        moveit_execution_settle_sec=max(_env_float("MOVEIT_EXECUTION_SETTLE_SEC", 5.0), 0.0),
+        press_only=_env_bool("PRESS_ONLY", False),
     )
 
 
@@ -175,7 +184,9 @@ def plan_and_execute_pose_stamped(robot, arm, params, cfg: Config, label: str, g
     if not result:
         raise RuntimeError(f"planning failed at {label}")
     logger.info(f"Executing plan: {label}")
-    robot.execute(group_name=cfg.planning_group, robot_trajectory=result.trajectory, blocking=True)
+    ok = robot.execute(group_name=cfg.planning_group, robot_trajectory=result.trajectory, blocking=True)
+    if ok is False:
+        raise RuntimeError(f"MoveIt execution failed at {label}")
     logger.info(f"Execution finished: {label}")
     time.sleep(cfg.waypoint_hold_sec)
 
@@ -190,7 +201,9 @@ def plan_and_execute_pose(robot, arm, params, cfg: Config, label: str, xyz_m: li
     if not result:
         raise RuntimeError(f"planning failed at {label}")
     logger.info(f"Executing plan: {label}")
-    robot.execute(group_name=cfg.planning_group, robot_trajectory=result.trajectory, blocking=True)
+    ok = robot.execute(group_name=cfg.planning_group, robot_trajectory=result.trajectory, blocking=True)
+    if ok is False:
+        raise RuntimeError(f"MoveIt execution failed at {label}")
     logger.info(f"Execution finished: {label}")
     time.sleep(cfg.waypoint_hold_sec)
 
@@ -227,7 +240,9 @@ def plan_and_execute_joints(robot, arm, model, params, cfg: Config, label: str, 
     if not result:
         raise RuntimeError(f"planning failed at {label}")
     logger.info(f"Executing plan: {label}")
-    robot.execute(group_name=cfg.planning_group, robot_trajectory=result.trajectory, blocking=True)
+    ok = robot.execute(group_name=cfg.planning_group, robot_trajectory=result.trajectory, blocking=True)
+    if ok is False:
+        raise RuntimeError(f"MoveIt execution failed at {label}")
     logger.info(f"Execution finished: {label}")
     time.sleep(cfg.waypoint_hold_sec)
 
@@ -244,12 +259,18 @@ def main(args: list[str] | None = None) -> None:
         outlet = load_outlet(cfg)
         logger.info(
             f"Ready: measured-joint dispenser press cycle. dispenser={cfg.dispenser_id} "
+            f"press_count={cfg.press_count} press_only={cfg.press_only} "
             f"press_contact_joints_deg={outlet.press_contact_joints_deg}"
         )
         robot = MoveItPy(node_name="dispenser_press_cycle_moveit_py")
         arm = robot.get_planning_component(cfg.planning_group)
         model = robot.get_robot_model()
         logger.info("MoveItPy instance created")
+        if cfg.moveit_execution_settle_sec > 0.0:
+            logger.info(
+                f"Waiting {cfg.moveit_execution_settle_sec:.1f}s for MoveIt trajectory execution action clients to connect"
+            )
+            time.sleep(cfg.moveit_execution_settle_sec)
         plan_params = PlanRequestParameters(robot)
         plan_params.planning_pipeline = "ompl"
         plan_params.planner_id = "RRTConnectkConfigDefault"
@@ -271,6 +292,66 @@ def main(args: list[str] | None = None) -> None:
         lin_params.max_acceleration_scaling_factor = 0.04
         lin_params.planning_time = cfg.planning_time_sec
         logger.info("Press params: pipeline=pilz_industrial_motion_planner planner=LIN z-only Cartesian stroke")
+
+        # PRESS_ONLY는 RViz/프레스 검증용이다. 컵 배치/복귀 IK 경로를 모두 빼고,
+        # 사용자가 실측한 프레스 조인트 자세와 그 FK 기준 Z-only 펌프만 보여준다.
+        # 이 모드는 컵 좌표나 outlet IK가 섞여서 "프레스 움직임" 판단을 흐리는 것을 막는다.
+        if cfg.press_only:
+            logger.info(
+                "PRESS_ONLY_MODE: skipping cup placement, gripper-open release, and cup return. "
+                "Executing measured press joint pose followed by Z-only pump strokes."
+            )
+            gripper_event(logger, "CLOSE", "PRESS_ONLY: 프레스 검증을 위해 빈 그리퍼를 닫은 상태로 가정")
+            plan_and_execute_joints(
+                robot,
+                arm,
+                model,
+                ptp_params,
+                cfg,
+                f"press_only_move_to_measured_press_contact_joints_{cfg.dispenser_id}",
+                outlet.press_contact_joints_deg,
+                logger,
+            )
+            press_contact_pose = fk_pose_from_joints(model, outlet.press_contact_joints_deg, cfg.ee_link, logger)
+            press_ready_pose = clone_pose_with_z(
+                press_contact_pose,
+                press_contact_pose.position.z + max(cfg.press_up_m, 0.0),
+            )
+            logger.info(
+                "PRESS_ONLY_Z_ONLY: repeating LIN strokes with fixed "
+                f"x={press_contact_pose.position.x:.3f}, y={press_contact_pose.position.y:.3f}, "
+                f"contact_z={press_contact_pose.position.z:.3f}, ready_z={press_ready_pose.position.z:.3f}"
+            )
+            plan_and_execute_pose_stamped(
+                robot,
+                arm,
+                lin_params,
+                cfg,
+                "press_only_linear_lift_from_contact_to_press_ready_z_only",
+                pose_stamped_from_pose(cfg, press_ready_pose),
+                logger,
+            )
+            for index in range(1, cfg.press_count + 1):
+                plan_and_execute_pose_stamped(
+                    robot,
+                    arm,
+                    lin_params,
+                    cfg,
+                    f"press_only_press_{index}_down_z_only",
+                    pose_stamped_from_pose(cfg, press_contact_pose),
+                    logger,
+                )
+                plan_and_execute_pose_stamped(
+                    robot,
+                    arm,
+                    lin_params,
+                    cfg,
+                    f"press_only_press_{index}_up_z_only",
+                    pose_stamped_from_pose(cfg, press_ready_pose),
+                    logger,
+                )
+            logger.info("DONE: measured dispenser press-only cycle completed by MoveItPy robot.execute().")
+            return
 
         # 1. 컵을 디스펜서 앞에 갖다 놓기: measured outlet pose.
         cup_place = list(outlet.outlet_xyz_m)
