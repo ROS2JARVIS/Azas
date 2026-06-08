@@ -1,0 +1,21 @@
+motion:
+  max_velocity_scale: 0.1       # 초기 dry-run 안전 제한; 실제 운영 전 확인 필요
+  max_acceleration_scale: 0.1   # 초기 dry-run 안전 제한; 실제 운영 전 확인 필요
+  # Base_link workspace derived from the measured table bounds in
+  # calibration.yaml plus a 0.10 m perimeter margin in X/Y.
+  workspace_bounds_m:
+    x_min: -0.250
+    x_max: 1.150
+    y_min: -0.600
+    y_max: 0.600
+    z_min: 0.070
+    z_max: 0.800
+  min_z_m: 0.070               # link_6/EE target lower bound for side-grip motion
+gripper:
+  default_width_m: null         # 확인 필요: RG2 단위/명령 범위
+  default_force_n: null         # 확인 필요
+  timeout_s: 5.0
+failure_behavior:
+  on_detection_failure: abort_without_motion
+  on_tf_failure: abort_without_motion
+  on_plan_failure: stop_before_execution

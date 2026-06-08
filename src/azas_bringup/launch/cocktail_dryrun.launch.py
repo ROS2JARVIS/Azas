@@ -11,6 +11,7 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     run_voice = LaunchConfiguration("run_voice")
     run_yolo = LaunchConfiguration("run_yolo")
+    run_kiosk = LaunchConfiguration("run_kiosk")
 
     voice_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -43,9 +44,24 @@ def generate_launch_description():
         condition=IfCondition(run_yolo),
     )
 
+    kiosk_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([FindPackageShare("azas_kiosk"), "launch", "azas_kiosk.launch.py"])
+        ),
+        launch_arguments={
+            "host": LaunchConfiguration("kiosk_host"),
+            "port": LaunchConfiguration("kiosk_port"),
+            "stt_topic": LaunchConfiguration("stt_topic"),
+        }.items(),
+        condition=IfCondition(run_kiosk),
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("run_voice", default_value="true"),
+            DeclareLaunchArgument("run_kiosk", default_value="true"),
+            DeclareLaunchArgument("kiosk_host", default_value="0.0.0.0"),
+            DeclareLaunchArgument("kiosk_port", default_value="8080"),
             DeclareLaunchArgument("use_live_stt", default_value="false"),
             DeclareLaunchArgument("use_llm", default_value="false"),
             DeclareLaunchArgument("enable_llm", default_value="false"),
@@ -70,6 +86,7 @@ def generate_launch_description():
             DeclareLaunchArgument("require_lid", default_value="true"),
             voice_launch,
             yolo_launch,
+            kiosk_launch,
             Node(
                 package="azas_task_manager",
                 executable="cocktail_dryrun_sequence_node",

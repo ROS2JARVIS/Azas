@@ -121,7 +121,7 @@ class TtsNode(Node):
         self.declare_parameter("language", "ko")
         self.declare_parameter("enable_audio", True)
         self.declare_parameter("speech_rate", 1.25)
-        self.declare_parameter("startup_prompt", "주문하시겠어요?")
+        self.declare_parameter("startup_prompt", "원하는 맛을 말씀해주시면 추천해드릴게요. 주문하시겠어요?")
 
         confirmation_topic = str(self.get_parameter("confirmation_topic").value)
         ui_state_topic = str(self.get_parameter("ui_state_topic").value)

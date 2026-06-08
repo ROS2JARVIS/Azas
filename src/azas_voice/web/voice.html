@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Azas Voice</title>
+    <link rel="stylesheet" href="/voice.css" />
+  </head>
+  <body>
+    <main class="voice-shell">
+      <header class="voice-header">
+        <div>
+          <p class="eyebrow">Azas Voice</p>
+          <h1>대화 상태</h1>
+        </div>
+        <span id="state-pill" class="state-pill">대기 중</span>
+      </header>
+
+      <section class="visual-stage" aria-label="음성 시각화">
+        <div id="voice-orb" class="voice-orb">
+          <span class="orb-ring ring-one"></span>
+          <span class="orb-ring ring-two"></span>
+          <span class="orb-core"></span>
+        </div>
+        <canvas id="waveform" width="720" height="160" aria-hidden="true"></canvas>
+        <button id="mic-button" class="mic-button" type="button">마이크/음성 인식 켜기</button>
+      </section>
+
+      <section class="dialogue" aria-label="대화">
+        <article class="bubble user">
+          <span>사용자</span>
+          <p id="user-text">아직 인식된 발화가 없습니다.</p>
+        </article>
+        <article class="bubble azas">
+          <span>Azas</span>
+          <p id="azas-text">말씀해주시면 주문을 도와드릴게요.</p>
+        </article>
+      </section>
+
+      <section class="status-grid" aria-label="음성 처리 상태">
+        <div>
+          <span>선택 메뉴</span>
+          <strong id="recipe-id">-</strong>
+        </div>
+        <div>
+          <span>의도</span>
+          <strong id="intent">대기</strong>
+        </div>
+        <div>
+          <span>확정</span>
+          <strong id="confirmed">대기</strong>
+        </div>
+      </section>
+
+      <form id="test-form" class="test-form">
+        <input id="test-utterance" type="text" placeholder="테스트 발화 입력" />
+        <button type="submit">전송</button>
+      </form>
+    </main>
+    <script src="/voice.js"></script>
+  </body>
+</html>
