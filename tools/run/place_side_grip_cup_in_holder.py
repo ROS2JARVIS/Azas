@@ -182,7 +182,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--place-final-z-offset-m",
         type=float,
-        default=-0.020,
+        default=0.0,
         help=(
             "Measured adjustment added only to place_final Z. Use a negative value "
             "to lower the cup into the holder without rewriting calibration.yaml."

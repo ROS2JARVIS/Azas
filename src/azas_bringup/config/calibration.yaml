@@ -25,76 +25,33 @@ outlet:
   pose_rpy_rad: null        # 확인 필요
   clearance_m: null         # 확인 필요: rim/outlet 안전 간격
 
-table:
-  parent_frame: base_link
-  source: operator_confirmed_base_link_bounds
-  status: measured_confirmed
-  surface_z_m: 0.000
-  thickness_m: 0.040
-  center_xy_m: [0.450, 0.000]
-  size_xy_m: [1.200, 1.000]
-  bounds_xy_m:
-    x_min: -0.150
-    x_max: 1.050
-    y_min: -0.500
-    y_max: 0.500
-  notes: "Derived from confirmed table size/center in base_link."
-
 # Fixed dispenser-number to measured-pose mapping.
 # STT/LLM may select only these IDs. Coordinates must be filled only from
 # measured teaching/calibration data in base_link; never from STT, LLM, or VLA.
 dispenser_outlets:
   "1":
-    outlet_pose_xyz_m: [0.609, 0.070, 0.087]  # measured cup placement pose
-    outlet_pose_quaternion_xyzw: [0.489, 0.517, 0.517, 0.475]
-    outlet_pose_rpy_rad: [1.585, -0.015, 1.640]
-    outlet_pose_rpy_deg: [90.798, -0.845, 93.984]
-    press_pose_xyz_m: [0.712, 0.071, 0.530]
-    press_pose_quaternion_xyzw: [0.644, 0.630, 0.339, 0.271]
-    press_pose_rpy_rad: [2.248, -0.095, 1.594]
-    press_pose_rpy_deg: [128.791, -5.434, 91.357]
-    press_joint_state:
-      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
-      position_rad: [0.08982130140066147, 0.9058733582496643, 0.008466404862701893, 1.3044253587722778, 0.033748552203178406, 1.6839158535003662]
+    outlet_pose_xyz_m: null  # 확인 필요: base_link 기준 토출구 중심
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null   # 확인 필요: base_link 기준 누름/작동 위치
+    press_pose_rpy_rad: null
     clearance_m: null
   "2":
-    outlet_pose_xyz_m: [0.617, 0.028, 0.082]
-    outlet_pose_quaternion_xyzw: [0.504, 0.504, 0.500, 0.491]
-    outlet_pose_rpy_rad: [1.587, -0.009, 1.580]
-    outlet_pose_rpy_deg: [90.946, -0.512, 90.501]
-    press_pose_xyz_m: [0.718, 0.015, 0.525]
-    press_pose_quaternion_xyzw: [0.649, 0.626, 0.338, 0.269]
-    press_pose_rpy_rad: [2.251, -0.103, 1.583]
-    press_pose_rpy_deg: [128.995, -5.878, 90.707]
-    press_joint_state:
-      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
-      position_rad: [-0.000876683508977294, 0.9131112098693848, 0.0780220702290535, 1.3043646812438965, 0.032502077519893646, 1.621778964996338]
+    outlet_pose_xyz_m: null
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null
+    press_pose_rpy_rad: null
     clearance_m: null
   "3":
-    outlet_pose_xyz_m: [0.616, -0.026, 0.079]
-    outlet_pose_quaternion_xyzw: [0.504, 0.504, 0.498, 0.494]
-    outlet_pose_rpy_rad: [1.587, -0.005, 1.575]
-    outlet_pose_rpy_deg: [90.926, -0.278, 90.234]
-    press_pose_xyz_m: [0.716, -0.040, 0.525]
-    press_pose_quaternion_xyzw: [0.652, 0.623, 0.336, 0.272]
-    press_pose_rpy_rad: [2.252, -0.099, 1.574]
-    press_pose_rpy_deg: [129.006, -5.691, 90.174]
-    press_joint_state:
-      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
-      position_rad: [-0.08701040595769882, 0.9135012626647949, 0.13757061958312988, 1.3107753992080688, 0.032613810151815414, 1.5555728673934937]
+    outlet_pose_xyz_m: null
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null
+    press_pose_rpy_rad: null
     clearance_m: null
   "4":
-    outlet_pose_xyz_m: [0.607, -0.083, 0.075]
-    outlet_pose_quaternion_xyzw: [0.511, 0.498, 0.492, 0.499]
-    outlet_pose_rpy_rad: [1.589, -0.005, 1.551]
-    outlet_pose_rpy_deg: [91.042, -0.280, 88.871]
-    press_pose_xyz_m: [0.709, -0.084, 0.529]
-    press_pose_quaternion_xyzw: [0.650, 0.626, 0.316, 0.293]
-    press_pose_rpy_rad: [2.251, -0.044, 1.555]
-    press_pose_rpy_deg: [128.978, -2.505, 89.087]
-    press_joint_state:
-      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
-      position_rad: [-0.1493324339389801, 0.9293974041938782, 0.1349058598279953, 1.3465725183486938, -0.016838623210787773, 1.4902210235595703]
+    outlet_pose_xyz_m: null
+    outlet_pose_rpy_rad: null
+    press_pose_xyz_m: null
+    press_pose_rpy_rad: null
     clearance_m: null
 
 cup_holder:

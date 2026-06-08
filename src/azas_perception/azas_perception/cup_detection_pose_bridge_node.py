@@ -1,5 +1,4 @@
 import rclpy
-import time
 from azas_interfaces.msg import CupDetection
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
@@ -26,14 +25,9 @@ class CupDetectionPoseBridgeNode(Node):
         self.declare_parameter("use_latest_tf_when_stamp_zero", True)
         self.declare_parameter("allow_latest_tf_fallback", False)
         self.declare_parameter("debug_pose_logging", False)
-        self.declare_parameter("log_published_pose", False)
-        self.declare_parameter("rejection_log_throttle_sec", 2.0)
-        self.declare_parameter("tf_fallback_log_throttle_sec", 2.0)
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
-        self._last_rejection_log_by_key: dict[str, float] = {}
-        self._last_latest_tf_fallback_log_time = 0.0
 
         self._pub = self.create_publisher(
             PoseStamped,
@@ -62,24 +56,21 @@ class CupDetectionPoseBridgeNode(Node):
         # CupDetection.confidence is float32 on the wire; allow a tiny epsilon so
         # values displayed as equal, e.g. 0.950, are not rejected by binary
         # representation noise.
-        if required and not msg.status.startswith(required):
-            self._warn_rejected(
-                f"status:{msg.status}",
-                f"Ignoring detection status={msg.status!r}; "
-                f"expected_prefix={required!r}"
+        if msg.confidence + 1e-6 < min_confidence:
+            self.get_logger().warn(
+                f"Ignoring low confidence detection: {msg.confidence:.3f} < {min_confidence:.3f}"
             )
             return
-        if msg.confidence + 1e-6 < min_confidence:
-            self._warn_rejected(
-                "low_confidence",
-                f"Ignoring low confidence detection: {msg.confidence:.3f} < {min_confidence:.3f}"
+        if required and not msg.status.startswith(required):
+            self.get_logger().warn(
+                f"Ignoring detection status={msg.status!r}; "
+                f"error_code={self._orientation_error_code(msg.status)}"
             )
             return
         if bool(self.get_parameter("require_upright_status").value) and not msg.status.startswith(
             "detected:upright"
         ):
-            self._warn_rejected(
-                f"non_upright:{msg.status}",
+            self.get_logger().warn(
                 "Ignoring non-upright cup detection; refusing to publish tumbler pose: "
                 f"status={msg.status!r} error_code={self._orientation_error_code(msg.status)}"
             )
@@ -99,12 +90,11 @@ class CupDetectionPoseBridgeNode(Node):
         if pose_msg is None:
             return
         self._pub.publish(pose_msg)
-        if bool(self.get_parameter("log_published_pose").value):
-            self.get_logger().info(
-                "Published tumbler pose from detection: "
-                f"x={pose_msg.pose.position.x:.3f} y={pose_msg.pose.position.y:.3f} "
-                f"z={pose_msg.pose.position.z:.3f} frame={pose_msg.header.frame_id} conf={msg.confidence:.3f}"
-            )
+        self.get_logger().info(
+            "Published tumbler pose from detection: "
+            f"x={pose_msg.pose.position.x:.3f} y={pose_msg.pose.position.y:.3f} "
+            f"z={pose_msg.pose.position.z:.3f} frame={pose_msg.header.frame_id} conf={msg.confidence:.3f}"
+        )
 
     def _to_target_frame(self, pose_msg: PoseStamped):
         # This bridge converts camera-frame detections into base_link. If TF is
@@ -143,7 +133,7 @@ class CupDetectionPoseBridgeNode(Node):
                         rclpy.time.Time(),
                         timeout=rclpy.duration.Duration(seconds=timeout_sec),
                     )
-                    self._warn_latest_tf_fallback(
+                    self.get_logger().warn(
                         "Using latest TF fallback after stamped lookup failed; "
                         "this is diagnostic-only and does not prove real-motion readiness: "
                         f"target={target_frame} source={source_frame} "
@@ -221,29 +211,6 @@ class CupDetectionPoseBridgeNode(Node):
             f"orientation=({orientation.x:.4f}, {orientation.y:.4f}, "
             f"{orientation.z:.4f}, {orientation.w:.4f})"
         )
-
-    def _warn_rejected(self, key: str, message: str) -> None:
-        throttle_sec = float(self.get_parameter("rejection_log_throttle_sec").value)
-        if throttle_sec <= 0.0:
-            self.get_logger().warn(message)
-            return
-        now = time.monotonic()
-        last = self._last_rejection_log_by_key.get(key)
-        if last is not None and now - last < throttle_sec:
-            return
-        self._last_rejection_log_by_key[key] = now
-        self.get_logger().warn(message)
-
-    def _warn_latest_tf_fallback(self, message: str) -> None:
-        throttle_sec = float(self.get_parameter("tf_fallback_log_throttle_sec").value)
-        if throttle_sec <= 0.0:
-            self.get_logger().warn(message)
-            return
-        now = time.monotonic()
-        if now - self._last_latest_tf_fallback_log_time < throttle_sec:
-            return
-        self._last_latest_tf_fallback_log_time = now
-        self.get_logger().warn(message)
 
     @staticmethod
     def _orientation_error_code(status: str) -> str:

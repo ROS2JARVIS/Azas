@@ -19,19 +19,6 @@ DEFAULT_CONFIG_PATH = (
     "/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml"
 )
 
-LEGACY_DISPENSER_COLLISION_OBJECT_IDS = (
-    "dispenser_body_box",
-    "dispenser_1_body_box_v2",
-    "dispenser_2_body_box_v2",
-    "dispenser_3_body_box_v2",
-    "dispenser_4_body_box_v2",
-    "dispenser_head_box",
-    "dispenser_1_head_nozzle_box",
-    "dispenser_2_head_nozzle_box",
-    "dispenser_3_head_nozzle_box",
-    "dispenser_4_head_nozzle_box",
-)
-
 
 def transient_qos(depth: int = 10) -> QoSProfile:
     return QoSProfile(
@@ -125,8 +112,6 @@ class MeasuredDispenserCollisionSceneNode(Node):
         self.declare_parameter("publish_markers", True)
         self.declare_parameter("publish_rviz_visual_tools_compat", True)
         self.declare_parameter("publish_debug_labels", True)
-        self.declare_parameter("remove_legacy_collision_objects", True)
-        self.declare_parameter("clear_markers_before_publish", True)
 
         config_path = Path(
             self.get_parameter("config_path").get_parameter_value().string_value
@@ -160,20 +145,9 @@ class MeasuredDispenserCollisionSceneNode(Node):
         self.publish_debug_labels = (
             self.get_parameter("publish_debug_labels").get_parameter_value().bool_value
         )
-        self.remove_legacy_collision_objects = (
-            self.get_parameter("remove_legacy_collision_objects")
-            .get_parameter_value()
-            .bool_value
-        )
-        self.clear_markers_before_publish = (
-            self.get_parameter("clear_markers_before_publish")
-            .get_parameter_value()
-            .bool_value
-        )
 
         self._warn_about_draft_status()
         self._warn_about_front_hold_overlaps()
-        self._legacy_collision_objects_removed = False
         self._publish_scene()
 
         period = (
@@ -233,13 +207,6 @@ class MeasuredDispenserCollisionSceneNode(Node):
     def _publish_scene(self) -> None:
         collision_objects = self._collision_objects()
         if self.publish_collision_objects:
-            if (
-                self.remove_legacy_collision_objects
-                and not self._legacy_collision_objects_removed
-            ):
-                for object_id in LEGACY_DISPENSER_COLLISION_OBJECT_IDS:
-                    self.collision_pub.publish(self._make_remove_collision_object(object_id))
-                self._legacy_collision_objects_removed = True
             for object_id, object_config in collision_objects.items():
                 if not object_config.get("publish_to_planning_scene", True):
                     continue
@@ -277,25 +244,11 @@ class MeasuredDispenserCollisionSceneNode(Node):
         collision_object.operation = CollisionObject.ADD
         return collision_object
 
-    def _make_remove_collision_object(self, object_id: str) -> CollisionObject:
-        collision_object = CollisionObject()
-        collision_object.id = object_id
-        collision_object.header.frame_id = self.frame_id
-        collision_object.operation = CollisionObject.REMOVE
-        return collision_object
-
     def _make_markers(
         self, collision_objects: dict[str, dict[str, Any]]
     ) -> MarkerArray:
         markers: list[Marker] = []
         stamp = self.get_clock().now().to_msg()
-
-        if self.clear_markers_before_publish:
-            clear_marker = Marker()
-            clear_marker.header.frame_id = self.frame_id
-            clear_marker.header.stamp = stamp
-            clear_marker.action = Marker.DELETEALL
-            markers.append(clear_marker)
 
         for index, (object_id, object_config) in enumerate(collision_objects.items()):
             marker = Marker()

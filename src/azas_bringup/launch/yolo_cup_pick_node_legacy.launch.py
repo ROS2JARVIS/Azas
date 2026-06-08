@@ -1,6 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler, Shutdown
-from launch.event_handlers import OnProcessExit
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -51,7 +50,7 @@ def generate_launch_description():
 
     model_path_arg = DeclareLaunchArgument(
         "model_path",
-        default_value="/home/ssu/Azas/local_models/best.pt",
+        default_value="/home/ssu/Azas/data/yolo_runs/cup_yolov8n_ft1/weights/best.pt",
         description="Path to trained cup YOLO weights.",
     )
     conf_arg = DeclareLaunchArgument("conf", default_value="0.35")
@@ -254,7 +253,7 @@ def generate_launch_description():
                     }
                 ],
             ),
-            yolo_node := Node(
+            Node(
                 package="azas_perception",
                 executable="yolo_cup_pick_legacy_node",
                 output="screen",
@@ -375,16 +374,6 @@ def generate_launch_description():
                         ),
                     },
                 ],
-            ),
-            RegisterEventHandler(
-                OnProcessExit(
-                    target_action=yolo_node,
-                    on_exit=[
-                        Shutdown(
-                            reason="yolo_cup_pick_legacy_node exited after pick attempt"
-                        )
-                    ],
-                )
             ),
         ]
     )

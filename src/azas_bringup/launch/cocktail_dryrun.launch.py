@@ -75,7 +75,6 @@ def generate_launch_description():
                         "max_detection_age_s": ParameterValue(
                             LaunchConfiguration("max_detection_age_s"), value_type=float
                         ),
-                        "decision_topic": "/azas/voice/confirmed_recipe_decision",
                         "require_cup": ParameterValue(LaunchConfiguration("require_cup"), value_type=bool),
                         "require_lid": ParameterValue(LaunchConfiguration("require_lid"), value_type=bool),
                     }
