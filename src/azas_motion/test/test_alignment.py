@@ -9,6 +9,7 @@ from azas_motion.alignment import (
     compute_observe_pose,
     compute_side_grasp_plan,
 )
+from azas_motion.lid_grip import LidGripConfig, compute_lid_grip_plan
 
 
 def _pose(x=0.30, y=-0.10, z=0.20):
@@ -58,3 +59,45 @@ def test_observe_pose_normalizes_quaternion():
     )
     assert norm == pytest.approx(1.0)
 
+
+def test_lid_grip_plan_offsets_along_detected_local_z():
+    pose = _pose(z=0.20)
+    plan = compute_lid_grip_plan(
+        pose,
+        LidGripConfig(approach_offset_m=0.08, lift_offset_m=0.10),
+    )
+
+    assert plan.grasp_pose.position.z == pytest.approx(0.20)
+    assert plan.approach_pose.position.z == pytest.approx(0.28)
+    assert plan.lift_pose.position.z == pytest.approx(0.30)
+
+
+def test_lid_grip_plan_applies_measured_tcp_grasp_offset_in_base_frame():
+    pose = _pose(x=0.30, y=-0.10, z=0.20)
+    plan = compute_lid_grip_plan(
+        pose,
+        LidGripConfig(
+            approach_offset_m=0.08,
+            lift_offset_m=0.10,
+            surface_offset_m=0.02,
+            offset_axis="base_z",
+            tcp_grasp_offset_x_m=-0.006,
+            tcp_grasp_offset_y_m=-0.045,
+            tcp_grasp_offset_z_m=-0.064,
+            min_grasp_z_m=0.0,
+        ),
+    )
+
+    assert plan.grasp_pose.position.x == pytest.approx(0.294)
+    assert plan.grasp_pose.position.y == pytest.approx(-0.145)
+    assert plan.grasp_pose.position.z == pytest.approx(0.156)
+    assert plan.approach_pose.position.z == pytest.approx(0.236)
+    assert plan.lift_pose.position.z == pytest.approx(0.256)
+
+
+def test_lid_grip_plan_rejects_unmeasured_z_bounds():
+    with pytest.raises(ValueError, match="LID_GRASP_Z_OUT_OF_BOUNDS"):
+        compute_lid_grip_plan(
+            _pose(z=0.80),
+            LidGripConfig(max_grasp_z_m=0.60),
+        )
