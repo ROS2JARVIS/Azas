@@ -18,6 +18,10 @@ def generate_launch_description():
     start_delay_sec = LaunchConfiguration("start_delay_sec")
     collision_config_path = LaunchConfiguration("collision_config_path")
     collision_publish_period_sec = LaunchConfiguration("collision_publish_period_sec")
+    safety_config_path = LaunchConfiguration("safety_config_path")
+    workspace_collision_publish_period_sec = LaunchConfiguration(
+        "workspace_collision_publish_period_sec"
+    )
 
     doosan_moveit = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -145,6 +149,26 @@ def generate_launch_description():
         ],
     )
 
+    workspace_collision_scene = Node(
+        package="azas_motion",
+        executable="workspace_collision_scene_node",
+        name="workspace_collision_scene_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("enable_workspace_collision_scene")),
+        parameters=[
+            {
+                "safety_config_path": ParameterValue(
+                    safety_config_path,
+                    value_type=str,
+                ),
+                "publish_period_sec": ParameterValue(
+                    workspace_collision_publish_period_sec,
+                    value_type=float,
+                ),
+            }
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("mode", default_value="virtual"),
@@ -190,6 +214,14 @@ def generate_launch_description():
             DeclareLaunchArgument("max_velocity_scaling_factor", default_value="0.10"),
             DeclareLaunchArgument("max_acceleration_scaling_factor", default_value="0.10"),
             DeclareLaunchArgument("max_single_segment_joint_motion_deg", default_value="170.0"),
+            DeclareLaunchArgument("enable_workspace_collision_scene", default_value="true"),
+            DeclareLaunchArgument(
+                "safety_config_path",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("azas_bringup"), "config", "safety.yaml"]
+                ),
+            ),
+            DeclareLaunchArgument("workspace_collision_publish_period_sec", default_value="2.0"),
             DeclareLaunchArgument("enable_measured_collision_scene", default_value="true"),
             DeclareLaunchArgument(
                 "collision_config_path",
@@ -203,6 +235,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("collision_publish_period_sec", default_value="1.0"),
             doosan_moveit,
+            workspace_collision_scene,
             measured_collision_scene,
             TimerAction(period=start_delay_sec, actions=[executor]),
         ]
