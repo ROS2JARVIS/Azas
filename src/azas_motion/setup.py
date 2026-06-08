@@ -32,6 +32,7 @@ setup(
             "doosan_moveit_cup_target_then_shake_node = azas_motion.doosan_moveit_cup_target_then_shake_node:main",
             "doosan_moveit_grasped_tumbler_to_dispenser_node = azas_motion.doosan_moveit_grasped_tumbler_to_dispenser_node:main",
             "gear_assembly_legacy = azas_motion.gear_assembly_legacy:main",
+            "lid_grip_planner_node = azas_motion.lid_grip_planner_node:main",
             "m0609_shake_joint_state_node = azas_motion.m0609_shake_joint_state_node:main",
             "link6_gripper_collision_node = azas_motion.link6_gripper_collision_node:main",
             "dispenser_press_cycle_moveit_node = azas_motion.dispenser_press_cycle_moveit_node:main",
