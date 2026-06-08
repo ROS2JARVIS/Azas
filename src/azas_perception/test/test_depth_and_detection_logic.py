@@ -72,10 +72,7 @@ def test_detect_red_circle_marker_uses_lid_roi():
 def test_detect_aruco_marker_uses_configured_dictionary_and_roi():
     image = np.full((160, 160, 3), 255, dtype=np.uint8)
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    if hasattr(cv2.aruco, "generateImageMarker"):
-        marker_image = cv2.aruco.generateImageMarker(dictionary, 7, 60)
-    else:
-        marker_image = cv2.aruco.drawMarker(dictionary, 7, 60)
+    marker_image = cv2.aruco.generateImageMarker(dictionary, 7, 60)
     image[50:110, 50:110] = cv2.cvtColor(marker_image, cv2.COLOR_GRAY2BGR)
     roi = ImageRoi(30, 30, 130, 130)
 
