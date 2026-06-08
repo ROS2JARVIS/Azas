@@ -10,7 +10,6 @@ LOG_FILE="$LOG_DIR/robot_pipeline_control_panel.log"
 PID_FILE="/tmp/azas-panel-8765.pid"
 COMMAND_DIR="${AZAS_PANEL_COMMAND_DIR:-$HOME/.local/bin}"
 COMMAND_PATH="$COMMAND_DIR/azas-panel"
-PANEL_ROS_DOMAIN_ID="${AZAS_PANEL_ROS_DOMAIN_ID:-9}"
 
 mkdir -p "$LOG_DIR"
 
@@ -63,13 +62,11 @@ MSG
 
 start_panel_server() {
   cd "$ROOT"
-  setsid env AZAS_ROOT="$ROOT" ROS_DOMAIN_ID="$PANEL_ROS_DOMAIN_ID" ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}" bash -lc '
+  setsid env AZAS_ROOT="$ROOT" bash -lc '
     cd "$AZAS_ROOT"
     source /opt/ros/humble/setup.bash
     source /home/ssu/ros2_ws/install/setup.bash
     source "$AZAS_ROOT/install/local_setup.bash"
-    export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
-    export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
     exec python3 tools/run/robot_pipeline_control_server.py
   ' >> "$LOG_FILE" 2>&1 < /dev/null &
   echo "$!" > "$PID_FILE"
@@ -113,5 +110,4 @@ fi
 open_browser
 
 echo "[Azas] 브라우저 열기: $URL"
-echo "[Azas] ROS_DOMAIN_ID: $PANEL_ROS_DOMAIN_ID"
 echo "[Azas] 다음부터는 터미널에서: azas-panel"

@@ -4,7 +4,7 @@ set -euo pipefail
 # Command RG2 to a full-open target and verify the ROS service accepted it.
 #
 # Safety/validation note:
-# - azas_gripper/rg2_gripper_node does not expose actual finger-position feedback.
+# - jarvis/rg2_trigger_node does not expose actual finger-position feedback.
 # - This script verifies the strongest available software evidence:
 #   the full-open set_width command was sent and the service returned success=True.
 # - Physical confirmation still requires watching the gripper or adding a feedback source.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Send a SetGripper command with RG2 bridge readiness recovery.
 
-The Azas RG2 wrapper accepts Modbus write requests but does not expose actual
+The jarvis RG2 wrapper accepts Modbus write requests but does not expose actual
 finger-position feedback.  This script therefore verifies the strongest software
 evidence available: the ROS service exists, returns success=True, and the command
 payload is logged.  If the service is absent, it can start the RG2 bridge once and

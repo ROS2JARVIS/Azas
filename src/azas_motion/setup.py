@@ -32,7 +32,6 @@ setup(
             "doosan_moveit_cup_target_then_shake_node = azas_motion.doosan_moveit_cup_target_then_shake_node:main",
             "doosan_moveit_grasped_tumbler_to_dispenser_node = azas_motion.doosan_moveit_grasped_tumbler_to_dispenser_node:main",
             "gear_assembly_legacy = azas_motion.gear_assembly_legacy:main",
-            "lid_grip_planner_node = azas_motion.lid_grip_planner_node:main",
             "m0609_shake_joint_state_node = azas_motion.m0609_shake_joint_state_node:main",
             "measured_dispenser_collision_scene_node = azas_motion.measured_dispenser_collision_scene_node:main",
             "mp_basic_legacy = azas_motion.mp_basic_legacy:main",
@@ -47,7 +46,6 @@ setup(
             "tumbler_collision_scene_node = azas_motion.tumbler_collision_scene_node:main",
             "tumbler_floor_place_node = azas_motion.tumbler_floor_place_node:main",
             "tumbler_shake_sequence_node = azas_motion.tumbler_shake_sequence_node:main",
-            "workspace_collision_scene_node = azas_motion.workspace_collision_scene_node:main",
         ],
     },
 )

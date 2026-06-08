@@ -57,7 +57,7 @@ echo "[Azas] Checking ROS package availability"
 check "azas_bringup package" ros2 pkg prefix azas_bringup
 check "azas_perception package" ros2 pkg prefix azas_perception
 check "azas_interfaces package" ros2 pkg prefix azas_interfaces
-check "azas_gripper package for RG2 bridge" ros2 pkg prefix azas_gripper
+check "jarvis package for floor-place/RG2 bridge" ros2 pkg prefix jarvis
 check "Doosan bringup package" ros2 pkg prefix dsr_bringup2
 check "Doosan M0609 MoveIt config package" ros2 pkg prefix dsr_moveit_config_m0609
 check "MoveItPy package" ros2 pkg prefix moveit_py

@@ -34,27 +34,28 @@ source /home/ssu/Azas/install/local_setup.bash
 | `azas_task_manager` | 레시피 결정과 컵 탐지를 태스크 단계로 조합 | `cocktail_dryrun_sequence_node.py`, `pick_and_align_action_server.py` | 구현됨 (no-motion) |
 | `azas_perception` | 직립 컵 탐지, 깊이 투영, base_link 기준 컵 자세 발행 | `yolo_tumbler_detector_node.py`, `cup_detection_pose_bridge_node.py` | 구현됨 (`detected:upright`만 pose 발행) |
 | `azas_motion` | 그라스프 계획 계산 | `alignment.py`, `alignment_executor_node.py` | 계획만, 실행 없음 |
-| `azas_gripper` | **실제 RG2 경계** + dry-run 모드 | `rg2_gripper_node.py` | `/azas/gripper/open_close`, `/jarvis/rg2/open`, `/jarvis/rg2/close`, `/jarvis/rg2/set_width` |
+| `azas_gripper` | **내부 placeholder** — 실제 RG2 아님 | `rg2_gripper_node.py` | **미연결** (아래 jarvis 사용) |
 | `azas_calibration` | 실측 캘리브레이션 값 로드/저장 경계 | `calibration_loader_node.py`, `calibration.yaml` | 실측 대기 중 |
 | `azas_bringup` | 런치 파일과 시스템 설정 조합 | `launch/`, `config/` | 구현됨 |
 
-### 외부 드라이버/제어 패키지
+### Azas에 통합된 외부 드라이버/제어 패키지
 
 | 패키지 | 담당 영역 | 서비스/토픽 | 상태 |
 |--------|----------|------------|------|
+| `jarvis` (rg2_trigger_node) | **실제 RG2 그리퍼** Modbus 제어 | `/jarvis/rg2/open`, `/jarvis/rg2/close` | 구현됨, IP 연결 필요 |
+| `jarvis` (tumbler_floor_place_node) | 컵을 디스펜서 아래로 이동 | — | 구현됨, 캘리브레이션 필요 |
 | `dsr_bringup2` | 두산 M0609 MoveIt 드라이버 | `/dsr01/motion/move_line` 등 | 구현됨, 로봇 IP 필요 |
 
 ## RG2 실제 연결 경로
 
 ```
-supervised real-runner scripts / Azas panel path
+supervised real-runner scripts / jarvis floor-place path
   ↓  explicit real-motion confirmation + strict gates 통과 시
-/jarvis/rg2/open
+/jarvis/rg2/open   ← jarvis/rg2_trigger_node  ← Modbus 192.168.1.1
 /jarvis/rg2/close
-/jarvis/rg2/set_width  ← azas_gripper/rg2_gripper_node  ← Modbus 192.168.1.1
 ```
 
-`azas_gripper/rg2_gripper_node`는 `use_real_hardware:=true`일 때 실제 RG2를 제어하고, false일 때 dry-run으로 동작합니다.
+`azas_gripper/rg2_gripper_node`는 내부 플레이스홀더로, 실제 RG2를 제어하지 않습니다.
 `pick_and_align_action_server`의 `execution_mode=no_motion`은 `enable_gripper_service_calls=true`가 들어와도 실제 RG2 서비스를 호출하지 않고 실패해야 합니다.
 no-motion 스모크와 readiness/check 명령은 RG2 서비스의 존재나 타입을 볼 수는 있지만, `/jarvis/rg2/open` 또는 `/jarvis/rg2/close`를 호출했다는 뜻이 아니며 실제 그리퍼 동작 증거도 아닙니다.
 

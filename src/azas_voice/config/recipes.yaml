@@ -1,79 +1,30 @@
 # Azas voice recipe catalog.
-# Color sticker IDs are source-backed by user input: red, yellow, green, blue.
+# Color sticker IDs are source-backed by user input: yellow, red, blue, green.
 # Ingredient assignments are still symbolic; robot/dispenser coordinates are not
 # stored here and must come from calibration/runtime gates.
 colors:
-  red:
-    role: juice
-    ingredient_role: 주스
-    aliases: [빨강, 빨간색, 레드, red]
-    traits: [fruitiness, freshness, light, sweetness]
   yellow:
-    role: syrup
-    ingredient_role: 시럽
     aliases: [노랑, 노란색, 옐로우, yellow]
-    traits: [sweetness, softness]
-  green:
-    role: liqueur
-    ingredient_role: 리큐르
-    aliases: [초록, 초록색, 그린, green]
-    traits: [aroma, herbal, bitterness]
+  red:
+    aliases: [빨강, 빨간색, 레드, red]
   blue:
-    role: rum
-    ingredient_role: 럼
     aliases: [파랑, 파란색, 블루, blue]
-    traits: [alcohol, depth, bitterness]
-
-preference_levels:
-  rum: [없음, 약하게, 보통, 강하게]
-  syrup: [적게, 보통, 많게]
-  liqueur: [적게, 보통, 많게]
-  juice: [적게, 보통, 많게]
+  green:
+    aliases: [초록, 초록색, 그린, green]
 recipes:
-  recipe_01:
-    name: 레드 메뉴
-    aliases: [1번, 일번, 레시피1, 레드메뉴, 빨강메뉴, 빨간색메뉴]
-    dispenser_ids: [red]
-    tags: [sweet, fruity, red]
-    mood_tags: [cheerful, energetic]
-    sweetness: 4
-    acidity: 2
-    strength: 0
-    color: red
-    description: 달콤하고 선명한 레드 계열 메뉴
-
-  recipe_02:
-    name: 옐로우 메뉴
-    aliases: [2번, 이번, 레시피2, 옐로우메뉴, 노랑메뉴, 노란색메뉴]
-    dispenser_ids: [yellow]
-    tags: [fresh, citrus, yellow]
-    mood_tags: [refreshing, bright]
-    sweetness: 3
-    acidity: 4
-    strength: 0
-    color: yellow
-    description: 산뜻하고 가벼운 옐로우 계열 메뉴
-
-  recipe_03:
-    name: 그린 메뉴
-    aliases: [3번, 삼번, 레시피3, 그린메뉴, 초록메뉴, 초록색메뉴]
-    dispenser_ids: [green]
-    tags: [herbal, fresh, green]
-    mood_tags: [calm, clean]
-    sweetness: 2
-    acidity: 3
-    strength: 0
-    color: green
-    description: 깔끔하고 허브 느낌의 그린 계열 메뉴
-
-  recipe_04:
-    name: 블루 메뉴
-    aliases: [4번, 사번, 레시피4, 블루메뉴, 파랑메뉴, 파란색메뉴]
-    dispenser_ids: [blue]
-    tags: [cool, sweet, blue]
-    mood_tags: [relaxed, playful]
-    sweetness: 4
-    acidity: 1
-    strength: 0
-    color: blue
-    description: 시원하고 부드러운 블루 계열 메뉴
+  recipe_01: {name: 선셋 믹스, aliases: [1번, 일번, 레시피1], dispenser_ids: [yellow, red]}
+  recipe_02: {name: 블루 라군, aliases: [2번, 이번, 레시피2], dispenser_ids: [blue, green]}
+  recipe_03: {name: 그린 스파클, aliases: [3번, 삼번, 레시피3], dispenser_ids: [green, yellow]}
+  recipe_04: {name: 레드 펀치, aliases: [4번, 사번, 레시피4], dispenser_ids: [red, blue]}
+  recipe_05: {name: 옐로우 브리즈, aliases: [5번, 오번, 레시피5], dispenser_ids: [yellow, green]}
+  recipe_06: {name: 시트러스 쿨러, aliases: [6번, 육번, 레시피6], dispenser_ids: [yellow, blue]}
+  recipe_07: {name: 베리 블루, aliases: [7번, 칠번, 레시피7], dispenser_ids: [red, blue, green]}
+  recipe_08: {name: 민트 선라이즈, aliases: [8번, 팔번, 레시피8], dispenser_ids: [green, yellow, red]}
+  recipe_09: {name: 트로피컬 무드, aliases: [9번, 구번, 레시피9], dispenser_ids: [yellow, red, blue]}
+  recipe_10: {name: 라임 레드, aliases: [10번, 십번, 레시피10], dispenser_ids: [red, green]}
+  recipe_11: {name: 오션 옐로우, aliases: [11번, 십일번, 레시피11], dispenser_ids: [blue, yellow, green]}
+  recipe_12: {name: 포레스트 펀치, aliases: [12번, 십이번, 레시피12], dispenser_ids: [green, red]}
+  recipe_13: {name: 스윗 밸런스, aliases: [13번, 십삼번, 레시피13], dispenser_ids: [yellow, blue, red]}
+  recipe_14: {name: 프레시 믹스, aliases: [14번, 십사번, 레시피14], dispenser_ids: [green, blue, yellow]}
+  recipe_15: {name: 파티 컬러, aliases: [15번, 십오번, 레시피15], dispenser_ids: [red, yellow, green, blue]}
+  recipe_16: {name: 랜덤 시그니처, aliases: [16번, 십육번, 레시피16], dispenser_ids: [blue, red, yellow]}
