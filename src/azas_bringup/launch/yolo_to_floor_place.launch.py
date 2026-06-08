@@ -12,6 +12,7 @@ def generate_launch_description():
     selected_dispenser_id = LaunchConfiguration("selected_dispenser_id")
     run_yolo = LaunchConfiguration("run_yolo")
     publish_camera_base_tf = LaunchConfiguration("publish_camera_base_tf")
+    publish_hand_eye_tf = LaunchConfiguration("publish_hand_eye_tf")
     camera_base_tf_x = LaunchConfiguration("camera_base_tf_x")
     camera_base_tf_y = LaunchConfiguration("camera_base_tf_y")
     camera_base_tf_z = LaunchConfiguration("camera_base_tf_z")
@@ -93,6 +94,31 @@ def generate_launch_description():
         ],
         condition=IfCondition(publish_camera_base_tf),
     )
+    hand_eye_tf = Node(
+        package="azas_perception",
+        executable="hand_eye_static_tf_node",
+        name="hand_eye_static_tf_node",
+        output="screen",
+        condition=IfCondition(publish_hand_eye_tf),
+        parameters=[{
+            "matrix_path": LaunchConfiguration("hand_eye_matrix_path"),
+            "parent_frame": LaunchConfiguration("hand_eye_parent_frame"),
+            "matrix_child_frame": LaunchConfiguration("hand_eye_matrix_child_frame"),
+            "published_child_frame": LaunchConfiguration("hand_eye_published_child_frame"),
+            "translation_scale": ParameterValue(
+                LaunchConfiguration("hand_eye_translation_scale"),
+                value_type=float,
+            ),
+            "compose_with_existing_tf": ParameterValue(
+                LaunchConfiguration("hand_eye_compose_with_existing_tf"),
+                value_type=bool,
+            ),
+            "compose_timeout_sec": ParameterValue(
+                LaunchConfiguration("hand_eye_compose_timeout_sec"),
+                value_type=float,
+            ),
+        }],
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument("selected_dispenser_id", default_value="1"),
@@ -114,6 +140,7 @@ def generate_launch_description():
         DeclareLaunchArgument("min_depth_m", default_value="0.15"),
         DeclareLaunchArgument("max_depth_m", default_value="2.0"),
         DeclareLaunchArgument("publish_camera_base_tf", default_value="false"),
+        DeclareLaunchArgument("publish_hand_eye_tf", default_value="true"),
         DeclareLaunchArgument("camera_base_parent_frame", default_value="base_link"),
         DeclareLaunchArgument("camera_base_child_frame", default_value="camera_color_optical_frame"),
         DeclareLaunchArgument("camera_base_tf_x", default_value="0.0"),
@@ -122,6 +149,20 @@ def generate_launch_description():
         DeclareLaunchArgument("camera_base_tf_roll", default_value="0.0"),
         DeclareLaunchArgument("camera_base_tf_pitch", default_value="0.0"),
         DeclareLaunchArgument("camera_base_tf_yaw", default_value="0.0"),
+        DeclareLaunchArgument(
+            "hand_eye_matrix_path",
+            default_value=PathJoinSubstitution([
+                FindPackageShare("azas_perception"),
+                "config",
+                "T_gripper2camera.npy",
+            ]),
+        ),
+        DeclareLaunchArgument("hand_eye_parent_frame", default_value="link_6"),
+        DeclareLaunchArgument("hand_eye_matrix_child_frame", default_value="camera_color_optical_frame"),
+        DeclareLaunchArgument("hand_eye_published_child_frame", default_value="camera_link"),
+        DeclareLaunchArgument("hand_eye_translation_scale", default_value="0.001"),
+        DeclareLaunchArgument("hand_eye_compose_with_existing_tf", default_value="true"),
+        DeclareLaunchArgument("hand_eye_compose_timeout_sec", default_value="5.0"),
         DeclareLaunchArgument("device", default_value="cpu"),
         DeclareLaunchArgument("run_yolo", default_value="true"),
         DeclareLaunchArgument("enable_hardware", default_value="false"),
@@ -138,6 +179,7 @@ def generate_launch_description():
         DeclareLaunchArgument("tumbler_pose_wait_timeout", default_value="30.0"),
         yolo_launch,
         camera_base_tf,
+        hand_eye_tf,
         Node(
             package="azas_perception",
             executable="cup_detection_pose_bridge_node",

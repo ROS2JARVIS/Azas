@@ -245,7 +245,15 @@ STEPS = [
         "설정의 RECIPE_DISPENSER_IDS 순서대로 실행. 컵 이동/놓기와 다시 side-grip 집기는 통합 ROS 클라이언트로 처리해 반복 명령 실행 시간을 줄임",
     ),
     Step("repeat_dispense", "5,6 반복", "blocked", "", False, True, "레시피별 디스펜서 ID 반복 로직 필요"),
-    Step("pick_lid", "뚜껑을 집기", "blocked", "", False, True, "뚜껑 좌표/그리퍼 폭 필요"),
+    Step(
+        "pick_lid",
+        "뚜껑 grip pose 계획 / 빨간 스티커",
+        "background",
+        "",
+        True,
+        False,
+        "YOLO lid + 빨간 원형 스티커 + depth 평면으로 base_link lid pose와 approach/grasp/lift 후보를 발행. 실제 로봇 모션은 실행하지 않음",
+    ),
     Step(
         "place_cup_holder",
         "컵을 컵홀더에 놓기 / side grip",
@@ -1323,6 +1331,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
+    if step.key == "pick_lid":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "ros2 launch azas_bringup lid_sticker_grip_planning.launch.py"
+        )
     if step.key == "voice_input":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py"
     if step.key == "side_grip":
