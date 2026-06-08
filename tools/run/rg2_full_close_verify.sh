@@ -6,7 +6,7 @@ set -euo pipefail
 # Safety/validation note:
 # - Use this for dispenser pressing after the cup has already been released.
 # - Do NOT use this as the large-cup grasp command; use gripper_soft_grasp instead.
-# - jarvis/rg2_trigger_node does not expose actual finger-position feedback.
+# - azas_gripper/rg2_gripper_node does not expose actual finger-position feedback.
 # - This verifies the strongest available software evidence: full-close set_width
 #   command was sent and the service returned success=True.
 

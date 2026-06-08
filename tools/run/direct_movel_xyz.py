@@ -168,6 +168,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="call /motion/ikin before MoveLine and fail closed if the pose is not solvable",
     )
+    parser.add_argument(
+        "--ikin-timeout-sec",
+        type=float,
+        default=20.0,
+        help="service response timeout for each /motion/ikin precheck attempt",
+    )
+    parser.add_argument(
+        "--ikin-retries",
+        type=int,
+        default=2,
+        help="number of /motion/ikin precheck attempts before failing closed",
+    )
     parser.add_argument("--ikin-sol-space", type=int, default=2, help="solution space used by --precheck-ikin")
     parser.add_argument("--j5-min-deg", type=float, default=-135.0, help="safe lower limit for joint 5")
     parser.add_argument("--j5-max-deg", type=float, default=135.0, help="safe upper limit for joint 5")
@@ -257,18 +269,28 @@ def main() -> int:
         assert node is not None
 
         if args.precheck_ikin:
-            req = Ikin.Request()
-            req.pos = pos_mm_deg
-            req.sol_space = int(args.ikin_sol_space)
-            req.ref = DR_BASE
-            response = call_service(
-                node,
-                Ikin,
-                prefixed_service(args.service_prefix, "motion/ikin"),
-                req,
-                timeout_sec=max(args.wait_service_sec, 0.1),
-                label="Ikin",
-            )
+            response = None
+            attempts = max(int(args.ikin_retries), 1)
+            for attempt in range(1, attempts + 1):
+                req = Ikin.Request()
+                req.pos = pos_mm_deg
+                req.sol_space = int(args.ikin_sol_space)
+                req.ref = DR_BASE
+                try:
+                    response = call_service(
+                        node,
+                        Ikin,
+                        prefixed_service(args.service_prefix, "motion/ikin"),
+                        req,
+                        timeout_sec=max(args.ikin_timeout_sec, 0.1),
+                        label="Ikin",
+                    )
+                    break
+                except RuntimeError as exc:
+                    if attempt >= attempts:
+                        raise
+                    print(f"[WARN] Ikin attempt {attempt}/{attempts} failed: {exc}; retrying")
+                    time.sleep(1.0)
             if not response.success:
                 print("[FAIL] Ikin returned success=false")
                 return 1

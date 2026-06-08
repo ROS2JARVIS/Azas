@@ -16,6 +16,24 @@ git pull origin develop
 bash tools/setup/bootstrap_local_workspace.sh
 ```
 
+다른 팀원 PC를 같은 상태로 맞출 때는 branch/build/package 검증까지 포함한 아래 스크립트를 사용합니다.
+
+```bash
+bash tools/setup/bootstrap_team_pc.sh
+```
+
+YOLO 모델은 각 PC에서 repo-local 경로로 연결합니다. `best.pt` 파일 자체는 Git에 커밋하지 않습니다.
+
+```bash
+bash tools/setup/link_yolo_model.sh /path/to/best.pt
+```
+
+RealSense가 패널에서 안 뜨는 PC는 먼저 아래 비-모션 체크로 카메라 패키지, USB 인식, ROS 토픽을 확인합니다.
+
+```bash
+bash tools/checks/check_realsense_camera_ready.sh
+```
+
 패널 실행:
 
 ```bash

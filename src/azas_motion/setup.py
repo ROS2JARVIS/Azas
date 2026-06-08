@@ -47,6 +47,7 @@ setup(
             "tumbler_collision_scene_node = azas_motion.tumbler_collision_scene_node:main",
             "tumbler_floor_place_node = azas_motion.tumbler_floor_place_node:main",
             "tumbler_shake_sequence_node = azas_motion.tumbler_shake_sequence_node:main",
+            "workspace_collision_scene_node = azas_motion.workspace_collision_scene_node:main",
         ],
     },
 )
