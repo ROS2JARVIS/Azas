@@ -34,7 +34,7 @@ export RCUTILS_LOGGING_BUFFERED_STREAM=0
 mkdir -p "${ROS_LOG_DIR}"
 
 echo "[Azas] START Changhyun side-grip direct tmux command"
-echo "[Azas] OpenCV window: confirm cup, then press p. Quit with q/Esc."
+echo "[Azas] OpenCV window: confirm cup, then press p. On successful side-grip this command exits for the next pipeline step."
 echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
 echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}"
 echo "[Azas] start_joint_state_relay=${START_JOINT_STATE_RELAY:-auto}"
@@ -107,7 +107,7 @@ fi
 ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   model_path:="${ROOT}/local_models/best.pt" \
   conf:=0.35 imgsz:=640 device:=cpu target_class:=cup \
-  auto_pick:=false auto_pick_interval:=8.0 exit_after_pick:=false \
+  auto_pick:=false auto_pick_interval:=8.0 exit_after_pick:="${EXIT_AFTER_PICK:-true}" \
   depth_patch_radius:=7 min_depth_valid_ratio:=0.03 min_depth_m:=0.15 max_depth_m:=1.20 \
   redetect_on_approach:=false redetect_settle_sec:=0.5 \
   grasp_mode:=side side_far_stage_enabled:=false side_approach_offset:=0.18 \

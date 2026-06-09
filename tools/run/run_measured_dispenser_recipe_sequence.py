@@ -463,6 +463,7 @@ class IntegratedRecipeMotion:
         acceleration: float,
     ) -> None:
         joints_deg = self.ikin_posj(posx_mm_deg, label=f"{label} IK joint fallback")
+        self.validate_ik_fallback_joints(joints_deg, label=label)
         self.movej(
             joints_deg,
             label=f"{label} IK MoveJoint fallback",
@@ -473,6 +474,7 @@ class IntegratedRecipeMotion:
 
     def move_front_hold_joint_fallback(self, posx_mm_deg: list[float], *, label: str) -> None:
         joints_deg = self.ikin_posj(posx_mm_deg, label=f"{label} IK joint fallback")
+        self.validate_ik_fallback_joints(joints_deg, label=label)
         self.movej(
             joints_deg,
             label=f"{label} IK MoveJoint fallback",
@@ -657,9 +659,33 @@ class IntegratedRecipeMotion:
         )
         return values
 
+    def validate_ik_fallback_joints(self, joints_deg: list[float], *, label: str) -> None:
+        max_abs = max(float(self.args.ik_fallback_max_abs_joint_deg), 0.0)
+        if max_abs > 0.0:
+            for index, value in enumerate(joints_deg, start=1):
+                if abs(value) > max_abs:
+                    raise RuntimeError(
+                        f"IK fallback rejected for {label}: joint_{index}={value:.1f}deg "
+                        f"exceeds limit {max_abs:.1f}deg"
+                    )
+        max_delta = max(float(self.args.ik_fallback_max_joint_delta_deg), 0.0)
+        if max_delta <= 0.0:
+            return
+        current = self.current_posj(timeout_sec=5.0)
+        deltas = [abs(joints_deg[index] - current[index]) for index in range(6)]
+        worst_delta = max(deltas)
+        if worst_delta > max_delta:
+            joint_index = deltas.index(worst_delta) + 1
+            raise RuntimeError(
+                f"IK fallback rejected for {label}: joint_{joint_index} delta "
+                f"{worst_delta:.1f}deg exceeds limit {max_delta:.1f}deg"
+            )
+
     def wait_for_joint_target(self, target_joints_deg: list[float], *, label: str) -> None:
         deadline = time.monotonic() + max(self.args.verify_timeout_sec, 0.1)
         last_error = 999999.0
+        best_error = last_error
+        last_progress_time = time.monotonic()
         while time.monotonic() < deadline:
             actual = self.current_posj(timeout_sec=5.0)
             errors = [abs(actual[index] - target_joints_deg[index]) for index in range(6)]
@@ -670,6 +696,19 @@ class IntegratedRecipeMotion:
             )
             if last_error <= max(self.args.joint_target_tolerance_deg, 0.1):
                 return
+            if best_error - last_error >= max(self.args.target_stall_delta_mm, 0.1):
+                best_error = last_error
+                last_progress_time = time.monotonic()
+            elif (
+                self.args.target_stall_timeout_sec > 0.0
+                and last_error >= max(self.args.joint_target_tolerance_deg, 0.1)
+                and time.monotonic() - last_progress_time >= max(self.args.target_stall_timeout_sec, 0.0)
+            ):
+                raise RuntimeError(
+                    f"joint target verification stalled for {label}; "
+                    f"max_error={last_error:.2f}deg best={best_error:.2f}deg "
+                    f"no_progress_for={time.monotonic() - last_progress_time:.1f}s"
+                )
             time.sleep(max(self.args.verify_poll_seconds, 0.05))
         raise RuntimeError(f"joint target verification timeout for {label}; max_error={last_error:.2f}deg")
 
@@ -727,8 +766,22 @@ class IntegratedRecipeMotion:
                 self.args.move_prehold_velocity,
                 self.args.move_prehold_acceleration,
             ),
-            ("above-hold", 0.0, 0.0, self.args.move_prehold_offset_z_m, self.args.move_prehold_velocity, self.args.move_prehold_acceleration),
-            ("front-hold", 0.0, 0.0, 0.0, self.args.move_velocity, self.args.move_acceleration),
+            (
+                "above-hold",
+                self.args.move_prehold_offset_x_m,
+                self.args.move_prehold_offset_y_m,
+                self.args.move_prehold_offset_z_m,
+                self.args.move_prehold_velocity,
+                self.args.move_prehold_acceleration,
+            ),
+            (
+                "front-hold",
+                self.args.move_release_offset_x_m,
+                self.args.move_release_offset_y_m,
+                self.args.move_release_offset_z_m,
+                self.args.move_velocity,
+                self.args.move_acceleration,
+            ),
         ]
         seen: set[tuple[float, float, float, float, float]] = set()
         for stage_label, offset_x, offset_y, offset_z, velocity, acceleration in stages:
@@ -779,8 +832,9 @@ class IntegratedRecipeMotion:
                 timeout_sec=self.args.move_timeout_sec,
             )
         front_hold_position, _, _ = load_front_hold_pose(self.args.config, dispenser_id)
+        released_hold_z_m = front_hold_position[2] + self.args.move_release_offset_z_m
         desired_approach_z_m = max(
-            front_hold_position[2] + max(self.args.regrasp_approach_offset_z_m, 0.0),
+            released_hold_z_m + max(self.args.regrasp_approach_offset_z_m, 0.0),
             max(self.args.regrasp_min_transit_z_m, 0.0),
         )
         capped_approach_z_m = min(desired_approach_z_m, max(self.args.regrasp_max_transit_z_m, 0.0))
@@ -793,8 +847,8 @@ class IntegratedRecipeMotion:
         self.move_front_hold(
             dispenser_id,
             label="final re-grasp high transit above front-hold",
-            offset_x_m=0.0,
-            offset_y_m=0.0,
+            offset_x_m=self.args.move_release_offset_x_m,
+            offset_y_m=self.args.move_release_offset_y_m,
             offset_z_m=approach_offset_z_m,
             velocity=self.args.regrasp_approach_velocity,
             acceleration=self.args.regrasp_approach_acceleration,
@@ -809,9 +863,9 @@ class IntegratedRecipeMotion:
         self.move_front_hold(
             dispenser_id,
             label="final re-grasp front-hold",
-            offset_x_m=0.0,
-            offset_y_m=0.0,
-            offset_z_m=0.0,
+            offset_x_m=self.args.move_release_offset_x_m,
+            offset_y_m=self.args.move_release_offset_y_m,
+            offset_z_m=self.args.move_release_offset_z_m,
             velocity=self.args.pick_approach_velocity,
             acceleration=self.args.pick_approach_acceleration,
         )
@@ -900,6 +954,23 @@ class IntegratedRecipeMotion:
                 f"contact=({x_mm:.1f}, {y_mm:.1f}, {contact_z:.1f}) "
                 f"pre_z={pre_z:.1f} pressed_z={pressed_z:.1f} transit_z={transit_z:.1f}"
             )
+        if abs(self.args.press_pre_lift_retreat_x_m) > 1e-6 or abs(self.args.press_pre_lift_retreat_y_m) > 1e-6:
+            retreat = [
+                current_pose[0] + self.args.press_pre_lift_retreat_x_m * 1000.0,
+                current_pose[1] + self.args.press_pre_lift_retreat_y_m * 1000.0,
+                current_pose[2],
+                current_pose[3],
+                current_pose[4],
+                current_pose[5],
+            ]
+            self.move_posx(
+                retreat,
+                label="safe lateral retreat away from dispenser before press lift",
+                velocity=self.args.press_travel_velocity,
+                acceleration=self.args.press_travel_acceleration,
+                timeout_sec=self.args.press_timeout_sec,
+            )
+            current_pose = self.current_posx(timeout_sec=self.args.wait_service_sec)
         safe_lift = [
             current_pose[0],
             current_pose[1],
@@ -1302,15 +1373,41 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--move-velocity", type=float, default=70.0)
     parser.add_argument("--move-acceleration", type=float, default=90.0)
     parser.add_argument("--move-prehold-offset-x-m", type=float, default=0.0)
-    parser.add_argument("--move-prehold-offset-y-m", type=float, default=0.0)
+    parser.add_argument(
+        "--move-prehold-offset-y-m",
+        type=float,
+        default=-0.080,
+        help=(
+            "Y retreat from measured front_hold for the pre-hold/above-hold approach. "
+            "Default -0.080 m keeps the cup farther from dispenser bottles before final placement."
+        ),
+    )
     parser.add_argument(
         "--move-prehold-offset-z-m",
         type=float,
-        default=0.300,
+        default=0.180,
         help=(
             "Vertical approach offset for initial cup placement at dispenser front-hold. "
-            "Default 0.300 m keeps lateral travel above bottles/dispensers before descending."
+            "Default 0.180 m avoids the previously too-high approach near the glass bottles."
         ),
+    )
+    parser.add_argument(
+        "--move-release-offset-x-m",
+        type=float,
+        default=0.0,
+        help="Final cup release X offset from measured front_hold.",
+    )
+    parser.add_argument(
+        "--move-release-offset-y-m",
+        type=float,
+        default=-0.060,
+        help="Final cup release Y retreat from measured front_hold to avoid placing too close to the dispenser bottle.",
+    )
+    parser.add_argument(
+        "--move-release-offset-z-m",
+        type=float,
+        default=-0.010,
+        help="Final cup release Z offset from measured front_hold; negative lowers the cup slightly.",
     )
     parser.add_argument("--move-prehold-velocity", type=float, default=50.0)
     parser.add_argument("--move-prehold-acceleration", type=float, default=70.0)
@@ -1329,13 +1426,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--regrasp-min-transit-z-m",
         type=float,
-        default=0.720,
+        default=0.500,
         help="Minimum absolute TCP Z for the vertical lift immediately after pressing, before returning to the cup.",
     )
     parser.add_argument(
         "--regrasp-approach-offset-z-m",
         type=float,
-        default=0.650,
+        default=0.250,
         help=(
             "High front-hold Z offset used before opening the gripper for the post-press re-grasp. "
             "The gripper opens only after this high approach is reached."
@@ -1344,7 +1441,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--regrasp-max-transit-z-m",
         type=float,
-        default=0.780,
+        default=0.560,
         help="Maximum absolute TCP/front-hold high approach Z used for post-press re-grasp transit.",
     )
     parser.add_argument("--regrasp-approach-velocity", type=float, default=45.0)
@@ -1379,15 +1476,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--press-pre-lift-m",
         type=float,
-        default=0.300,
+        default=0.080,
         help="Z lift above the measured dispenser-head contact pose before descending to press.",
     )
     parser.add_argument("--press-approach-height-m", type=float, default=0.100)
-    parser.add_argument("--press-transit-height-m", type=float, default=0.300)
+    parser.add_argument("--press-transit-height-m", type=float, default=0.080)
+    parser.add_argument(
+        "--press-pre-lift-retreat-x-m",
+        type=float,
+        default=0.0,
+        help="X retreat after cup release and before the vertical press lift.",
+    )
+    parser.add_argument(
+        "--press-pre-lift-retreat-y-m",
+        type=float,
+        default=-0.050,
+        help="Y retreat after cup release and before the vertical press lift; negative backs away from the dispenser.",
+    )
     parser.add_argument(
         "--press-min-transit-z-m",
         type=float,
-        default=0.720,
+        default=0.500,
         help="Minimum absolute TCP Z before moving from cup release toward dispenser press joints.",
     )
     parser.add_argument("--press-line-velocity", type=float, default=18.0)
@@ -1463,6 +1572,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-stall-delta-mm", type=float, default=2.0)
     parser.add_argument("--joint-target-tolerance-deg", type=float, default=2.0)
     parser.add_argument(
+        "--ik-fallback-max-abs-joint-deg",
+        type=float,
+        default=360.0,
+        help="Reject IK fallback joint solutions with absolute joint values beyond this limit before commanding MoveJoint.",
+    )
+    parser.add_argument(
+        "--ik-fallback-max-joint-delta-deg",
+        type=float,
+        default=170.0,
+        help="Reject IK fallback joint solutions that jump too far from the current joint state before commanding MoveJoint.",
+    )
+    parser.add_argument(
         "--front-hold-joint-fallback",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -1520,6 +1641,14 @@ def parse_args() -> argparse.Namespace:
             "with the legacy pick_from_measured_dispenser_front_hold helper. Default false "
             "because that helper uses Cartesian front-hold entry and can reproduce the "
             "post-press singularity/low direct approach."
+        ),
+    )
+    parser.add_argument(
+        "--skip-initial-move-release",
+        action="store_true",
+        help=(
+            "Recovery mode: assume the cup is already resting at the current dispenser front-hold "
+            "and start from press -> re-grasp/lift without repeating the move/release placement."
         ),
     )
     parser.add_argument("--execute", action="store_true")
@@ -1580,13 +1709,19 @@ def main() -> int:
         for index, (dispenser_id, press_count) in enumerate(grouped_dispenser_ids, start=1):
             label_prefix = f"recipe group {index}/{total_groups} dispenser {dispenser_id} x{press_count}"
             if not args.execute:
+                move_release_step = "skip initial move/release" if args.skip_initial_move_release else "integrated move/release"
                 print(
-                    f"[PLAN] {label_prefix}: integrated move/release -> "
+                    f"[PLAN] {label_prefix}: {move_release_step} -> "
                     f"integrated press {press_count} time(s) -> integrated re-grasp/lift"
                 )
                 continue
 
-            if motion is None:
+            if args.skip_initial_move_release:
+                print(
+                    f"[Azas] {label_prefix}: skipping initial move/release; "
+                    "cup is assumed already released at dispenser front-hold"
+                )
+            elif motion is None:
                 rc = run_command(f"{label_prefix}: move cup to front-hold and release", move_and_release_cmd(args, dispenser_id))
                 if rc != 0:
                     return rc

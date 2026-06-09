@@ -146,13 +146,20 @@ def main() -> int:
                         help=f"확인 구문({CONFIRM_PHRASE}) 자동 전달")
     parser.add_argument("--execute", action="store_true",
                         help="실제 measured dispenser sequence를 실행")
-    parser.add_argument("--press-min-transit-z-m", default="0.720")
+    parser.add_argument("--press-min-transit-z-m", default="0.500")
     parser.add_argument("--press-line-velocity", default="18.0")
     parser.add_argument("--press-line-acceleration", default="25.0")
     parser.add_argument("--press-travel-velocity", default="45.0")
     parser.add_argument("--press-travel-acceleration", default="60.0")
     parser.add_argument("--press-contact-joint-velocity", default="22.0")
     parser.add_argument("--press-contact-joint-acceleration", default="30.0")
+    parser.add_argument("--press-pre-lift-m", default="0.080")
+    parser.add_argument("--press-transit-height-m", default="0.080")
+    parser.add_argument("--press-pre-lift-retreat-x-m", default="0.0")
+    parser.add_argument("--press-pre-lift-retreat-y-m", default="-0.050")
+    parser.add_argument("--move-release-offset-x-m", default="0.0")
+    parser.add_argument("--move-release-offset-y-m", default="-0.060")
+    parser.add_argument("--move-release-offset-z-m", default="-0.010")
     parser.add_argument("--gripper-open-settle-seconds", default="1.5")
     parser.add_argument("--gripper-settle-seconds", default="0.8")
     parser.add_argument("--wait-service-sec", default="15.0")
@@ -170,6 +177,13 @@ def main() -> int:
 
     sequence_extra_args = [
         "--press-min-transit-z-m", str(args.press_min_transit_z_m),
+        "--press-pre-lift-m", str(args.press_pre_lift_m),
+        "--press-transit-height-m", str(args.press_transit_height_m),
+        "--press-pre-lift-retreat-x-m", str(args.press_pre_lift_retreat_x_m),
+        "--press-pre-lift-retreat-y-m", str(args.press_pre_lift_retreat_y_m),
+        "--move-release-offset-x-m", str(args.move_release_offset_x_m),
+        "--move-release-offset-y-m", str(args.move_release_offset_y_m),
+        "--move-release-offset-z-m", str(args.move_release_offset_z_m),
         "--press-line-velocity", str(args.press_line_velocity),
         "--press-line-acceleration", str(args.press_line_acceleration),
         "--press-travel-velocity", str(args.press_travel_velocity),

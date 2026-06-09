@@ -109,6 +109,11 @@ class LidGripPlannerNode(Node):
         self.declare_parameter("line_velocity", 15.0)
         self.declare_parameter("line_acceleration", 30.0)
         self.declare_parameter("move_timeout_sec", 10.0)
+        self.declare_parameter("approach_lid_with_movej", False)
+        self.declare_parameter("approach_movej_velocity", 20.0)
+        self.declare_parameter("approach_movej_acceleration", 20.0)
+        self.declare_parameter("lid_overhead_approach_enabled", False)
+        self.declare_parameter("lid_overhead_min_z_m", 0.22)
         self.declare_parameter("precheck_ikin", True)
         self.declare_parameter("ikin_sol_space", 2)
         self.declare_parameter("ikin_timeout_sec", 5.0)
@@ -503,6 +508,22 @@ class LidGripPlannerNode(Node):
                 real_motion=False,
             )
             return
+        approach_with_movej = bool(self.get_parameter("approach_lid_with_movej").value)
+        if approach_with_movej:
+            if self._move_joint_client is None:
+                self._publish_status(
+                    "failed",
+                    error="MoveJoint client unavailable; cannot use joint-space lid approach",
+                    real_motion=False,
+                )
+                return
+            if self._ikin_client is None:
+                self._publish_status(
+                    "failed",
+                    error="Ikin client unavailable; cannot compute joint-space lid approach",
+                    real_motion=False,
+                )
+                return
         timeout_sec = float(self.get_parameter("move_timeout_sec").value)
         if not self._move_line_client.wait_for_service(timeout_sec=max(timeout_sec, 0.0)):
             self._publish_status(
@@ -511,6 +532,14 @@ class LidGripPlannerNode(Node):
                 real_motion=False,
             )
             return
+        if approach_with_movej:
+            if not self._move_joint_client.wait_for_service(timeout_sec=max(timeout_sec, 0.0)):
+                self._publish_status(
+                    "failed",
+                    error=f"MoveJoint service unavailable: {self._move_joint_service_name}",
+                    real_motion=False,
+                )
+                return
         if bool(self.get_parameter("verify_motion_reached").value):
             if self._current_posx_client is None:
                 self._publish_status(
@@ -542,8 +571,12 @@ class LidGripPlannerNode(Node):
                 return
 
         use_visual_refine = bool(self.get_parameter("visual_refine_before_grasp").value)
-        initial_steps = (("approach_lid", plan.approach_pose),)
-        full_steps = (
+        initial_steps = self._initial_approach_precheck_steps(plan.approach_pose)
+        full_steps = initial_steps + (
+            ("grasp_lid", plan.grasp_pose),
+            ("lift_lid", plan.lift_pose),
+        )
+        motion_steps_without_refine = (
             ("approach_lid", plan.approach_pose),
             ("grasp_lid", plan.grasp_pose),
             ("lift_lid", plan.lift_pose),
@@ -556,7 +589,7 @@ class LidGripPlannerNode(Node):
                 return
 
         if use_visual_refine:
-            if not self._call_movel("approach_lid", plan.approach_pose):
+            if not self._call_initial_approach(plan.approach_pose):
                 return
             refined_steps = self._try_visual_refine_steps(source_msg, plan)
             if refined_steps is None:
@@ -565,10 +598,14 @@ class LidGripPlannerNode(Node):
                 return
             motion_steps = refined_steps
         else:
-            motion_steps = full_steps
+            motion_steps = motion_steps_without_refine
 
         for label, target in motion_steps:
-            if not self._call_movel(label, target):
+            if label in {"approach_lid", "visual_refine_align_lid"}:
+                motion_ok = self._call_initial_approach(target)
+            else:
+                motion_ok = self._call_movel(label, target)
+            if not motion_ok:
                 return
             if label == "grasp_lid":
                 if not self._finish_grasp_at_current_pose(gripper_targets):
@@ -921,6 +958,153 @@ class LidGripPlannerNode(Node):
             acceleration=float(self.get_parameter("line_acceleration").value),
             verify_orientation=False,
         )
+
+    def _initial_approach_precheck_steps(self, approach_pose) -> tuple:
+        if not bool(self.get_parameter("lid_overhead_approach_enabled").value):
+            return (("approach_lid", approach_pose),)
+        return (
+            ("lid_overhead_approach", self._overhead_pose_for_approach(approach_pose)),
+            ("approach_lid", approach_pose),
+        )
+
+    def _overhead_pose_for_approach(self, approach_pose):
+        overhead_pose = copy.deepcopy(approach_pose)
+        min_z_m = float(self.get_parameter("lid_overhead_min_z_m").value)
+        if not math.isfinite(min_z_m):
+            min_z_m = 0.22
+        overhead_pose.position.z = max(float(overhead_pose.position.z), min_z_m)
+        return overhead_pose
+
+    def _call_initial_approach(self, pose) -> bool:
+        if bool(self.get_parameter("lid_overhead_approach_enabled").value):
+            overhead_pose = self._overhead_pose_for_approach(pose)
+            overhead_pos = self._pose_to_dsr_pos(overhead_pose)
+            joints_deg = self._ikin_joints_for_pos("lid_overhead_approach", overhead_pos)
+            if joints_deg is None:
+                return False
+            if not self._call_movej_abs(
+                "lid_overhead_approach",
+                joints_deg,
+                velocity=float(self.get_parameter("approach_movej_velocity").value),
+                acceleration=float(self.get_parameter("approach_movej_acceleration").value),
+            ):
+                return False
+            return self._call_movel("approach_lid", pose)
+
+        if not bool(self.get_parameter("approach_lid_with_movej").value):
+            return self._call_movel("approach_lid", pose)
+        if isinstance(pose, (list, tuple)):
+            pos = [float(value) for value in pose]
+        else:
+            pos = self._pose_to_dsr_pos(pose)
+        joints_deg = self._ikin_joints_for_pos("approach_lid", pos)
+        if joints_deg is None:
+            return False
+        return self._call_movej_abs(
+            "approach_lid",
+            joints_deg,
+            velocity=float(self.get_parameter("approach_movej_velocity").value),
+            acceleration=float(self.get_parameter("approach_movej_acceleration").value),
+        )
+
+    def _ikin_joints_for_pos(self, label: str, pos_mm_deg: list[float]) -> list[float] | None:
+        if self._ikin_client is None:
+            self._publish_status(
+                "failed",
+                error=f"Ikin client unavailable for {label}",
+                real_motion=False,
+            )
+            return None
+        timeout_sec = max(float(self.get_parameter("ikin_timeout_sec").value), 0.1)
+        if not self._ikin_client.wait_for_service(timeout_sec=timeout_sec):
+            self._publish_status(
+                "failed",
+                error=f"Ikin service unavailable: {self._ikin_service_name}",
+                real_motion=False,
+            )
+            return None
+        req = Ikin.Request()
+        req.pos = [float(value) for value in pos_mm_deg]
+        req.sol_space = int(self.get_parameter("ikin_sol_space").value)
+        req.ref = DR_BASE
+        future = self._ikin_client.call_async(req)
+        result = self._wait_for_future(future, f"{label}_ikin", timeout_sec)
+        if result is None or not bool(result.success):
+            self._publish_status(
+                "failed",
+                error=f"{label} Ikin failed before joint-space approach",
+                target_mm_deg=[round(value, 3) for value in req.pos],
+                real_motion=False,
+            )
+            return None
+        joints_deg = [float(value) for value in result.conv_posj]
+        if len(joints_deg) < 6:
+            self._publish_status(
+                "failed",
+                error=f"{label} Ikin returned fewer than 6 joints",
+                joints_deg=[round(value, 3) for value in joints_deg],
+                real_motion=False,
+            )
+            return None
+        self._publish_status(
+            "ikin_result",
+            step=f"{label}_movej",
+            sol_space=req.sol_space,
+            joints_deg=[round(value, 3) for value in joints_deg[:6]],
+            target_mm_deg=[round(value, 3) for value in req.pos],
+            real_motion=True,
+        )
+        return joints_deg[:6]
+
+    def _call_movej_abs(
+        self,
+        label: str,
+        joints_deg: list[float],
+        *,
+        velocity: float,
+        acceleration: float,
+    ) -> bool:
+        if self._move_joint_client is None:
+            self._publish_status(
+                "failed",
+                error=f"MoveJoint client unavailable: {self._move_joint_service_name}",
+                real_motion=False,
+            )
+            return False
+        req = MoveJoint.Request()
+        req.pos = [float(value) for value in joints_deg]
+        req.vel = float(velocity)
+        req.acc = float(acceleration)
+        req.time = 0.0
+        req.radius = 0.0
+        req.mode = MOVE_MODE_ABSOLUTE
+        req.blend_type = BLENDING_SPEED_TYPE_DUPLICATE
+        req.sync_type = SYNC
+        self.get_logger().warn(
+            f"[뚜껑픽] 관절 전이 시작: {self._step_ko(label)} "
+            f"movej_deg=[{', '.join(f'{value:.1f}' for value in req.pos)}]"
+        )
+        future = self._move_joint_client.call_async(req)
+        result = self._wait_for_future(
+            future,
+            label,
+            float(self.get_parameter("move_timeout_sec").value),
+        )
+        if result is None:
+            self._publish_status(
+                "failed",
+                error=f"{label} MoveJoint timed out or failed",
+                real_motion=True,
+            )
+            return False
+        if not bool(result.success):
+            self._publish_status(
+                "failed",
+                error=f"{label} MoveJoint returned success=false",
+                real_motion=True,
+            )
+            return False
+        return True
 
     def _call_movel_pos(
         self,

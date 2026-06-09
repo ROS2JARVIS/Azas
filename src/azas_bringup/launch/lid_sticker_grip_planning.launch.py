@@ -117,6 +117,11 @@ def generate_launch_description():
         DeclareLaunchArgument("line_velocity", default_value="15.0"),
         DeclareLaunchArgument("line_acceleration", default_value="30.0"),
         DeclareLaunchArgument("move_timeout_sec", default_value="10.0"),
+        DeclareLaunchArgument("approach_lid_with_movej", default_value="false"),
+        DeclareLaunchArgument("approach_movej_velocity", default_value="20.0"),
+        DeclareLaunchArgument("approach_movej_acceleration", default_value="20.0"),
+        DeclareLaunchArgument("lid_overhead_approach_enabled", default_value="false"),
+        DeclareLaunchArgument("lid_overhead_min_z_m", default_value="0.22"),
         DeclareLaunchArgument("precheck_ikin", default_value="true"),
         DeclareLaunchArgument("ikin_sol_space", default_value="2"),
         DeclareLaunchArgument("ikin_timeout_sec", default_value="5.0"),
@@ -443,6 +448,26 @@ def generate_launch_description():
                 ),
                 "move_timeout_sec": ParameterValue(
                     LaunchConfiguration("move_timeout_sec"),
+                    value_type=float,
+                ),
+                "approach_lid_with_movej": ParameterValue(
+                    LaunchConfiguration("approach_lid_with_movej"),
+                    value_type=bool,
+                ),
+                "approach_movej_velocity": ParameterValue(
+                    LaunchConfiguration("approach_movej_velocity"),
+                    value_type=float,
+                ),
+                "approach_movej_acceleration": ParameterValue(
+                    LaunchConfiguration("approach_movej_acceleration"),
+                    value_type=float,
+                ),
+                "lid_overhead_approach_enabled": ParameterValue(
+                    LaunchConfiguration("lid_overhead_approach_enabled"),
+                    value_type=bool,
+                ),
+                "lid_overhead_min_z_m": ParameterValue(
+                    LaunchConfiguration("lid_overhead_min_z_m"),
                     value_type=float,
                 ),
                 "precheck_ikin": ParameterValue(

@@ -856,7 +856,7 @@
           <button id="cupUprightingBtn" class="quick-start-btn" title="2단계: 소명씨 azas_cup_uprighting. OpenCV 창에서 누운 컵 확인 후 p 키로 직립화 실행, Esc/q로 종료">2. 소명 누운 컵<br><small>창 확인→p 실행</small></button>
           <button id="pickLidBtn" class="quick-start-btn" title="develop 뚜껑 grip pose 계획: 빨간 스티커/YOLO/depth 기반 pose 후보 발행. 실제 모션 아님">뚜껑 grip pose 계획<br><small>빨간스티커→pose 후보</small></button>
           <button id="lidGripCloseBtn" class="quick-start-btn" title="3단계: 강개발자 lid_grip_close. 뚜껑 보기 자세 이동 → ArUco DICT_6X6_250 id0 뚜껑 pose 인식 → RG2 파지 → 컵 위치 이동 → J6 twist로 뚜껑 닫기">3. 뚜껑 잡고 닫기<br><small>강개발자 · ArUco→grip→J6</small></button>
-          <button id="colorScanJsonBtn" class="quick-start-btn" title="로봇을 2026-06-08 검증 color_scan_pose로 이동한 뒤 카메라 안정화 1.5초/5프레임 후 visible color handle을 직접 검출하고 debug 이미지를 저장">2. 디스펜서 조준 + 색상구분<br><small>안정화→핸들색검출→JSON</small></button>
+          <button id="colorScanJsonBtn" class="quick-start-btn" title="이미 tmux 연결/RealSense가 켜진 상태에서 color_scan_pose로 이동한 뒤 visible color handle을 바로 검출하고 JSON/debug 이미지를 저장">2. 빠른 색상구분<br><small>포즈이동→핸들검출→JSON</small></button>
           <button id="colorJsonCheckBtn" type="button" title="outputs/dispenser_color_map.json 또는 failed 상태 확인">JSON 확인</button>
           <button id="manualColorJsonBtn" type="button" title="색상 맵을 직접 확정해 outputs/dispenser_color_map.json 저장">JSON 수동저장</button>
           <button id="recipeCycleBtn" class="quick-start-btn" title="latest_recipe.json과 dispenser_color_map.json을 읽어 컵놓기→프레스→다시잡기 사이클을 레시피대로 반복">3. 레시피 디스펜서 사이클<br><small>컵놓기→프레스→다시잡기 반복</small></button>
@@ -1879,6 +1879,61 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       focusLog();
     }
 
+    async function runExpandedKeysNow(keys, message) {
+      if (isRunning) {
+        log.textContent = "이미 실행 중입니다. 현재 실행이 끝나거나 정리/중지 후 다시 누르세요.";
+        focusLog();
+        return;
+      }
+      selectedQueue = [];
+      const missing = keys.filter((key) => !stepByKey(key));
+      const added = addQueueItems(keys);
+      itemStatuses = new Map();
+      resetResultBadges();
+      updateSelectedCount();
+      renderSteps();
+      isRunning = Boolean(added);
+      activeLogKeys = new Set(keys);
+      if (isRunning) startRunningLogPolling(keys);
+      renderFlow(selectedQueue[0]?.id || "");
+      log.textContent = `${message}\n실행 시작: ${added}/${keys.length}${missing.length ? `\n누락된 key: ${missing.join(", ")}` : ""}`;
+      focusLog();
+      if (!isRunning) return;
+      try {
+        const body = payload();
+        body.selected = keys;
+        body.selected_already_expanded = true;
+        const res = await fetch("/api/run", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        const results = Array.isArray(data.results) && data.results.length
+          ? data.results
+          : [{
+              key: "pipeline",
+              status: "failed",
+              output: data.error ? `서버 오류: ${data.error}` : `결과 없음: ${JSON.stringify(data)}`
+            }];
+        for (const returned of results) {
+          const queuedItem = selectedQueue.find((item) => item.key === returned.key);
+          setStepStatus(returned.key || "pipeline", returned.status, queuedItem?.id || "");
+        }
+        log.textContent = JSON.stringify({execution_order: data.execution_order || keys, results}, null, 2);
+        if (results.some((item) => item.key === "color_scan" && item.status === "passed")) {
+          await refreshColorScanResult();
+        }
+      } catch (err) {
+        log.textContent = String(err);
+      } finally {
+        isRunning = false;
+        stopRunningLogPolling();
+        refreshRunningLogs(true);
+        updateSelectedCount();
+      }
+    }
+
     document.getElementById("oneClickReadyBtn")?.addEventListener("click", () => {
       queueOnly(["check_one_click_cocktail_ready"], "준비확인을 큐에 추가했습니다.");
     });
@@ -1918,7 +1973,10 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     });
 
     document.getElementById("colorScanJsonBtn")?.addEventListener("click", () => {
-      queueOnly(["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera", "color_scan"], "로봇 연결 확인 → 검증된 색상 스캔 자세 이동 → 저부하 RealSense → 1.5초/5프레임 안정화 → 화면의 색상 핸들 직접 검출 → JSON/debug 이미지 저장을 큐에 추가했습니다.");
+      runExpandedKeysNow(
+        ["move_to_color_scan_pose", "color_scan"],
+        "빠른 색상구분: 검증된 색상 스캔 자세 이동 → 색상 핸들 검출 → JSON/debug 이미지 저장을 바로 실행합니다. 연결/카메라는 상단 준비 버튼으로 이미 켜져 있어야 합니다."
+      );
     });
     document.getElementById("colorJsonCheckBtn")?.addEventListener("click", refreshColorScanResult);
     document.getElementById("manualColorJsonBtn")?.addEventListener("click", saveManualColorMap);

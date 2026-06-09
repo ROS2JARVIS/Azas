@@ -6,12 +6,13 @@ SERVICE_PREFIX="${SERVICE_PREFIX:-dsr01}"
 DISPLAY="${DISPLAY:-:0}"
 XAUTHORITY="${XAUTHORITY:-/run/user/1000/gdm/Xauthority}"
 MODEL_PATH="${MODEL_PATH:-${ROOT}/local_models/best.pt}"
-ARUCO_DICTIONARY="${ARUCO_DICTIONARY:-DICT_6X6_250}"
-ARUCO_MARKER_ID="${ARUCO_MARKER_ID:-0}"
-ARUCO_FALLBACK_MARKERS="${ARUCO_FALLBACK_MARKERS:-DICT_4X4_50:14}"
+ARUCO_DICTIONARY="${ARUCO_DICTIONARY:-DICT_4X4_50}"
+ARUCO_MARKER_ID="${ARUCO_MARKER_ID:-14}"
+ARUCO_FALLBACK_MARKERS="${ARUCO_FALLBACK_MARKERS:-}"
 ARUCO_MARKER_LENGTH_M="${ARUCO_MARKER_LENGTH_M:-0.03}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
 ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
+MOVE_TO_LID_VIEW_POSE="${MOVE_TO_LID_VIEW_POSE:-true}"
 
 cd "${ROOT}"
 
@@ -32,7 +33,7 @@ set -u
 
 export DISPLAY XAUTHORITY ROS_DOMAIN_ID ROS_LOCALHOST_ONLY
 export ROS_LOG_DIR="${ROS_LOG_DIR:-/tmp/azas_ros_logs}"
-export PYTHONPATH="${ROOT}/tools/run/python_compat:${PYTHONPATH:-}"
+export PYTHONPATH="${ROOT}/src/azas_motion:${ROOT}/tools/run/python_compat:${PYTHONPATH:-}"
 mkdir -p "${ROS_LOG_DIR}" "${ROOT}/log/tmux_logic"
 
 if [[ "${SERVICE_PREFIX}" != /* ]]; then
@@ -49,6 +50,16 @@ if [[ ! -f "${MODEL_PATH}" ]]; then
   echo "[Azas][WARN] model_path not found: ${MODEL_PATH}"
 fi
 
+if [[ "${MOVE_TO_LID_VIEW_POSE}" == "true" ]]; then
+  echo "[Azas] moving to lid camera view pose before ArUco detection"
+  python3 "${ROOT}/tools/run/direct_movej_joints.py" \
+    --service-prefix "${SERVICE_PREFIX}" \
+    --j1 3.0 --j2 -20.0 --j3 52.0 --j4 -9.0 --j5 125.0 --j6 90.0 \
+    --velocity 10 --acceleration 10 \
+    --j5-min-deg -150 --j5-max-deg 150 --timeout-sec 60 --motion-timeout-sec 120 \
+    --execute --confirm ENABLE_DIRECT_MOVEJ
+fi
+
 ros2 pkg executables azas_perception | grep -q '^azas_perception lid_sticker_detector_node$' || {
   echo "[Azas][FAIL] missing azas_perception lid_sticker_detector_node" >&2
   exit 2
@@ -58,21 +69,24 @@ ros2 pkg executables azas_motion | grep -q '^azas_motion lid_grip_planner_node$'
   exit 3
 }
 
-ros2 launch azas_bringup lid_sticker_grip_planning.launch.py \
+launch_args=(
+  azas_bringup lid_sticker_grip_planning.launch.py
   model_path:="${MODEL_PATH}" \
-  marker_type:=aruco require_lid_detection:=false \
-  allow_aruco_only_after_grip_request:=false aruco_only_after_grip_request_sec:=20.0 \
+  marker_type:=aruco require_lid_detection:=true \
+  allow_aruco_only_after_grip_request:=true aruco_only_after_grip_request_sec:=20.0 \
   aruco_dictionary:="${ARUCO_DICTIONARY}" aruco_marker_id:="${ARUCO_MARKER_ID}" \
-  aruco_fallback_markers:="${ARUCO_FALLBACK_MARKERS}" aruco_marker_length_m:="${ARUCO_MARKER_LENGTH_M}" \
+  aruco_marker_length_m:="${ARUCO_MARKER_LENGTH_M}" \
   use_aruco_axis_for_orientation:=true aruco_finger_axis_quarter_turns:=0 \
   use_lid_pose_yaw_for_pick:=true lid_pose_yaw_axis:=y lid_pose_yaw_offset_deg:=0.0 lid_pose_yaw_equivalence_deg:=180.0 \
   visual_refine_before_grasp:=true visual_refine_sample_count:=5 visual_refine_timeout_sec:=3.0 visual_refine_max_yaw_std_deg:=3.0 \
   visual_refine_max_position_std_m:=0.005 visual_refine_apply_xy:=true visual_refine_apply_yaw:=true visual_refine_fallback_to_initial_plan:=true \
   enable_hardware:=true hardware_confirm:=ENABLE_REAL_ROBOT_MOTION allow_service_control_without_moveit:=true service_prefix:="${SERVICE_PREFIX}" \
+  approach_lid_with_movej:=true approach_movej_velocity:=20.0 approach_movej_acceleration:=20.0 \
+  lid_overhead_approach_enabled:=true lid_overhead_min_z_m:=0.260 \
   rx:=108.41 ry:=-176.32 rz:=175.98 offset_axis:=base_z surface_offset_m:=0.0 \
-  tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:=-0.040 min_grasp_z_m:=0.025 \
+  tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:=0.0 min_grasp_z_m:=0.065 \
   approach_offset_m:=0.08 lift_offset_m:=0.10 settle_seconds_before_grasp:=0.5 hold_seconds_after_grasp:=3.0 \
-  line_velocity:=30.0 line_acceleration:=10.0 move_timeout_sec:=90.0 \
+  line_velocity:=15.0 line_acceleration:=8.0 move_timeout_sec:=90.0 \
   enable_gripper_service_calls:=true gripper_set_service:=/jarvis/rg2/set_width \
   gripper_preopen_width_m:=0.110 gripper_grasp_width_m:=0.020 gripper_force_n:=12.0 \
   continue_after_gripper_grasp_failure:=true gripper_grasp_failure_wait_sec:=2.0 \
@@ -89,3 +103,10 @@ ros2 launch azas_bringup lid_sticker_grip_planning.launch.py \
   lid_twist_release_lift_m:=0.03 lid_twist_min_z_m:=0.140 lid_twist_max_z_m:=0.220 \
   lid_twist_transfer_velocity:=25.0 lid_twist_press_velocity:=5.0 lid_twist_turn_velocity:=30.0 lid_twist_acceleration:=15.0 \
   lid_twist_hold_seconds_before_turn:=0.0 lid_twist_hold_seconds_after_turn:=0.5
+)
+
+if [[ -n "${ARUCO_FALLBACK_MARKERS}" ]]; then
+  launch_args+=(aruco_fallback_markers:="${ARUCO_FALLBACK_MARKERS}")
+fi
+
+ros2 launch "${launch_args[@]}"
