@@ -160,6 +160,7 @@ def main() -> int:
     parser.add_argument("--move-release-offset-x-m", default="0.0")
     parser.add_argument("--move-release-offset-y-m", default="-0.060")
     parser.add_argument("--move-release-offset-z-m", default="-0.010")
+    parser.add_argument("--force-cartesian-press", action="store_true")
     parser.add_argument("--gripper-open-settle-seconds", default="1.5")
     parser.add_argument("--gripper-settle-seconds", default="0.8")
     parser.add_argument("--wait-service-sec", default="15.0")
@@ -198,6 +199,8 @@ def main() -> int:
         "--safe-lift-joint-fallback",
         "--no-integrated-regrasp-fallback-subprocess",
     ]
+    if args.force_cartesian_press:
+        sequence_extra_args.append("--force-cartesian-press")
 
     direct_dispenser_ids = args.dispenser_ids.strip()
     if direct_dispenser_ids:

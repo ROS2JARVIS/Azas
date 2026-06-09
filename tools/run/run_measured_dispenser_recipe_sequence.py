@@ -896,7 +896,7 @@ class IntegratedRecipeMotion:
     def press_dispenser(self, dispenser_id: str, press_count: int) -> None:
         press_xyz_m, press_rpy_deg = load_press_pose(dispenser_id)
         current_pose = self.current_posx()
-        contact_joints = load_press_ready_joints_deg(dispenser_id)
+        contact_joints = None if self.args.force_cartesian_press else load_press_ready_joints_deg(dispenser_id)
         joint_space_press = contact_joints is not None
         if contact_joints is None:
             x_mm = press_xyz_m[0] * 1000.0
@@ -1531,6 +1531,14 @@ def parse_args() -> argparse.Namespace:
             "When measured press_contact_joints_deg exists, optionally move to "
             "calibration press_pose_xyz_m + pre_lift before MoveJoint. Default false: "
             "use the measured joints as the authoritative press target."
+        ),
+    )
+    parser.add_argument(
+        "--force-cartesian-press",
+        action="store_true",
+        help=(
+            "Ignore dispenser press_contact_joints_deg and press using measured "
+            "press_pose_xyz_m/press_pose_rpy_deg Cartesian poses."
         ),
     )
     parser.add_argument(
