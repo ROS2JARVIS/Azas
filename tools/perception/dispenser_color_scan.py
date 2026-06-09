@@ -15,6 +15,7 @@ import argparse
 import itertools
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -53,6 +54,34 @@ VISIBLE_HANDLE_HSV_RANGES = {
     "green": ((40, 60, 50, 85, 255, 255),),
     "blue": ((85, 80, 60, 130, 255, 255),),
 }
+
+
+def write_json_immediately(path: Path, payload: dict[str, str]) -> None:
+    """Atomically write JSON and fsync it so the panel can read it immediately."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+def unlink_immediately(path: Path) -> None:
+    if not path.exists():
+        return
+    path.unlink()
+    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def load_dispenser_ids() -> list[str]:
@@ -483,10 +512,8 @@ def main() -> int:
     if unknown_ids:
         out = Path(args.output)
         failed_out = out.with_suffix(out.suffix + ".failed")
-        failed_out.parent.mkdir(parents=True, exist_ok=True)
-        failed_out.write_text(json.dumps(color_map, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        if out.exists():
-            out.unlink()
+        write_json_immediately(failed_out, color_map)
+        unlink_immediately(out)
         print(
             "[dispenser_color_scan] ERROR: unknown color result for dispenser(s): "
             + ", ".join(sorted(unknown_ids, key=lambda x: int(x) if str(x).isdigit() else str(x))),
@@ -496,8 +523,9 @@ def main() -> int:
         print(json.dumps(color_map, ensure_ascii=False))
         return 1
     out = Path(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(color_map, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_immediately(out, color_map)
+    failed_out = out.with_suffix(out.suffix + ".failed")
+    unlink_immediately(failed_out)
     print(f"[dispenser_color_scan] saved: {out}")
     print(json.dumps(color_map, ensure_ascii=False))
     return 0

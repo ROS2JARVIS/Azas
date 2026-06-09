@@ -1841,12 +1841,15 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     });
     const mainDirectInput = document.getElementById("recipeDispenserIds");
 
-    async function resolveRecipeDispenserIdsFromJsonOrFallback() {
+    async function requireColorMapForRecipeCycle() {
       const input = document.getElementById("recipeDispenserIds");
       const directOrder = input?.value.trim() || "";
       if (directOrder) return {order: directOrder, source: /[A-Za-z가-힣]/.test(directOrder) ? "direct colors" : "direct dispenser ids", fallback: false, fallbackReason: ""};
       const res = await fetch("/api/dispenser_color_map");
       const data = await res.json();
+      if (data.fallback || !data.map) {
+        throw new Error(`색상맵이 없습니다. 먼저 색상 스캔을 성공시키거나, 진단용 물리 디스펜서 번호(예: 1x1,2x1)를 직접 입력하세요.\n${data.fallback_reason || ""}`);
+      }
       const order = String(data.sequence_compact || data.sequence_csv || "1x1,2x1,3x1,4x1").trim();
       input.value = order;
       return {
@@ -1920,7 +1923,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     document.getElementById("colorJsonCheckBtn")?.addEventListener("click", refreshColorScanResult);
     document.getElementById("manualColorJsonBtn")?.addEventListener("click", saveManualColorMap);
     document.getElementById("recipeCycleBtn")?.addEventListener("click", async () => {
-      try { await resolveRecipeDispenserIdsFromJsonOrFallback(); }
+      try { await requireColorMapForRecipeCycle(); }
       catch (err) { log.textContent = String(err); focusLog(); return; }
       queueOnly(["run_color_recipe_sequence"], "레시피 기반 디스펜서 사이클을 큐에 추가했습니다.");
     });
@@ -1928,8 +1931,6 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       queueOnly(["place_cup_holder"], "컵홀더 배치를 큐에 추가했습니다. 이 단계는 MoveItPy 경로계획으로 pre_place→place_final→RG2 open→retreat를 실행합니다.");
     });
     document.getElementById("fullCocktailRealBtn")?.addEventListener("click", async () => {
-      try { await resolveRecipeDispenserIdsFromJsonOrFallback(); }
-      catch (err) { log.textContent = String(err); focusLog(); return; }
       queueOnly([...PREP_STEPS, "side_grip_camera_home", "side_grip", "move_to_color_scan_pose", "color_scan", "run_color_recipe_sequence", "place_cup_holder"], "전체 플로우를 큐에 추가했습니다. (tmux 연결 준비 → 카메라 홈→컵 side-grip → 검증자세 색상 핸들 JSON → 레시피 사이클 → MoveIt 컵홀더 배치)", {clear: true});
     });
     document.getElementById("oneClickResultBtn")?.addEventListener("click", () => {

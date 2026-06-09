@@ -176,6 +176,34 @@ def _read_json_file(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _write_json_file_immediately(path: Path, data: Any) -> None:
+    """Atomically write JSON and flush it to disk before returning to the UI."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+def _unlink_file_immediately(path: Path) -> None:
+    if not path.exists():
+        return
+    path.unlink()
+    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
 def _normalize_color_map(raw: Any) -> dict[str, str]:
     if not isinstance(raw, dict):
         raise ValueError("color map must be a JSON object")
@@ -3063,7 +3091,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             if numeric_dispenser_override:
                 direct_arg = f" --dispenser-ids {shlex.quote(recipe_override)}"
             else:
-                direct_arg = f" --colors {shlex.quote(recipe_override)}"
+                direct_color_map = json.dumps(DISPENSER_PRESS_TARGETS, ensure_ascii=False)
+                direct_arg = (
+                    f" --colors {shlex.quote(recipe_override)}"
+                    f" --color-map-json {shlex.quote(direct_color_map)}"
+                )
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
             "python3 tools/run/run_color_recipe_sequence.py --execute --confirm"
@@ -4050,6 +4082,8 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
             if step.key == "color_scan":
                 try:
                     color_map = json.loads(DISPENSER_COLOR_MAP_PATH.read_text(encoding="utf-8"))
+                    DISPENSER_PRESS_TARGETS.clear()
+                    DISPENSER_PRESS_TARGETS.update({str(k): str(v) for k, v in color_map.items()})
                     lines = ["--- 색상 스캔 결과 ---"]
                     for did in sorted(color_map.keys(), key=lambda x: int(x) if x.isdigit() else x):
                         lines.append(f"  디스펜서 {did}: {color_map[did]}")
@@ -4277,12 +4311,9 @@ class Handler(BaseHTTPRequestHandler):
             validated = {str(k): str(v) for k, v in new_map.items()}
             DISPENSER_PRESS_TARGETS.clear()
             DISPENSER_PRESS_TARGETS.update(validated)
-            DISPENSER_COLOR_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
-            DISPENSER_COLOR_MAP_PATH.write_text(
-                json.dumps(validated, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            self.send_json({"map": DISPENSER_PRESS_TARGETS})
+            _write_json_file_immediately(DISPENSER_COLOR_MAP_PATH, validated)
+            _unlink_file_immediately(DISPENSER_COLOR_MAP_FAILED_PATH)
+            self.send_json(dispenser_color_map_status())
             return
         if path == "/api/command_override":
             step_key = str(payload.get("key") or "")

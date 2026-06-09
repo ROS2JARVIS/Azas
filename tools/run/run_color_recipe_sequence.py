@@ -22,18 +22,33 @@ COLOR_MAP_PATH  = ROOT / "outputs" / "dispenser_color_map.json"
 RECIPE_PATH     = ROOT / "outputs" / "latest_recipe.json"
 SEQUENCE_SCRIPT = ROOT / "tools" / "run" / "run_measured_dispenser_recipe_sequence.py"
 CONFIRM_PHRASE  = "ENABLE_MEASURED_DISPENSER_RECIPE_SEQUENCE"
-FALLBACK_DISPENSER_SEQUENCE = ["1", "2", "3", "4"]
+
+def normalize_color_map(data: object) -> dict[str, str]:
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v).lower().strip() for k, v in data.items()}
 
 
-def load_color_map() -> dict[str, str]:
-    """dispenser_id → color_name 매핑 로드. 정상 맵이 없으면 빈 dict로 fallback."""
+def load_color_map(*, override_json: str = "") -> dict[str, str]:
+    """Load dispenser_id → color_name mapping from the latest scan JSON."""
+    if override_json.strip():
+        try:
+            mapped = normalize_color_map(json.loads(override_json))
+        except json.JSONDecodeError as exc:
+            print(f"[run_color_recipe] 직접 색상맵 JSON 파싱 실패: {exc}", file=sys.stderr)
+            return {}
+        if mapped and not all(v == "unknown" for v in mapped.values()):
+            print("[run_color_recipe] 패널 직접 색상맵 사용")
+            return mapped
+        print("[run_color_recipe] 패널 직접 색상맵이 비어 있거나 전부 unknown", file=sys.stderr)
+        return {}
     if not COLOR_MAP_PATH.exists():
-        print(f"[run_color_recipe] 색상 맵 없음: {COLOR_MAP_PATH}; fallback 1,2,3,4 사용", file=sys.stderr)
+        print(f"[run_color_recipe] 색상 맵 없음: {COLOR_MAP_PATH}", file=sys.stderr)
         return {}
     data = json.loads(COLOR_MAP_PATH.read_text(encoding="utf-8"))
-    mapped = {str(k): str(v).lower().strip() for k, v in data.items()}
+    mapped = normalize_color_map(data)
     if not mapped or all(v == "unknown" for v in mapped.values()):
-        print("[run_color_recipe] 색상 맵이 비어 있거나 전부 unknown; fallback 1,2,3,4 사용", file=sys.stderr)
+        print("[run_color_recipe] 색상 맵이 비어 있거나 전부 unknown", file=sys.stderr)
         return {}
     return mapped
 
@@ -125,6 +140,8 @@ def main() -> int:
                         help="직접 색깔 지정: 'red:2,blue:1', 'redx2,bluex1', 'red2,blue1' (생략 시 latest_recipe.json 사용)")
     parser.add_argument("--dispenser-ids", default="",
                         help="직접 물리 디스펜서 지정: '1,2,2,3' 또는 '1x1,2x2,3x1'")
+    parser.add_argument("--color-map-json", default="",
+                        help="패널이 현재 알고 있는 dispenser_id→color JSON. --colors 직접 입력 시 우선 사용")
     parser.add_argument("--confirm", action="store_true",
                         help=f"확인 구문({CONFIRM_PHRASE}) 자동 전달")
     parser.add_argument("--execute", action="store_true",
@@ -141,6 +158,11 @@ def main() -> int:
     parser.add_argument("--wait-service-sec", default="15.0")
     parser.add_argument("--pose-read-retries", default="3")
     parser.add_argument("--pose-read-retry-sleep-sec", default="0.5")
+    parser.add_argument(
+        "--allow-missing-color-map-fallback",
+        action="store_true",
+        help="debug only: if no color map exists, run physical dispensers 1,2,3,4",
+    )
     args = parser.parse_args()
     if args.execute and not args.confirm:
         print(f"[BLOCKED] --execute requires --confirm ({CONFIRM_PHRASE})", file=sys.stderr)
@@ -185,12 +207,19 @@ def main() -> int:
         result = subprocess.run(cmd, check=False)
         return result.returncode
 
-    color_map = load_color_map()
-    print(f"[run_color_recipe] 색상 맵: {color_map if color_map else 'fallback 1,2,3,4'}")
+    color_map = load_color_map(override_json=args.color_map_json)
+    print(f"[run_color_recipe] 색상 맵: {color_map if color_map else 'missing/invalid'}")
 
     if not color_map:
-        dispenser_ids_str = ",".join(FALLBACK_DISPENSER_SEQUENCE)
-        print(f"[run_color_recipe] fallback 직접 디스펜서 실행 순서: {dispenser_ids_str}")
+        if not args.allow_missing_color_map_fallback:
+            print(
+                "[BLOCKED] 색상 기반 레시피는 outputs/dispenser_color_map.json이 필요합니다. "
+                "색상 스캔을 성공시키거나, 진단용으로 물리 디스펜서 번호를 직접 입력하세요.",
+                file=sys.stderr,
+            )
+            return 2
+        dispenser_ids_str = "1,2,3,4"
+        print(f"[run_color_recipe] debug fallback 직접 디스펜서 실행 순서: {dispenser_ids_str}")
         cmd = [sys.executable, str(SEQUENCE_SCRIPT), "--dispenser-ids", dispenser_ids_str, *sequence_extra_args]
         if args.execute:
             cmd += ["--execute"]
