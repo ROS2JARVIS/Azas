@@ -1,4 +1,6 @@
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
@@ -26,7 +28,27 @@ def generate_launch_description():
         [FindPackageShare("azas_cup_uprighting"), "config", "moveit_py.yaml"]
     )
 
-    # 3. 컵 직립화(Uprighting) 노드 실행 및 파라미터 주입
+    # 3. 공통 안전/충돌 장면: side-grip, dispenser, cup-uprighting이 같은 바닥/벽/디스펜서 기준을 보도록 통일
+    workspace_collision_scene = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare("azas_bringup"),
+                "launch",
+                "workspace_collision_scene.launch.py",
+            ])
+        ),
+        launch_arguments={
+            "publish_collision_objects": "true",
+            "table_collision_enabled": "true",
+            "table_collision_expand_to_workspace_walls": "true",
+            "workspace_boundary_collision_enabled": "true",
+            "dispenser_collision_enabled": "true",
+            "dispenser_collision_publish_objects": "true",
+            "dispenser_collision_publish_markers": "true",
+        }.items(),
+    )
+
+    # 4. 컵 직립화(Uprighting) 노드 실행 및 파라미터 주입
     yolo_cup_uprighting_node = Node(
         package="azas_cup_uprighting",
         executable="yolo_cup_uprighting",
@@ -38,4 +60,4 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([yolo_cup_uprighting_node])
+    return LaunchDescription([workspace_collision_scene, yolo_cup_uprighting_node])

@@ -1454,6 +1454,8 @@ class YoloCupPickNode(Node):
         return False
 
     def open_gripper_max(self, wait=False):
+        if not self.wait_until_gripper_idle():
+            return False
         self.get_logger().info(
             f"Open gripper to max width={GRIPPER_OPEN_WIDTH} "
             f"({GRIPPER_OPEN_WIDTH / 10.0:.1f} mm)"
@@ -1902,6 +1904,15 @@ class YoloCupPickNode(Node):
         ):
             return False
 
+        log.info("open gripper at outside high side-staging pose")
+        if not self.open_gripper_max(wait=True):
+            return False
+        if self.gripper_open_settle_sec > 0.0:
+            log.info(
+                f"wait {self.gripper_open_settle_sec:.2f}s for RG2 full-open before low approach"
+            )
+            time.sleep(self.gripper_open_settle_sec)
+
         active_pre_z = None
         for attempt in range(self.side_low_retry_attempts + 1):
             try_pre_z = plan.pre_z + attempt * self.side_low_retry_lift_m
@@ -1984,12 +1995,6 @@ class YoloCupPickNode(Node):
                 f"close=({candidate.guarded_grasp_xy[0]:.3f}, {candidate.guarded_grasp_xy[1]:.3f}, {candidate.pre_z:.3f})"
             )
 
-        self.open_gripper_max(wait=False)
-        if self.gripper_open_settle_sec > 0.0:
-            log.info(
-                f"wait {self.gripper_open_settle_sec:.2f}s for RG2 full-open before low approach"
-            )
-            time.sleep(self.gripper_open_settle_sec)
         if not self.move_to_side_prepose_if_configured(cup_base):
             return False
         if not self.move_joint1_clearance_before_side_grip():

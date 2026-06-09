@@ -22,20 +22,20 @@ COLOR_MAP_PATH  = ROOT / "outputs" / "dispenser_color_map.json"
 RECIPE_PATH     = ROOT / "outputs" / "latest_recipe.json"
 SEQUENCE_SCRIPT = ROOT / "tools" / "run" / "run_measured_dispenser_recipe_sequence.py"
 CONFIRM_PHRASE  = "ENABLE_MEASURED_DISPENSER_RECIPE_SEQUENCE"
+FALLBACK_DISPENSER_SEQUENCE = ["1", "2", "3", "4"]
 
 
 def load_color_map() -> dict[str, str]:
-    """dispenser_id → color_name 매핑 로드."""
+    """dispenser_id → color_name 매핑 로드. 정상 맵이 없으면 빈 dict로 fallback."""
     if not COLOR_MAP_PATH.exists():
-        print(f"[run_color_recipe] 색상 맵 없음: {COLOR_MAP_PATH}", file=sys.stderr)
-        print(
-            "[run_color_recipe] color_scan 스텝을 먼저 실행하거나, "
-            "패널 DIRECT DISPENSER INPUT에 1x1,2x2,3x1처럼 물리 디스펜서 번호와 횟수를 입력하세요.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        print(f"[run_color_recipe] 색상 맵 없음: {COLOR_MAP_PATH}; fallback 1,2,3,4 사용", file=sys.stderr)
+        return {}
     data = json.loads(COLOR_MAP_PATH.read_text(encoding="utf-8"))
-    return {str(k): str(v).lower().strip() for k, v in data.items()}
+    mapped = {str(k): str(v).lower().strip() for k, v in data.items()}
+    if not mapped or all(v == "unknown" for v in mapped.values()):
+        print("[run_color_recipe] 색상 맵이 비어 있거나 전부 unknown; fallback 1,2,3,4 사용", file=sys.stderr)
+        return {}
+    return mapped
 
 
 def color_to_dispenser_id(color: str, color_map: dict[str, str]) -> str | None:
@@ -106,10 +106,37 @@ def main() -> int:
                         help=f"확인 구문({CONFIRM_PHRASE}) 자동 전달")
     parser.add_argument("--execute", action="store_true",
                         help="실제 measured dispenser sequence를 실행")
+    parser.add_argument("--press-min-transit-z-m", default="0.720")
+    parser.add_argument("--press-line-velocity", default="18.0")
+    parser.add_argument("--press-line-acceleration", default="25.0")
+    parser.add_argument("--press-travel-velocity", default="45.0")
+    parser.add_argument("--press-travel-acceleration", default="60.0")
+    parser.add_argument("--press-contact-joint-velocity", default="22.0")
+    parser.add_argument("--press-contact-joint-acceleration", default="30.0")
+    parser.add_argument("--gripper-open-settle-seconds", default="1.5")
+    parser.add_argument("--gripper-settle-seconds", default="0.8")
+    parser.add_argument("--wait-service-sec", default="15.0")
+    parser.add_argument("--pose-read-retries", default="3")
+    parser.add_argument("--pose-read-retry-sleep-sec", default="0.5")
     args = parser.parse_args()
     if args.execute and not args.confirm:
         print(f"[BLOCKED] --execute requires --confirm ({CONFIRM_PHRASE})", file=sys.stderr)
         return 2
+
+    sequence_extra_args = [
+        "--press-min-transit-z-m", str(args.press_min_transit_z_m),
+        "--press-line-velocity", str(args.press_line_velocity),
+        "--press-line-acceleration", str(args.press_line_acceleration),
+        "--press-travel-velocity", str(args.press_travel_velocity),
+        "--press-travel-acceleration", str(args.press_travel_acceleration),
+        "--press-contact-joint-velocity", str(args.press_contact_joint_velocity),
+        "--press-contact-joint-acceleration", str(args.press_contact_joint_acceleration),
+        "--gripper-open-settle-seconds", str(args.gripper_open_settle_seconds),
+        "--gripper-settle-seconds", str(args.gripper_settle_seconds),
+        "--wait-service-sec", str(args.wait_service_sec),
+        "--pose-read-retries", str(args.pose_read_retries),
+        "--pose-read-retry-sleep-sec", str(args.pose_read_retry_sleep_sec),
+    ]
 
     direct_dispenser_ids = args.dispenser_ids.strip()
     if direct_dispenser_ids:
@@ -123,6 +150,7 @@ def main() -> int:
         cmd = [
             sys.executable, str(SEQUENCE_SCRIPT),
             "--dispenser-ids", dispenser_ids_str,
+            *sequence_extra_args,
         ]
         if args.execute:
             cmd += ["--execute"]
@@ -133,7 +161,19 @@ def main() -> int:
         return result.returncode
 
     color_map = load_color_map()
-    print(f"[run_color_recipe] 색상 맵: {color_map}")
+    print(f"[run_color_recipe] 색상 맵: {color_map if color_map else 'fallback 1,2,3,4'}")
+
+    if not color_map:
+        dispenser_ids_str = ",".join(FALLBACK_DISPENSER_SEQUENCE)
+        print(f"[run_color_recipe] fallback 직접 디스펜서 실행 순서: {dispenser_ids_str}")
+        cmd = [sys.executable, str(SEQUENCE_SCRIPT), "--dispenser-ids", dispenser_ids_str, *sequence_extra_args]
+        if args.execute:
+            cmd += ["--execute"]
+        if args.confirm:
+            cmd += ["--confirm", CONFIRM_PHRASE]
+        print(f"[run_color_recipe] 실행: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
 
     # 색깔+펌프 수 결정
     if args.colors:
@@ -170,6 +210,7 @@ def main() -> int:
     cmd = [
         sys.executable, str(SEQUENCE_SCRIPT),
         "--dispenser-ids", dispenser_ids_str,
+        *sequence_extra_args,
     ]
     if args.execute:
         cmd += ["--execute"]

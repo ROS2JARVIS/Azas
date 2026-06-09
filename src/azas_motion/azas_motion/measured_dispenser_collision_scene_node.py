@@ -18,6 +18,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 DEFAULT_CONFIG_PATH = (
     "/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml"
 )
+DEFAULT_CALIBRATION_PATH = "/home/ssu/Azas/src/azas_bringup/config/calibration.yaml"
 
 LEGACY_DISPENSER_COLLISION_OBJECT_IDS = (
     "dispenser_body_box",
@@ -129,6 +130,7 @@ class MeasuredDispenserCollisionSceneNode(Node):
         super().__init__("measured_dispenser_collision_scene_node")
 
         self.declare_parameter("config_path", DEFAULT_CONFIG_PATH)
+        self.declare_parameter("calibration_path", DEFAULT_CALIBRATION_PATH)
         self.declare_parameter("publish_period_sec", 2.0)
         self.declare_parameter("publish_collision_objects", True)
         self.declare_parameter("publish_markers", True)
@@ -143,6 +145,10 @@ class MeasuredDispenserCollisionSceneNode(Node):
             self.get_parameter("config_path").get_parameter_value().string_value
         )
         self.config = self._load_config(config_path)
+        calibration_path = Path(
+            self.get_parameter("calibration_path").get_parameter_value().string_value
+        )
+        self.calibration = self._load_optional_calibration(calibration_path)
         self.frame_id = self.config.get("metadata", {}).get("frame_id", "base_link")
 
         self.collision_pub = self.create_publisher(
@@ -217,6 +223,24 @@ class MeasuredDispenserCollisionSceneNode(Node):
             raise ValueError(f"collision config is not a YAML map: {config_path}")
         self.get_logger().info(f"Loaded measured dispenser collision config: {config_path}")
         return config
+
+    def _load_optional_calibration(self, calibration_path: Path) -> dict[str, Any]:
+        if not calibration_path.exists():
+            self.get_logger().warning(
+                f"calibration config does not exist; dispenser outlet markers disabled: {calibration_path}"
+            )
+            return {}
+        with calibration_path.open("r", encoding="utf-8") as stream:
+            calibration = yaml.safe_load(stream) or {}
+        if not isinstance(calibration, dict):
+            self.get_logger().warning(
+                f"calibration config is not a YAML map; outlet markers disabled: {calibration_path}"
+            )
+            return {}
+        self.get_logger().info(
+            f"Loaded dispenser outlet/press marker calibration: {calibration_path}"
+        )
+        return calibration
 
     def _warn_about_draft_status(self) -> None:
         metadata = self.config.get("metadata", {})
@@ -444,6 +468,56 @@ class MeasuredDispenserCollisionSceneNode(Node):
             label.color.a = 0.95
             label.text = hold_name
             markers.append(label)
+
+        outlet_marker_id = 3000
+        outlets = self.calibration.get("dispenser_outlets", {})
+        if isinstance(outlets, dict):
+            for dispenser_id in sorted(outlets.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x)):
+                outlet_config = outlets.get(dispenser_id) or {}
+                if not isinstance(outlet_config, dict):
+                    continue
+                for field_name, namespace, color in (
+                    ("outlet_pose_xyz_m", "measured_dispenser_outlet_points", (0.0, 1.0, 0.0, 0.95)),
+                    ("press_pose_xyz_m", "measured_dispenser_press_points", (1.0, 0.0, 0.9, 0.95)),
+                ):
+                    point = outlet_config.get(field_name)
+                    if point is None:
+                        continue
+                    marker = Marker()
+                    marker.header.frame_id = self.frame_id
+                    marker.header.stamp = stamp
+                    marker.ns = namespace
+                    marker.id = outlet_marker_id
+                    outlet_marker_id += 1
+                    marker.type = Marker.SPHERE
+                    marker.action = Marker.ADD
+                    marker.pose = _pose(point, [0.0, 0.0, 0.0, 1.0])
+                    marker.scale.x = 0.025
+                    marker.scale.y = 0.025
+                    marker.scale.z = 0.025
+                    marker.color.r = color[0]
+                    marker.color.g = color[1]
+                    marker.color.b = color[2]
+                    marker.color.a = color[3]
+                    markers.append(marker)
+
+                    label = Marker()
+                    label.header.frame_id = self.frame_id
+                    label.header.stamp = stamp
+                    label.ns = f"{namespace}_labels"
+                    label.id = outlet_marker_id
+                    outlet_marker_id += 1
+                    label.type = Marker.TEXT_VIEW_FACING
+                    label.action = Marker.ADD
+                    label.pose = _pose(point, [0.0, 0.0, 0.0, 1.0])
+                    label.pose.position.z += 0.045
+                    label.scale.z = 0.03
+                    label.color.r = color[0]
+                    label.color.g = color[1]
+                    label.color.b = color[2]
+                    label.color.a = 1.0
+                    label.text = f"dispenser_{dispenser_id}_{field_name.replace('_xyz_m', '')}"
+                    markers.append(label)
 
         return MarkerArray(markers=markers)
 

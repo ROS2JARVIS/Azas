@@ -12,7 +12,9 @@ Output: {"1": "red", "2": "blue", ...} written to --output (default: outputs/dis
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -39,6 +41,18 @@ CAMERA_INFO_TOPIC = "/camera/camera/color/camera_info"
 BASE_FRAME = "base_link"
 EE_LINK = "link_6"
 CROP_HALF_PX = 60  # half-side of crop box around projected pixel
+
+
+# HSV ranges for the physical dispenser handle colors in the current booth.
+# This is intentionally image-space only: it does not create robot poses or
+# calibration values.  When the handles are visible, left-to-right order maps to
+# dispenser IDs 1..4.
+VISIBLE_HANDLE_HSV_RANGES = {
+    "red": ((0, 80, 60, 10, 255, 255), (170, 80, 60, 179, 255, 255)),
+    "yellow": ((20, 80, 60, 40, 255, 255),),
+    "green": ((40, 60, 50, 85, 255, 255),),
+    "blue": ((85, 80, 60, 130, 255, 255),),
+}
 
 
 def load_dispenser_ids() -> list[str]:
@@ -115,6 +129,127 @@ def classify_image_file(path: Path) -> str:
     return result.color
 
 
+def detect_visible_handle_color_map(
+    frame_bgr: "np.ndarray",
+    dispenser_ids: list[str],
+    *,
+    debug_image_path: Path | None = None,
+) -> dict[str, str] | None:
+    """Detect colored dispenser handles directly from the camera image.
+
+    The earlier TF projection path can be wrong if hand-eye/camera extrinsics are
+    stale, even when the handles are plainly visible.  This fallback uses only
+    the visible colored handle blobs and assigns IDs by horizontal order.
+    """
+    if cv2 is None:
+        return None
+    import numpy as np  # type: ignore
+
+    img_h, img_w = frame_bgr.shape[:2]
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    candidates_by_color: dict[str, list[tuple[float, str, int, int, int, int, float, float, float]]] = {}
+    min_area = max(150.0, float(img_w * img_h) * 0.00035)
+    min_w = max(8, int(round(img_w * 0.012)))
+    min_h = max(20, int(round(img_h * 0.055)))
+    max_w = max(80, int(round(img_w * 0.140)))
+    max_h = max(90, int(round(img_h * 0.240)))
+
+    for color, ranges in VISIBLE_HANDLE_HSV_RANGES.items():
+        mask = np.zeros((img_h, img_w), dtype=np.uint8)
+        for lo_h, lo_s, lo_v, hi_h, hi_s, hi_v in ranges:
+            mask |= cv2.inRange(
+                hsv,
+                np.array([lo_h, lo_s, lo_v], dtype=np.uint8),
+                np.array([hi_h, hi_s, hi_v], dtype=np.uint8),
+            )
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), dtype=np.uint8))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), dtype=np.uint8))
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        color_candidates: list[tuple[float, str, int, int, int, int, float, float, float]] = []
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            x, y, w, h = cv2.boundingRect(contour)
+            # Booth-specific visual gate: handles are vertical colored blobs in
+            # the upper/middle image, not the operator clothes, chairs, or cup.
+            if area < min_area or w < min_w or h < min_h or w > max_w or h > max_h:
+                continue
+            if not (0.06 * img_h <= y <= 0.42 * img_h):
+                continue
+            if not (0.25 * img_w <= x <= 0.90 * img_w):
+                continue
+            score = area + float(h) * 10.0
+            center_x = float(x) + float(w) * 0.5
+            center_y = float(y) + float(h) * 0.5
+            color_candidates.append((score, color, x, y, w, h, area, center_x, center_y))
+        color_candidates.sort(key=lambda item: item[0], reverse=True)
+        if color_candidates:
+            candidates_by_color[color] = color_candidates[:6]
+
+    if len(candidates_by_color) != len(dispenser_ids):
+        print(
+            f"[dispenser_color_scan] visible-handle fallback found {len(candidates_by_color)}/{len(dispenser_ids)} "
+            "colored handles; falling back to TF projection",
+            file=sys.stderr,
+        )
+        return None
+
+    # One large false-positive blob can beat the real handle by area (chairs,
+    # clothes, or table reflection).  The four dispenser handles are physically
+    # on one horizontal row, so choose the one-candidate-per-color combination
+    # with the best row consistency instead of blindly taking max area per color.
+    best_combo: tuple[float, tuple[tuple[float, str, int, int, int, int, float, float, float], ...]] | None = None
+    for combo in itertools.product(*(candidates_by_color[color] for color in sorted(candidates_by_color))):
+        centers_x = [item[7] for item in combo]
+        if len(set(round(x) for x in centers_x)) != len(combo):
+            continue
+        centers_y = [item[8] for item in combo]
+        mean_y = sum(centers_y) / float(len(centers_y))
+        row_std = math.sqrt(sum((y - mean_y) ** 2 for y in centers_y) / float(len(centers_y)))
+        area_score = sum(item[6] for item in combo)
+        score = area_score - 200.0 * row_std
+        if best_combo is None or score > best_combo[0]:
+            best_combo = (score, combo)
+
+    if best_combo is None:
+        print("[dispenser_color_scan] visible-handle fallback could not choose a non-overlapping color row", file=sys.stderr)
+        return None
+
+    candidates = list(best_combo[1])
+    candidates.sort(key=lambda item: item[2])
+    color_map = {did: color for did, (_, color, *_rest) in zip(dispenser_ids, candidates)}
+    if debug_image_path is not None:
+        debug = frame_bgr.copy()
+        palette = {
+            "red": (0, 0, 255),
+            "yellow": (0, 255, 255),
+            "green": (0, 255, 0),
+            "blue": (255, 0, 0),
+        }
+        for did, (_, color, x, y, w, h, area, *_centers) in zip(dispenser_ids, candidates):
+            bgr = palette.get(color, (255, 255, 255))
+            cv2.rectangle(debug, (x, y), (x + w, y + h), bgr, 2)
+            cv2.putText(
+                debug,
+                f"{did}:{color} {int(area)}",
+                (x, max(y - 8, 18)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                bgr,
+                2,
+                cv2.LINE_AA,
+            )
+        debug_image_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(debug_image_path), debug)
+        print(f"[dispenser_color_scan] debug image saved: {debug_image_path}")
+    debug = ", ".join(
+        f"{did}={color}@box({x},{y},{w},{h})"
+        for did, (_, color, x, y, w, h, _area, *_centers) in zip(dispenser_ids, candidates)
+    )
+    print(f"[dispenser_color_scan] visible-handle fallback: {debug}")
+    return color_map
+
+
 def scan_from_image_dir(image_dir: Path) -> dict[str, str]:
     dispenser_ids = load_dispenser_ids()
     color_map: dict[str, str] = {}
@@ -133,7 +268,14 @@ def scan_from_image_dir(image_dir: Path) -> dict[str, str]:
     return color_map
 
 
-def scan_from_ros() -> dict[str, str]:
+def scan_from_ros(
+    *,
+    clamp_out_of_frame: bool = True,
+    visible_handle_fallback: bool = True,
+    settle_sec: float = 1.5,
+    sample_frames: int = 5,
+    debug_image_path: Path | None = None,
+) -> dict[str, str]:
     try:
         import rclpy  # type: ignore
         from rclpy.qos import qos_profile_sensor_data  # type: ignore
@@ -148,17 +290,9 @@ def scan_from_ros() -> dict[str, str]:
 
     import time
 
-    T_gripper2cam = load_hand_eye()
-    if T_gripper2cam is None:
-        print("[dispenser_color_scan] ERROR: could not load T_gripper2camera.npy", file=sys.stderr)
-        sys.exit(1)
-
-    dispenser_positions = load_dispenser_positions()
-    if not dispenser_positions:
-        print("[dispenser_color_scan] ERROR: no dispenser positions in calibration.yaml", file=sys.stderr)
-        sys.exit(1)
-
     frame_bgr = None
+    frame_count = 0
+    first_frame_time: float | None = None
     cam_info = None
 
     def to_bgr(msg: "Image") -> "np.ndarray":
@@ -176,9 +310,14 @@ def scan_from_ros() -> dict[str, str]:
         raise RuntimeError(f"unsupported encoding: {msg.encoding}")
 
     def image_cb(msg: "Image") -> None:
-        nonlocal frame_bgr
-        if frame_bgr is None:
-            frame_bgr = to_bgr(msg)
+        nonlocal frame_bgr, frame_count, first_frame_time
+        now = time.time()
+        if first_frame_time is None:
+            first_frame_time = now
+        if now - first_frame_time < settle_sec:
+            return
+        frame_bgr = to_bgr(msg)
+        frame_count += 1
 
     def info_cb(msg: "CameraInfo") -> None:
         nonlocal cam_info
@@ -191,11 +330,11 @@ def scan_from_ros() -> dict[str, str]:
     node.create_subscription(Image, CAMERA_TOPIC, image_cb, qos_profile_sensor_data)
     node.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, info_cb, qos_profile_sensor_data)
 
-    deadline = time.time() + 8.0
+    deadline = time.time() + 8.0 + max(settle_sec, 0.0)
     try:
         while rclpy.ok() and time.time() < deadline:
             rclpy.spin_once(node, timeout_sec=0.1)
-            if frame_bgr is not None and cam_info is not None:
+            if frame_bgr is not None and cam_info is not None and frame_count >= max(sample_frames, 1):
                 break
     finally:
         pass  # keep node alive for TF lookup below
@@ -207,6 +346,34 @@ def scan_from_ros() -> dict[str, str]:
     if cam_info is None:
         node.destroy_node(); rclpy.shutdown()
         print(f"[dispenser_color_scan] no camera_info from {CAMERA_INFO_TOPIC} within 8s", file=sys.stderr)
+        sys.exit(1)
+
+    dispenser_ids = load_dispenser_ids()
+    print(
+        f"[dispenser_color_scan] using stabilized frame: "
+        f"settle_sec={settle_sec:.2f} sample_frames={frame_count} size={frame_bgr.shape[1]}x{frame_bgr.shape[0]}"
+    )
+    if visible_handle_fallback:
+        visible_map = detect_visible_handle_color_map(
+            frame_bgr,
+            dispenser_ids,
+            debug_image_path=debug_image_path,
+        )
+        if visible_map is not None:
+            node.destroy_node()
+            rclpy.shutdown()
+            return visible_map
+
+    T_gripper2cam = load_hand_eye()
+    if T_gripper2cam is None:
+        node.destroy_node(); rclpy.shutdown()
+        print("[dispenser_color_scan] ERROR: could not load T_gripper2camera.npy", file=sys.stderr)
+        sys.exit(1)
+
+    dispenser_positions = load_dispenser_positions()
+    if not dispenser_positions:
+        node.destroy_node(); rclpy.shutdown()
+        print("[dispenser_color_scan] ERROR: no dispenser positions in calibration.yaml", file=sys.stderr)
         sys.exit(1)
 
     # Get TF: base_link → link_6 (EE)
@@ -255,9 +422,27 @@ def scan_from_ros() -> dict[str, str]:
         y1 = max(0, v - CROP_HALF_PX)
         y2 = min(img_h, v + CROP_HALF_PX)
         if x2 <= x1 or y2 <= y1:
-            print(f"[dispenser_color_scan] dispenser {did}: projected pixel ({u},{v}) out of frame {img_w}x{img_h}", file=sys.stderr)
-            color_map[did] = "unknown"
-            continue
+            if clamp_out_of_frame:
+                clamped_u = min(max(u, 0), img_w - 1)
+                clamped_v = min(max(v, 0), img_h - 1)
+                x1 = max(0, clamped_u - CROP_HALF_PX)
+                x2 = min(img_w, clamped_u + CROP_HALF_PX)
+                y1 = max(0, clamped_v - CROP_HALF_PX)
+                y2 = min(img_h, clamped_v + CROP_HALF_PX)
+                if x2 > x1 and y2 > y1:
+                    print(
+                        f"[dispenser_color_scan] dispenser {did}: projected pixel ({u},{v}) out of frame {img_w}x{img_h}; "
+                        f"using edge crop around ({clamped_u},{clamped_v})",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(f"[dispenser_color_scan] dispenser {did}: projected pixel ({u},{v}) out of frame {img_w}x{img_h}", file=sys.stderr)
+                    color_map[did] = "unknown"
+                    continue
+            else:
+                print(f"[dispenser_color_scan] dispenser {did}: projected pixel ({u},{v}) out of frame {img_w}x{img_h}", file=sys.stderr)
+                color_map[did] = "unknown"
+                continue
         crop = frame_bgr[y1:y2, x1:x2]
         result = classify_bgr_crop(crop)
         color_map[did] = result.color
@@ -271,6 +456,11 @@ def main() -> int:
     parser.add_argument("--image-dir", default="", help="Directory with dispenser_1.png ~ dispenser_4.png")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="Output JSON path")
     parser.add_argument("--ros", action="store_true", help="Capture from ROS camera topic")
+    parser.add_argument("--no-clamp-out-of-frame", action="store_true", help="Do not classify edge crop when projected dispenser pixel is just outside the image")
+    parser.add_argument("--no-visible-handle-fallback", action="store_true", help="Disable visible colored-handle detection and use only TF projection")
+    parser.add_argument("--settle-sec", type=float, default=1.5, help="Seconds to ignore camera frames before color classification")
+    parser.add_argument("--sample-frames", type=int, default=5, help="Number of stabilized frames to receive before classifying the latest one")
+    parser.add_argument("--debug-image", default="", help="Optional path to save visible-handle debug overlay")
     args = parser.parse_args()
 
     if not args.image_dir and not args.ros:
@@ -281,7 +471,13 @@ def main() -> int:
     if args.image_dir:
         color_map = scan_from_image_dir(Path(args.image_dir))
     else:
-        color_map = scan_from_ros()
+        color_map = scan_from_ros(
+            clamp_out_of_frame=not args.no_clamp_out_of_frame,
+            visible_handle_fallback=not args.no_visible_handle_fallback,
+            settle_sec=max(args.settle_sec, 0.0),
+            sample_frames=max(args.sample_frames, 1),
+            debug_image_path=Path(args.debug_image) if args.debug_image else None,
+        )
 
     unknown_ids = [did for did, color in color_map.items() if str(color).lower() == "unknown"]
     if unknown_ids:

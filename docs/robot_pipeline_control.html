@@ -350,9 +350,9 @@
       background: #fff;
       box-shadow: var(--shadow);
       overflow: hidden;
-      grid-column: 2;
-      grid-row: 3;
-      max-height: 240px;
+      grid-column: 1 / -1;
+      grid-row: auto;
+      max-height: none;
     }
     .camera-head {
       display: flex;
@@ -368,14 +368,14 @@
     .camera-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
     .camera-status { color: var(--muted); font-size: 13px; font-weight: 850; }
     .camera-frame {
-      min-height: 160px;
+      min-height: 420px;
       display: grid;
       place-items: center;
       background: #020617;
     }
     .camera-frame img {
       width: 100%;
-      max-height: 220px;
+      max-height: 620px;
       object-fit: contain;
       display: block;
       color: #dbeafe;
@@ -383,7 +383,7 @@
       text-align: center;
     }
     .camera-result {
-      max-height: 150px;
+      max-height: 260px;
       overflow: auto;
       margin: 0;
       padding: 10px 12px;
@@ -675,7 +675,7 @@
       line-height: 1.45;
       white-space: pre-wrap;
       word-break: break-word;
-      max-height: 220px;
+      max-height: 620px;
       overflow: auto;
     }
     .step.kind-background { border-left-color: var(--purple); }
@@ -704,8 +704,8 @@
 
     .log-panel {
       position: static;
-      height: min(72vh, 760px);
-      min-height: 520px;
+      height: min(78vh, 860px);
+      min-height: 620px;
       display: grid;
       grid-template-rows: 48px 1fr;
       border: 1px solid #1e293b;
@@ -799,7 +799,10 @@
     }
     .operator-button-grid small { font-size: 11px; font-weight: 800; opacity: 0.92; }
     #startPrepBtn { background: #1d4ed8 !important; border-color: #1d4ed8 !important; color: #fff !important; }
+    #cupUprightingBtn { background: #0f766e !important; border-color: #0f766e !important; color: #fff !important; }
     #sideGripBtn { background: #ea580c !important; border-color: #ea580c !important; color: #fff !important; }
+    #pickLidBtn { background: #be123c !important; border-color: #be123c !important; color: #fff !important; }
+    #lidGripCloseBtn { background: #9f1239 !important; border-color: #9f1239 !important; color: #fff !important; }
     #colorScanJsonBtn { background: #7c3aed !important; border-color: #7c3aed !important; color: #fff !important; }
     #recipeCycleBtn { background: #b91c1c !important; border-color: #b91c1c !important; color: #fff !important; }
     #fullCocktailRealBtn { background: #047857 !important; border-color: #047857 !important; color: #fff !important; }
@@ -843,18 +846,21 @@
           <input id="recipeDispenserIds" type="text" value="" placeholder="비우면 latest_recipe.json + dispenser_color_map.json 사용 / 예: 1x1,2x1,3x2">
         </label>
         <div class="operator-button-grid module-grid">
-          <button id="startPrepBtn" class="quick-start-btn" title="실제 Doosan 연결, 상태 확인, RG2 그리퍼 연결, RealSense 카메라 연결">1. 시작 준비 묶기<br><small>로봇→상태→그리퍼→카메라</small></button>
+          <button id="startPrepBtn" class="quick-start-btn" title="실제 Doosan 연결, 상태 확인, RG2 그리퍼 연결, 저부하 640x480 RealSense 카메라 연결">1. 시작 준비 묶기<br><small>로봇→상태→그리퍼→저부하카메라</small></button>
           <button id="connectRobotBtn" type="button">로봇 연결</button>
           <button id="connectGripperBtn" type="button">그리퍼 연결</button>
-          <button id="connectCameraBtn" type="button">카메라 연결</button>
+          <button id="connectCameraBtn" type="button" title="RealSense를 640x480x30 저부하 프로파일로 시작해 ros2_control 지터를 줄임">카메라 연결<br><small>640x480x30</small></button>
           <button id="cameraViewBtn" type="button" title="rqt_image_view로 /camera/camera/color/image_raw 화면 창을 띄움">카메라 화면</button>
           <button id="yoloDetectBtn" type="button" title="YOLO 인식 토픽 시작. 화면 창은 띄우지 않음">YOLO 인식</button>
+          <button id="cupUprightingBtn" class="quick-start-btn" title="소명씨 azas_cup_uprighting: RealSense/YOLO로 누운 컵을 세운 뒤 side-grip 전 단계로 사용">소명 누운 컵 세우기<br><small>RealSense→cup upright</small></button>
           <button id="sideGripBtn" class="quick-start-btn" title="PR #20 / dsr_practice yolo_cup_pick_node: RealSense 컵 인식 후 side-grip 자동 픽업">창현 side-grip<br><small>RealSense 컵 인식→side-grip</small></button>
-          <button id="colorScanJsonBtn" class="quick-start-btn" title="로봇을 color_scan_pose로 이동해 디스펜서를 카메라 시야에 조준한 뒤 색상 판별 JSON 저장">2. 디스펜서 조준 + 색상구분<br><small>로봇조준→카메라→JSON</small></button>
+          <button id="pickLidBtn" class="quick-start-btn" title="develop 뚜껑 grip pose 계획: 빨간 스티커/YOLO/depth 기반 pose 후보 발행. 실제 모션 아님">뚜껑 grip pose 계획<br><small>빨간스티커→pose 후보</small></button>
+          <button id="lidGripCloseBtn" class="quick-start-btn" title="강개발자 lid_grip_close: 뚜껑 보기 자세 이동 → ArUco 14 뚜껑 pose 인식 → RG2 파지 → 컵 위치 이동 → J6 twist로 뚜껑 닫기">뚜껑 잡고 닫기<br><small>강개발자 · view→ArUco→grip→J6</small></button>
+          <button id="colorScanJsonBtn" class="quick-start-btn" title="로봇을 2026-06-08 검증 color_scan_pose로 이동한 뒤 카메라 안정화 1.5초/5프레임 후 visible color handle을 직접 검출하고 debug 이미지를 저장">2. 디스펜서 조준 + 색상구분<br><small>안정화→핸들색검출→JSON</small></button>
           <button id="colorJsonCheckBtn" type="button" title="outputs/dispenser_color_map.json 또는 failed 상태 확인">JSON 확인</button>
           <button id="manualColorJsonBtn" type="button" title="색상 맵을 직접 확정해 outputs/dispenser_color_map.json 저장">JSON 수동저장</button>
           <button id="recipeCycleBtn" class="quick-start-btn" title="latest_recipe.json과 dispenser_color_map.json을 읽어 컵놓기→프레스→다시잡기 사이클을 레시피대로 반복">3. 레시피 디스펜서 사이클<br><small>컵놓기→프레스→다시잡기 반복</small></button>
-          <button id="cupHolderBtn" type="button">4. 컵홀더에 컵 옮기기</button>
+          <button id="cupHolderBtn" type="button" title="MoveItPy로 cup_holder.side_grip_place pre_place→place_final→retreat 경로를 계획/실행">4. 컵홀더에 컵 옮기기<br><small>MoveIt 경로계획</small></button>
           <button id="fullCocktailRealBtn" class="quick-start-btn" title="준비, 색상 JSON, 레시피 디스펜서 사이클, 컵홀더 배치를 한 번에 큐에 추가">전체 묶기<br><small>준비→색상JSON→레시피사이클→컵홀더</small></button>
         </div>
         <div class="secondary-actions">
@@ -895,6 +901,86 @@
 	    </section>
 
       <details class="reference-panel">
+        <summary>강개발자 뚜껑 잡고 닫기 참고 명령어</summary>
+        <div class="reference-body">
+          <div>
+            <b>뚜껑 잡고 닫기</b> 버튼은 강개발자 로직인 <code>lid_grip_close</code> 단계입니다.
+            이 로직은 ArUco marker ID <code>14</code>로 뚜껑 pose를 잡고, RG2로 뚜껑을 파지한 뒤 컵/컵홀더 위치로 이동해서 J6 twist로 뚜껑을 닫습니다.
+            디스펜서 프레스나 컵홀더 배치가 아니라 <b>뚜껑 파지→이동→닫기</b> 전용 실제모션입니다.
+            실행 전 <code>로봇 연결</code>, <code>연결 확인</code>, <code>그리퍼 연결</code>, <code>카메라 연결</code>이 필요합니다.
+          </div>
+          <pre><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/ws_moveit/install/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
+
+ros2 launch azas_bringup lid_sticker_grip_planning.launch.py \
+  marker_type:=aruco \
+  require_lid_detection:=false \
+  allow_aruco_only_after_grip_request:=false \
+  aruco_only_after_grip_request_sec:=20.0 \
+  aruco_dictionary:=DICT_4X4_50 \
+  aruco_marker_id:=14 \
+  aruco_marker_length_m:=0.03 \
+  use_aruco_axis_for_orientation:=true \
+  use_lid_pose_yaw_for_pick:=true \
+  visual_refine_before_grasp:=true \
+  visual_refine_sample_count:=5 \
+  visual_refine_timeout_sec:=3.0 \
+  enable_hardware:=true \
+  hardware_confirm:=ENABLE_REAL_ROBOT_MOTION \
+  allow_service_control_without_moveit:=true \
+  service_prefix:=/dsr01 \
+  enable_gripper_service_calls:=true \
+  gripper_set_service:=/jarvis/rg2/set_width \
+  gripper_preopen_width_m:=0.110 \
+  gripper_grasp_width_m:=0.020 \
+  gripper_force_n:=12.0 \
+  enable_lid_twist_after_grasp:=true \
+  lid_twist_target_x_m:=0.422959106 \
+  lid_twist_target_y_m:=0.223224869 \
+  lid_twist_target_z_m:=0.166827988 \
+  lid_twist_transfer_clearance_m:=0.12 \
+  lid_twist_force_rotation_mode:=j6 \
+  lid_twist_preseat_periodic_before_turn:=true \
+  lid_twist_rz_delta_deg:=300.0 \
+  lid_twist_turn_step_deg:=50.0 \
+  lid_twist_min_z_m:=0.140 \
+  lid_twist_max_z_m:=0.220</code></pre>
+        </div>
+      </details>
+
+      <details class="reference-panel">
+        <summary>컵홀더 배치 MoveIt 참고 명령어</summary>
+        <div class="reference-body">
+          <div>
+            패널의 <b>4. 컵홀더에 컵 옮기기</b>는 이제 Doosan 직선 MoveLine이 아니라 <b>MoveItPy 경로계획</b>으로 실행됩니다.
+            관절 한계로 직선 이동이 멈추는 경우를 피하기 위해 <code>--motion-backend moveit</code>을 사용합니다.
+            좌표는 새로 만들지 않고 <code>calibration.yaml</code>의 <code>cup_holder.side_grip_place</code> 실측 pose만 사용합니다.
+          </div>
+          <pre><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/ws_moveit/install/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
+
+python3 tools/run/place_side_grip_cup_in_holder.py \
+  --service-prefix dsr01 \
+  --config /home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/calibration.yaml \
+  --motion-backend moveit \
+  --moveit-planning-pipeline ompl \
+  --moveit-planner-id RRTConnectkConfigDefault \
+  --moveit-planning-time-sec 8.0 \
+  --moveit-planning-attempts 5 \
+  --moveit-velocity-scaling 0.08 \
+  --moveit-acceleration-scaling 0.06 \
+  --place-final-z-offset-m -0.020 \
+  --execute --confirm ENABLE_CUP_HOLDER_PLACE</code></pre>
+        </div>
+      </details>
+
+      <details class="reference-panel">
         <summary>PR #20 side-grip 참고 명령어</summary>
         <div class="reference-body">
           <div>
@@ -917,8 +1003,8 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
   imgsz:=640 \
   device:=cpu \
   target_class:=cup \
-  auto_pick:=true \
-  auto_pick_interval:=3.0 \
+  auto_pick:=false \
+  auto_pick_interval:=8.0 \
   depth_patch_radius:=7 \
   min_depth_valid_ratio:=0.03 \
   min_depth_m:=0.15 \
@@ -931,8 +1017,8 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
   side_short_stage_backoff_m:=0.08 \
   side_grasp_stop_backoff_m:=0.04 \
   side_close_underreach_m:=0.03 \
-  side_low_retry_lift_m:=0.03 \
-  side_low_retry_attempts:=5 \
+  side_low_retry_lift_m:=0.0 \
+  side_low_retry_attempts:=0 \
   side_linear_approach_enabled:=true \
   side_final_slide_enabled:=false \
   side_fixed_grasp_z_enabled:=true \
@@ -940,7 +1026,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
   side_project_bbox_center_to_fixed_z:=true \
   side_candidate_plan_check_enabled:=true \
   side_move_to_initial_center_before_close:=false \
-  verify_motion:=true \
+  verify_motion:=false \
   move_to_camera_home:=true \
   move_joint_home_before_camera_home:=false \
   camera_home_mode:=joint \
@@ -988,6 +1074,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
     <div class="log-head">
       <div class="log-title">실행 로그</div>
       <div class="log-tools">
+        <button id="liveLogBtn" title="현재 패널이 띄운 ROS/터미널 프로세스 stdout/stderr tail을 계속 표시">실시간 로그</button>
         <button id="copyLog">복사</button>
         <button id="clearLog">지우기</button>
       </div>
@@ -1100,6 +1187,8 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	    let itemStatuses = new Map();
 	    let isRunning = false;
 	    let nextQueueId = 1;
+      let runningLogTimer = null;
+      let activeLogKeys = new Set();
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -1225,22 +1314,43 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
     }
 
     function needsCollisionScene(key) {
-      return key === "shake_closed_cup"
+      return [
+          "home_robot",
+          "lift_robot",
+          "side_grip_camera_home",
+          "lid_view_pose",
+          "move_to_color_scan_pose",
+          "side_grip",
+          "lid_grip_close",
+          "place_cup_holder",
+          "shake_closed_cup",
+          "run_color_recipe_sequence",
+        ].includes(key)
         || key.startsWith("move_to_dispenser_")
+        || key.startsWith("press_dispenser_")
         || key.startsWith("pick_from_dispenser_");
     }
 
     function withCollisionScenePrereq(queue) {
       const items = queue.map((item) => ({...item}));
-      const sideIndex = items.findIndex((item) => item.key === "side_grip");
-      if (sideIndex >= 0) {
-        const prereqs = ["lift_robot", "start_camera"];
-        for (const prereq of [...prereqs].reverse()) {
-          if (!items.some((item) => item.key === prereq)) {
-            items.splice(sideIndex, 0, {id: `q${nextQueueId++}`, key: prereq, injected: true});
+      function ensureBefore(targetKey, prereqKeys) {
+        let targetIndex = items.findIndex((item) => item.key === targetKey);
+        if (targetIndex < 0) return;
+        for (const prereq of prereqKeys) {
+          const existingIndex = items.findIndex((item) => item.key === prereq);
+          if (existingIndex >= 0) {
+            items.splice(existingIndex, 1);
+            if (existingIndex < targetIndex) targetIndex -= 1;
           }
         }
+        targetIndex = items.findIndex((item) => item.key === targetKey);
+        prereqKeys.forEach((prereq, offset) => {
+          items.splice(targetIndex + offset, 0, {id: `q${nextQueueId++}`, key: prereq, injected: true});
+        });
       }
+      ensureBefore("side_grip", ["start_camera", "side_grip_camera_home"]);
+      ensureBefore("color_scan", ["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera"]);
+      ensureBefore("cup_uprighting", ["connect_robot", "status_check", "start_camera"]);
       if (!items.some((item) => needsCollisionScene(item.key))) return items;
       const withoutScene = items.filter((item) => item.key !== "start_collision_scene");
       return [{id: `q${nextQueueId++}`, key: "start_collision_scene", injected: true}, ...withoutScene];
@@ -1465,6 +1575,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	      isRunning = true;
 	      setStepStatus(key, "running", itemId);
 	      log.textContent = `바로 실행 중: ${step?.label || key}`;
+        startRunningLogPolling([key]);
 	      focusLog();
 	      try {
 	        const body = payload();
@@ -1491,6 +1602,8 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	        log.textContent = String(err);
 	      } finally {
 	        isRunning = false;
+        activeLogKeys = new Set();
+        refreshRunningLogs(true);
 	        updateSelectedCount();
 	      }
 	    }
@@ -1540,6 +1653,50 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	        ? `칵테일 ${dispenserId} 블록 4개를 실행 큐에 추가했습니다. (충돌 장면 시작 포함)`
 	        : `칵테일 ${dispenserId} 블록 추가가 일부 실패했습니다: ${added}/${keys.length}`;
 	    }
+
+    function formatRunningLogs(items) {
+      const active = items.filter((item) => !activeLogKeys.size || activeLogKeys.has(item.key));
+      if (!active.length) return "";
+      return active.map((item) => {
+        const status = item.status || "running";
+        const code = item.returncode === null || item.returncode === undefined ? "" : ` rc=${item.returncode}`;
+        const path = item.log_path ? `\n--- log: ${item.log_path}` : "";
+        const tail = item.tail || "(아직 로그 출력 없음)";
+        return `### ${item.key} pid=${item.pid} ${status}${code}${path}\n${tail}`;
+      }).join("\n\n");
+    }
+
+    async function refreshRunningLogs(force = false) {
+      if (!isRunning && !force && !runningLogTimer) return;
+      try {
+        const res = await fetch(`/api/running_logs?t=${Date.now()}`);
+        const data = await res.json();
+        const items = Array.isArray(data.logs) ? data.logs : [];
+        const body = formatRunningLogs(items);
+        if (body) {
+          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\nstdout/stderr tail을 그대로 표시합니다.\n\n${body}`;
+        } else if (force) {
+          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\n현재 패널이 추적 중인 실행 프로세스 로그가 없습니다.`;
+        }
+      } catch (err) {
+        if (force) log.textContent = String(err);
+      }
+    }
+
+    function startRunningLogPolling(keys = []) {
+      for (const key of keys) activeLogKeys.add(key);
+      if (runningLogTimer) return;
+      runningLogTimer = window.setInterval(() => refreshRunningLogs(false), 1000);
+      refreshRunningLogs(false);
+    }
+
+    function stopRunningLogPolling() {
+      if (runningLogTimer) {
+        window.clearInterval(runningLogTimer);
+        runningLogTimer = null;
+      }
+      activeLogKeys = new Set();
+    }
 
     function focusLog() {
       logPanel.scrollIntoView({behavior: "smooth", block: "nearest"});
@@ -1738,7 +1895,7 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       queueOnly(["connect_gripper"], "그리퍼 연결을 큐에 추가했습니다.");
     });
     document.getElementById("connectCameraBtn")?.addEventListener("click", () => {
-      queueOnly(["start_camera"], "RealSense 카메라 연결을 큐에 추가했습니다.");
+      queueOnly(["start_camera"], "RealSense 카메라 연결을 큐에 추가했습니다. 640x480x30 저부하 프로파일로 시작합니다.");
     });
     document.getElementById("cameraViewBtn")?.addEventListener("click", () => {
       queueOnly(["start_camera_view"], "rqt_image_view 카메라 화면 보기를 큐에 추가했습니다.");
@@ -1746,12 +1903,21 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
     document.getElementById("yoloDetectBtn")?.addEventListener("click", () => {
       queueOnly(["detect_cup_lid"], "YOLO 컵/뚜껑 인식 토픽 시작을 큐에 추가했습니다. 이 스텝은 화면 창을 띄우지 않습니다.");
     });
+    document.getElementById("cupUprightingBtn")?.addEventListener("click", () => {
+      queueOnly(["connect_robot", "status_check", "start_camera", "cup_uprighting"], "소명/누운 컵 직립화 로직을 큐에 추가했습니다. 실제 모션 허용 체크가 필요합니다.");
+    });
     document.getElementById("sideGripBtn")?.addEventListener("click", () => {
-      queueOnly(["connect_robot", "status_check", "connect_gripper", "start_camera", "side_grip"], "창현/PR #20 RealSense side-grip 로직을 큐에 추가했습니다.");
+      queueOnly(["start_camera", "side_grip_camera_home", "side_grip"], "창현/PR #20 RealSense side-grip 로직을 큐에 추가했습니다. 로봇 연결은 현재 세션을 사용하고, 카메라 홈 자세 이동 후 실행합니다.");
+    });
+    document.getElementById("pickLidBtn")?.addEventListener("click", () => {
+      queueOnly(["start_camera", "pick_lid"], "뚜껑 grip pose 계획 로직을 큐에 추가했습니다. 실제 로봇 모션은 실행하지 않습니다.");
+    });
+    document.getElementById("lidGripCloseBtn")?.addEventListener("click", () => {
+      queueOnly(["connect_robot", "status_check", "connect_gripper", "start_camera", "lid_view_pose", "lid_grip_close"], "강개발자 lid_grip_close를 큐에 추가했습니다. 뚜껑 보기 자세→ArUco 14 인식→RG2 파지→컵 위치 이동→J6 twist 닫기 실제모션입니다.");
     });
 
     document.getElementById("colorScanJsonBtn")?.addEventListener("click", () => {
-      queueOnly(["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera", "color_scan"], "로봇 연결 확인 → 디스펜서 카메라 조준 자세 이동 → RealSense → dispenser_color_map.json 저장을 큐에 추가했습니다.");
+      queueOnly(["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera", "color_scan"], "로봇 연결 확인 → 검증된 색상 스캔 자세 이동 → 저부하 RealSense → 1.5초/5프레임 안정화 → 화면의 색상 핸들 직접 검출 → JSON/debug 이미지 저장을 큐에 추가했습니다.");
     });
     document.getElementById("colorJsonCheckBtn")?.addEventListener("click", refreshColorScanResult);
     document.getElementById("manualColorJsonBtn")?.addEventListener("click", saveManualColorMap);
@@ -1761,12 +1927,12 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       queueOnly(["run_color_recipe_sequence"], "레시피 기반 디스펜서 사이클을 큐에 추가했습니다.");
     });
     document.getElementById("cupHolderBtn")?.addEventListener("click", () => {
-      queueOnly(["place_cup_holder"], "컵홀더 배치를 큐에 추가했습니다.");
+      queueOnly(["place_cup_holder"], "컵홀더 배치를 큐에 추가했습니다. 이 단계는 MoveItPy 경로계획으로 pre_place→place_final→RG2 open→retreat를 실행합니다.");
     });
     document.getElementById("fullCocktailRealBtn")?.addEventListener("click", async () => {
       try { await resolveRecipeDispenserIdsFromJsonOrFallback(); }
       catch (err) { log.textContent = String(err); focusLog(); return; }
-      queueOnly(["connect_robot", "status_check", "connect_gripper", "start_camera", "side_grip", "move_to_color_scan_pose", "color_scan", "run_color_recipe_sequence", "place_cup_holder"], "전체 플로우를 큐에 추가했습니다. (컵 side-grip → 색상 JSON → 레시피 사이클 → 컵홀더)", {clear: true});
+      queueOnly(["connect_robot", "status_check", "connect_gripper", "start_camera", "side_grip_camera_home", "side_grip", "move_to_color_scan_pose", "color_scan", "run_color_recipe_sequence", "place_cup_holder"], "전체 플로우를 큐에 추가했습니다. (카메라 홈→컵 side-grip → 검증자세 색상 핸들 JSON → 레시피 사이클 → MoveIt 컵홀더 배치)", {clear: true});
     });
     document.getElementById("oneClickResultBtn")?.addEventListener("click", () => {
       queueOnly(["check_one_click_cocktail_result"], "결과확인을 큐에 추가했습니다.");
@@ -1776,6 +1942,8 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	      const selected = withCollisionScenePrereq(selectedQueue);
 	      resetResultBadges();
 	      isRunning = Boolean(selected.length);
+      activeLogKeys = new Set(selected.map((item) => item.key));
+      if (isRunning) startRunningLogPolling();
 	      renderFlow(selected[0]?.id || "");
 	      log.textContent = selected.length ? `실행 중... (${selected.length}개 단계, 큐 순서대로 실행)` : "선택된 단계가 없습니다.";
 	      focusLog();
@@ -1785,7 +1953,8 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	        for (const [index, item] of selected.entries()) {
 	          setStepStatus(item.key, "running", item.id);
 	          renderFlow(item.id);
-	          log.textContent = `실행 중 ${index + 1}/${selected.length}: ${stepByKey(item.key)?.label || item.key}`;
+	          log.textContent = `실행 중 ${index + 1}/${selected.length}: ${stepByKey(item.key)?.label || item.key}\n로그를 불러오는 중...`;
+          refreshRunningLogs(false);
 	          const body = payload();
 	          body.selected = [item.key];
 	          const res = await fetch("/api/run", {
@@ -1822,12 +1991,15 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
 	        log.textContent = String(err);
 	      } finally {
 	        isRunning = false;
+        activeLogKeys = new Set();
+        refreshRunningLogs(true);
 	        updateSelectedCount();
 	      }
 	    });
 
     document.getElementById("stop").addEventListener("click", async () => {
       focusLog();
+      stopRunningLogPolling();
       const res = await fetch("/api/stop", {method: "POST"});
       log.textContent = JSON.stringify(await res.json(), null, 2);
     });
@@ -1836,6 +2008,12 @@ ros2 launch /home/ssu/Azas/install/dsr_practice/share/dsr_practice/launch/yolo_c
       log.textContent = "프로세스 정리 중...";
       const res = await fetch("/api/cleanup", {method: "POST"});
       log.textContent = JSON.stringify(await res.json(), null, 2);
+    });
+    document.getElementById("liveLogBtn")?.addEventListener("click", () => {
+      activeLogKeys = new Set();
+      startRunningLogPolling();
+      refreshRunningLogs(true);
+      focusLog();
     });
     document.getElementById("clearLog").addEventListener("click", () => { log.textContent = ""; });
     document.getElementById("commandModalClose").addEventListener("click", closeCommandModal);

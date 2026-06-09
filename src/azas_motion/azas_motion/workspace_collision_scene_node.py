@@ -9,6 +9,7 @@ import rclpy
 import yaml
 from geometry_msgs.msg import Pose
 from moveit_msgs.msg import CollisionObject
+from visualization_msgs.msg import Marker, MarkerArray
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -139,6 +140,9 @@ class WorkspaceCollisionSceneNode(Node):
         self.workspace_bounds_m = self._load_safety_workspace_bounds(safety_config_path)
         self.collision_pub = self.create_publisher(
             CollisionObject, "/collision_object", transient_qos(10)
+        )
+        self.marker_pub = self.create_publisher(
+            MarkerArray, "/azas/workspace_collision/markers", transient_qos(10)
         )
 
         self._publish_scene()
@@ -278,7 +282,73 @@ class WorkspaceCollisionSceneNode(Node):
             ),
         ]
 
+
+    def _make_box_marker(
+        self,
+        marker_id: int,
+        object_id: str,
+        center_xyz: list[float],
+        size_xyz: list[float],
+        color_rgba: tuple[float, float, float, float],
+    ) -> Marker:
+        marker = Marker()
+        marker.header.frame_id = self.frame_id
+        marker.ns = "azas_workspace_collision"
+        marker.id = marker_id
+        marker.type = Marker.CUBE
+        marker.action = Marker.ADD
+        marker.pose.position.x = float(center_xyz[0])
+        marker.pose.position.y = float(center_xyz[1])
+        marker.pose.position.z = float(center_xyz[2])
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = float(size_xyz[0])
+        marker.scale.y = float(size_xyz[1])
+        marker.scale.z = float(size_xyz[2])
+        marker.color.r = float(color_rgba[0])
+        marker.color.g = float(color_rgba[1])
+        marker.color.b = float(color_rgba[2])
+        marker.color.a = float(color_rgba[3])
+        marker.text = object_id
+        return marker
+
+    def _make_workspace_markers(self) -> MarkerArray:
+        markers = MarkerArray()
+        marker_id = 0
+        table = self._table_collision_object()
+        if table is not None and table.primitives and table.primitive_poses:
+            primitive = table.primitives[0]
+            pose = table.primitive_poses[0]
+            markers.markers.append(
+                self._make_box_marker(
+                    marker_id,
+                    table.id,
+                    [pose.position.x, pose.position.y, pose.position.z],
+                    list(primitive.dimensions),
+                    (0.05, 0.70, 0.20, 0.35),
+                )
+            )
+            marker_id += 1
+
+        for collision_object in self._workspace_wall_collision_objects():
+            if not collision_object.primitives or not collision_object.primitive_poses:
+                continue
+            primitive = collision_object.primitives[0]
+            pose = collision_object.primitive_poses[0]
+            markers.markers.append(
+                self._make_box_marker(
+                    marker_id,
+                    collision_object.id,
+                    [pose.position.x, pose.position.y, pose.position.z],
+                    list(primitive.dimensions),
+                    (0.10, 0.45, 1.00, 0.28),
+                )
+            )
+            marker_id += 1
+        return markers
+
     def _publish_scene(self) -> None:
+        self.marker_pub.publish(self._make_workspace_markers())
+
         if not self.publish_collision_objects:
             return
 

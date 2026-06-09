@@ -41,7 +41,8 @@ DISPENSER_COLLISION_ENABLED="${DISPENSER_COLLISION_ENABLED:-1}"
 # MoveIt collision checking for the press stroke unless explicitly requested.
 DISPENSER_COLLISION_OBJECTS="${DISPENSER_COLLISION_OBJECTS:-1}"
 DISPENSER_COLLISION_EXCLUDE_IDS="${DISPENSER_COLLISION_EXCLUDE_IDS:-dispenser_head_nozzle_merged_horizontal_spout_box}"
-REMOVE_COURSE_WORKSPACE_WALLS="${REMOVE_COURSE_WORKSPACE_WALLS:-1}"
+REMOVE_COURSE_WORKSPACE_WALLS="${REMOVE_COURSE_WORKSPACE_WALLS:-0}"
+WORKSPACE_COLLISION_ENABLED="${WORKSPACE_COLLISION_ENABLED:-1}"
 SHOW_LINK6_GRIPPER="${SHOW_LINK6_GRIPPER:-1}"
 DISPENSER_COLLISION_CONFIG="${DISPENSER_COLLISION_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/measured_dispenser_collision.yaml}"
 if [[ ! -f "${DISPENSER_COLLISION_CONFIG}" ]]; then
@@ -188,6 +189,26 @@ else
   sleep "${CONTROLLER_SETTLE_SEC}"
 fi
 
+if [[ "${WORKSPACE_COLLISION_ENABLED}" == "1" || "${WORKSPACE_COLLISION_ENABLED}" == "true" ]]; then
+  ros2 launch azas_bringup workspace_collision_scene.launch.py \
+    publish_period_sec:=1.0 \
+    publish_collision_objects:=true \
+    table_collision_enabled:=true \
+    workspace_boundary_collision_enabled:=true \
+    dispenser_collision_enabled:=false \
+    >"${LOG_DIR}/workspace_collision_scene.log" 2>&1 &
+  PIDS+=("$!")
+  echo "[Azas] WORKSPACE_COLLISION_ENABLED=${WORKSPACE_COLLISION_ENABLED}: publishing floor/table + side safety walls on /collision_object and /azas/workspace_collision/markers."
+  sleep 2
+  timeout 8 ros2 topic echo /azas/workspace_collision/markers >"${LOG_DIR}/workspace_collision_markers.txt" 2>/dev/null || true
+  if grep -q 'side_grip_workspace_.*_wall\|side_grip_table' "${LOG_DIR}/workspace_collision_markers.txt"; then
+    echo '[Azas] Published workspace safety markers: floor/table + side walls.'
+  else
+    echo '[Azas] Warning: workspace safety marker sample did not capture table/walls yet.' >&2
+    tail -80 "${LOG_DIR}/workspace_collision_scene.log" >&2 || true
+  fi
+fi
+
 if [[ "${DISPENSER_COLLISION_ENABLED}" == "1" || "${DISPENSER_COLLISION_ENABLED}" == "true" ]]; then
   if [[ "${DISPENSER_COLLISION_OBJECTS}" == "1" || "${DISPENSER_COLLISION_OBJECTS}" == "true" ]]; then
     DISPENSER_COLLISION_OBJECTS_BOOL=true
@@ -213,7 +234,7 @@ if [[ "${DISPENSER_COLLISION_ENABLED}" == "1" || "${DISPENSER_COLLISION_ENABLED}
   echo "[Azas] Dispenser combined box represents bottle/body only; press pre/contact is derived from press_contact_joints_deg FK, not from this box."
   echo "[Azas] DISPENSER_COLLISION_OBJECTS=${DISPENSER_COLLISION_OBJECTS} (1=add to MoveIt collision scene, 0=RViz markers only)."
   echo "[Azas] DISPENSER_COLLISION_EXCLUDE_IDS=${DISPENSER_COLLISION_EXCLUDE_IDS} (marker-only IDs; not used to block press-contact planning)."
-  echo "[Azas] REMOVE_COURSE_WORKSPACE_WALLS=${REMOVE_COURSE_WORKSPACE_WALLS} (1=remove stale side_grip_workspace_* walls that can collide with link_2 in this course path)."
+  echo "[Azas] REMOVE_COURSE_WORKSPACE_WALLS=${REMOVE_COURSE_WORKSPACE_WALLS} (0=keep safety walls visible/active; 1=remove only if a legacy path is blocked)."
   sleep 2
   if [[ "${DISPENSER_COLLISION_OBJECTS}" == "1" || "${DISPENSER_COLLISION_OBJECTS}" == "true" ]]; then
     timeout 8 ros2 topic echo /collision_object >"${LOG_DIR}/collision_object_samples.txt" 2>/dev/null || true

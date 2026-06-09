@@ -146,3 +146,19 @@ ros2 launch azas_bringup lid_sticker_grip_planning.launch.py \
 
 Press `p` only after the preview shows a stable `detected:lid` overlay and
 `/jarvis/lid_gripper/lid_pose` is publishing in `base_link`.
+
+### 강개발자 컵 뚜껑 잡고 닫기 preset
+
+The operator panel exposes this as `lid_grip_close` / **뚜껑 잡고 닫기**. It is a real-motion, supervised preset for the field-taught lid close sequence supplied on 2026-06-08:
+
+- requires Robot, RealSense, and RG2 service sessions to be up on the same `ROS_DOMAIN_ID`,
+- starts `lid_sticker_grip_planning.launch.py` with ArUco marker id `14`, 30 mm marker length, visual refine, RG2 preopen/grasp widths, and hardware gates enabled,
+- waits for the preview `p` trigger before motion,
+- performs lid grasp/lift, transfers to the measured twist target, runs the pre-seat periodic tool motion, then closes by stepped J6 rotation.
+
+Safety assumptions for this preset:
+
+- The `lid_twist_target_*` and `lid_twist_r*` values are operator-supplied teach-point values, not generated calibration.
+- The preset keeps the existing explicit hardware gate: `hardware_confirm:=ENABLE_REAL_ROBOT_MOTION` plus panel real-motion arming.
+- Speed limits remain conservative for the press/transfer path (`press_velocity=5`, `transfer_velocity=25`, `turn_velocity=30`, `acceleration=15`).
+- Failure behavior is fail-closed before motion if required Doosan/RG2 services are absent, if no base-link lid pose exists, if IK precheck fails, if visual refinement exceeds stability thresholds, or if post-motion verification fails.
