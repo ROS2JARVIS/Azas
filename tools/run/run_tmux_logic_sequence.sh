@@ -156,10 +156,10 @@ run_side_grip() {
       side_short_stage_backoff_m:=0.08 side_grasp_stop_backoff_m:=0.04 side_close_underreach_m:=0.03 \
       side_low_retry_lift_m:=0.0 side_low_retry_attempts:=0 \
       side_linear_approach_enabled:=true side_final_slide_enabled:=false \
-      side_fixed_grasp_z_enabled:=true side_fixed_grasp_z:=0.07 side_project_bbox_center_to_fixed_z:=true \
+      side_fixed_grasp_z_enabled:=false side_grasp_z_offset:=0.05 side_project_bbox_center_to_fixed_z:=false \
       side_candidate_plan_check_enabled:=true pre_pick_joint1_clearance_deg:=12.0 \
       side_move_to_initial_center_before_close:=false verify_motion:=false \
-      move_to_camera_home:=true move_joint_home_before_camera_home:=false camera_home_mode:=joint min_motion_z:=0.07 \
+      move_to_camera_home:=true move_joint_home_before_camera_home:=false camera_home_mode:=joint min_motion_z:=0.10 \
       workspace_xy_clamp_enabled:=false return_home_after_task:=false return_to_camera_home_after_attempt:=true \
       workspace_collision_scene_enabled:=true table_collision_enabled:=true table_surface_z:=0.0 table_thickness:=0.04 \
       table_size_x:=1.10 table_size_y:=0.65 table_center_x:=0.29 table_center_y:=0.0 table_collision_expand_to_workspace_walls:=true \

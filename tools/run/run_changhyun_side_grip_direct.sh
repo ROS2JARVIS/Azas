@@ -37,10 +37,21 @@ echo "[Azas] START Changhyun side-grip direct tmux command"
 echo "[Azas] OpenCV window: confirm cup, then press p. Quit with q/Esc."
 echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
 echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}"
-echo "[Azas] start_joint_state_relay=${START_JOINT_STATE_RELAY:-false}"
+echo "[Azas] start_joint_state_relay=${START_JOINT_STATE_RELAY:-auto}"
 echo "[Azas] moving to side-grip camera scan pose before starting YOLO"
 
 trap 'jobs -pr | xargs -r kill >/dev/null 2>&1 || true' EXIT
+
+robot_state_output="$(
+  python3 "${ROOT}/tools/run/ros_call_empty_service.py" \
+    /"${SERVICE_PREFIX}"/system/get_robot_state dsr_msgs2/srv/GetRobotState \
+    --timeout 5.0 2>&1 || true
+)"
+echo "${robot_state_output}"
+if ! grep -q "robot_state=1" <<<"${robot_state_output}"; then
+  echo "[Azas] BLOCKED: robot_state is not STANDBY(1); side-grip motion not started."
+  exit 2
+fi
 
 python3 "${ROOT}/tools/run/direct_movej_joints.py" \
   --service-prefix "${SERVICE_PREFIX}" \
@@ -65,7 +76,17 @@ ros2 run azas_perception hand_eye_static_tf_node \
 # field tmux workflow.
 ros2 run azas_motion link6_gripper_collision_node &
 
-if [[ "${START_JOINT_STATE_RELAY:-false}" == "true" ]]; then
+should_start_relay=false
+if [[ "${START_JOINT_STATE_RELAY:-auto}" == "true" ]]; then
+  should_start_relay=true
+elif [[ "${START_JOINT_STATE_RELAY:-auto}" == "auto" ]]; then
+  if ! timeout 2s ros2 topic echo /joint_states --once >/dev/null 2>&1; then
+    echo "[Azas] /joint_states sample missing; starting side-grip local relay"
+    should_start_relay=true
+  fi
+fi
+
+if [[ "${should_start_relay}" == "true" ]]; then
   (
     sleep 5
     python3 "${ROOT}/src/dsr_practice/dsr_practice/joint_state_relay.py" \
@@ -85,10 +106,10 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   side_short_stage_backoff_m:=0.08 side_grasp_stop_backoff_m:=0.04 side_close_underreach_m:=0.03 \
   side_low_retry_lift_m:=0.0 side_low_retry_attempts:=0 \
   side_linear_approach_enabled:=true side_final_slide_enabled:=false \
-  side_fixed_grasp_z_enabled:=true side_fixed_grasp_z:=0.07 side_project_bbox_center_to_fixed_z:=true \
+  side_fixed_grasp_z_enabled:=false side_grasp_z_offset:=0.05 side_project_bbox_center_to_fixed_z:=false \
   side_candidate_plan_check_enabled:=true pre_pick_joint1_clearance_deg:=12.0 \
   side_move_to_initial_center_before_close:=false verify_motion:=false \
-  skip_initial_home_move:=true move_to_camera_home:=false move_joint_home_before_camera_home:=false camera_home_mode:=joint min_motion_z:=0.07 \
+  skip_initial_home_move:=true move_to_camera_home:=false move_joint_home_before_camera_home:=false camera_home_mode:=joint min_motion_z:=0.10 \
   workspace_xy_clamp_enabled:=false return_home_after_task:=false return_to_camera_home_after_attempt:=true \
   workspace_collision_scene_enabled:=false table_collision_enabled:=true table_surface_z:=0.0 table_thickness:=0.04 \
   table_size_x:=1.10 table_size_y:=0.65 table_center_x:=0.29 table_center_y:=0.0 table_collision_expand_to_workspace_walls:=true \
