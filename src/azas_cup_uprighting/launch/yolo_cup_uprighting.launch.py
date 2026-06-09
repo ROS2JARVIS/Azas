@@ -1,8 +1,10 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
 
@@ -27,6 +29,30 @@ def generate_launch_description():
     moveit_py_params = PathJoinSubstitution(
         [FindPackageShare("azas_cup_uprighting"), "config", "moveit_py.yaml"]
     )
+    model_path_arg = DeclareLaunchArgument(
+        "model_path",
+        default_value=PathJoinSubstitution([
+            FindPackageShare("azas_perception"),
+            "config",
+            "yolo_cup_uprighting_best.pt",
+        ]),
+        description="YOLO weights for cup uprighting.",
+    )
+    publish_hand_eye_tf_arg = DeclareLaunchArgument(
+        "publish_hand_eye_tf",
+        default_value="true",
+        description="Publish measured base_link -> camera_color_optical_frame TF.",
+    )
+    auto_pick_arg = DeclareLaunchArgument(
+        "auto_pick",
+        default_value="false",
+        description="Automatically run the first detected fallen-cup upright sequence. false keeps manual p-key confirmation.",
+    )
+    skip_initial_home_move_arg = DeclareLaunchArgument(
+        "skip_initial_home_move",
+        default_value="false",
+        description="Use the current robot pose as the camera observation pose without commanding Home first.",
+    )
 
     # 3. 공통 안전/충돌 장면: side-grip, dispenser, cup-uprighting이 같은 바닥/벽/디스펜서 기준을 보도록 통일
     workspace_collision_scene = IncludeLaunchDescription(
@@ -48,6 +74,35 @@ def generate_launch_description():
         }.items(),
     )
 
+    world_base_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="cup_uprighting_world_base_tf",
+        output="screen",
+        arguments=[
+            "--x", "0",
+            "--y", "0",
+            "--z", "0",
+            "--yaw", "0",
+            "--pitch", "0",
+            "--roll", "0",
+            "--frame-id", "world",
+            "--child-frame-id", "base_link",
+        ],
+    )
+
+    hand_eye_tf = Node(
+        package="azas_perception",
+        executable="hand_eye_static_tf_node",
+        name="cup_uprighting_hand_eye_static_tf_node",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("publish_hand_eye_tf")),
+        parameters=[{
+            "compose_timeout_sec": 30.0,
+            "allow_direct_fallback": False,
+        }],
+    )
+
     # 4. 컵 직립화(Uprighting) 노드 실행 및 파라미터 주입
     yolo_cup_uprighting_node = Node(
         package="azas_cup_uprighting",
@@ -57,7 +112,24 @@ def generate_launch_description():
         parameters=[
             moveit_config.to_dict(),
             moveit_py_params,
+            {
+                "model_path": ParameterValue(
+                    LaunchConfiguration("model_path"),
+                    value_type=str,
+                ),
+                "auto_pick": LaunchConfiguration("auto_pick"),
+                "skip_initial_home_move": LaunchConfiguration("skip_initial_home_move"),
+            },
         ],
     )
 
-    return LaunchDescription([workspace_collision_scene, yolo_cup_uprighting_node])
+    return LaunchDescription([
+        model_path_arg,
+        publish_hand_eye_tf_arg,
+        auto_pick_arg,
+        skip_initial_home_move_arg,
+        workspace_collision_scene,
+        world_base_tf,
+        hand_eye_tf,
+        yolo_cup_uprighting_node,
+    ])

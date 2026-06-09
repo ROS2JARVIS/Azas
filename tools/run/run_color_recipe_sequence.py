@@ -48,17 +48,40 @@ def color_to_dispenser_id(color: str, color_map: dict[str, str]) -> str | None:
 
 
 def parse_colors_arg(raw: str) -> list[tuple[str, int]]:
-    """'red:2,blue:1' → [('red', 2), ('blue', 1)]."""
-    result = []
-    for part in raw.split(","):
-        part = part.strip()
-        if not part:
+    """Parse color pump input.
+
+    Accepted forms:
+      red:2,blue:1
+      redx2,bluex1
+      red2,blue1
+      red,blue
+    """
+    result: list[tuple[str, int]] = []
+    for part in raw.replace(";", ",").split(","):
+        item = part.strip().lower()
+        if not item:
             continue
-        if ":" in part:
-            c, n = part.split(":", 1)
-            result.append((c.strip().lower(), int(n.strip())))
+        if ":" in item:
+            color, count_raw = item.split(":", 1)
+        elif "x" in item:
+            color, count_raw = item.split("x", 1)
         else:
-            result.append((part.lower(), 1))
+            match = __import__("re").match(r"^([a-zA-Z가-힣_ -]+?)(\d+)?$", item)
+            if not match:
+                raise ValueError(f"invalid color token: {part!r}")
+            color, count_raw = match.group(1), match.group(2) or "1"
+        color = color.strip().lower()
+        if not color:
+            raise ValueError(f"empty color in token: {part!r}")
+        try:
+            count = int(str(count_raw).strip())
+        except ValueError as exc:
+            raise ValueError(f"invalid count for color {color}: {count_raw!r}") from exc
+        if count < 1:
+            raise ValueError(f"count must be >= 1 for color {color}")
+        result.append((color, count))
+    if not result:
+        raise ValueError("color input is empty")
     return result
 
 
@@ -99,7 +122,7 @@ def parse_direct_dispenser_sequence(raw: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--colors", default="",
-                        help="직접 색깔 지정: 'red:2,blue:1' (생략 시 latest_recipe.json 사용)")
+                        help="직접 색깔 지정: 'red:2,blue:1', 'redx2,bluex1', 'red2,blue1' (생략 시 latest_recipe.json 사용)")
     parser.add_argument("--dispenser-ids", default="",
                         help="직접 물리 디스펜서 지정: '1,2,2,3' 또는 '1x1,2x2,3x1'")
     parser.add_argument("--confirm", action="store_true",
@@ -136,6 +159,8 @@ def main() -> int:
         "--wait-service-sec", str(args.wait_service_sec),
         "--pose-read-retries", str(args.pose_read_retries),
         "--pose-read-retry-sleep-sec", str(args.pose_read_retry_sleep_sec),
+        "--safe-lift-joint-fallback",
+        "--no-integrated-regrasp-fallback-subprocess",
     ]
 
     direct_dispenser_ids = args.dispenser_ids.strip()
@@ -177,7 +202,11 @@ def main() -> int:
 
     # 색깔+펌프 수 결정
     if args.colors:
-        color_pumps = parse_colors_arg(args.colors)
+        try:
+            color_pumps = parse_colors_arg(args.colors)
+        except ValueError as exc:
+            print(f"[run_color_recipe] 잘못된 색상 입력: {exc}", file=sys.stderr)
+            return 1
     else:
         if not RECIPE_PATH.exists():
             print(f"[run_color_recipe] 레시피 없음: {RECIPE_PATH}", file=sys.stderr)

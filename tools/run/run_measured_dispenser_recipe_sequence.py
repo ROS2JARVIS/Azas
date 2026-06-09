@@ -454,6 +454,23 @@ class IntegratedRecipeMotion:
             )
             self.move_front_hold_joint_fallback(pos, label=label)
 
+    def move_posx_joint_fallback(
+        self,
+        posx_mm_deg: list[float],
+        *,
+        label: str,
+        velocity: float,
+        acceleration: float,
+    ) -> None:
+        joints_deg = self.ikin_posj(posx_mm_deg, label=f"{label} IK joint fallback")
+        self.movej(
+            joints_deg,
+            label=f"{label} IK MoveJoint fallback",
+            velocity=velocity,
+            acceleration=acceleration,
+        )
+        self.wait_for_target(posx_mm_deg, label=f"{label} IK MoveJoint fallback posx")
+
     def move_front_hold_joint_fallback(self, posx_mm_deg: list[float], *, label: str) -> None:
         joints_deg = self.ikin_posj(posx_mm_deg, label=f"{label} IK joint fallback")
         self.movej(
@@ -482,13 +499,27 @@ class IntegratedRecipeMotion:
             )
             return
         target = [pose[0], pose[1], target_z_mm, pose[3], pose[4], pose[5]]
-        self.move_posx(
-            target,
-            label=label,
-            velocity=velocity,
-            acceleration=acceleration,
-            timeout_sec=timeout_sec,
-        )
+        try:
+            self.move_posx(
+                target,
+                label=label,
+                velocity=velocity,
+                acceleration=acceleration,
+                timeout_sec=timeout_sec,
+            )
+        except RuntimeError as exc:
+            if not self.args.safe_lift_joint_fallback:
+                raise
+            print(
+                f"[WARN] MoveLine safe lift failed for {label}: {exc}; "
+                "retrying the same high-Z target with IK MoveJoint fallback"
+            )
+            self.move_posx_joint_fallback(
+                target,
+                label=label,
+                velocity=self.args.safe_lift_joint_fallback_velocity,
+                acceleration=self.args.safe_lift_joint_fallback_acceleration,
+            )
 
     def move_posx(
         self,
@@ -1442,6 +1473,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--front-hold-joint-fallback-velocity", type=float, default=30.0)
     parser.add_argument("--front-hold-joint-fallback-acceleration", type=float, default=40.0)
+    parser.add_argument(
+        "--safe-lift-joint-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When the post-press vertical MoveLine to safe transit Z stalls in a singularity, "
+            "retry the same live-TCP-derived high-Z target with IK MoveJoint before failing."
+        ),
+    )
+    parser.add_argument("--safe-lift-joint-fallback-velocity", type=float, default=30.0)
+    parser.add_argument("--safe-lift-joint-fallback-acceleration", type=float, default=40.0)
     parser.add_argument("--gripper-service", default="/jarvis/rg2/set_width")
     parser.add_argument("--gripper-open-width-m", type=float, default=0.110)
     parser.add_argument("--gripper-open-force-n", type=float, default=12.0)
@@ -1472,11 +1514,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--integrated-regrasp-fallback-subprocess",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "If the persistent integrated re-grasp/lift stalls verification, retry once "
-            "with the legacy pick_from_measured_dispenser_front_hold helper instead of "
-            "ending the recipe at the first target timeout."
+            "with the legacy pick_from_measured_dispenser_front_hold helper. Default false "
+            "because that helper uses Cartesian front-hold entry and can reproduce the "
+            "post-press singularity/low direct approach."
         ),
     )
     parser.add_argument("--execute", action="store_true")

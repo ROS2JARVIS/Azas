@@ -209,6 +209,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("target_class", "cup")
         self.declare_parameter("auto_pick", False)
         self.declare_parameter("auto_pick_interval", 3.0)
+        self.declare_parameter("exit_after_pick", False)
         self.declare_parameter("depth_patch_radius", 7)
         self.declare_parameter("min_depth_valid_ratio", 0.03)
         self.declare_parameter("min_depth_m", 0.15)
@@ -347,6 +348,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("motion_verify_tolerance", 0.01)
         self.declare_parameter("joint_goal_tolerance_rad", 0.02)
         self.declare_parameter("min_motion_delta_m", 0.005)
+        self.declare_parameter("skip_initial_home_move", False)
         self.declare_parameter("move_to_camera_home", True)
         self.declare_parameter("move_joint_home_before_camera_home", False)
         self.declare_parameter("camera_home_mode", "joint")
@@ -374,6 +376,7 @@ class YoloCupPickNode(Node):
         self.target_class = self.get_parameter("target_class").value
         self.auto_pick = parse_bool(self.get_parameter("auto_pick").value)
         self.auto_pick_interval = float(self.get_parameter("auto_pick_interval").value)
+        self.exit_after_pick = parse_bool(self.get_parameter("exit_after_pick").value)
         self.depth_patch_radius = int(self.get_parameter("depth_patch_radius").value)
         self.min_depth_valid_ratio = float(
             self.get_parameter("min_depth_valid_ratio").value
@@ -550,6 +553,9 @@ class YoloCupPickNode(Node):
         )
         self.min_motion_delta_m = max(
             0.0, float(self.get_parameter("min_motion_delta_m").value)
+        )
+        self.skip_initial_home_move = parse_bool(
+            self.get_parameter("skip_initial_home_move").value
         )
         self.move_to_camera_home = parse_bool(
             self.get_parameter("move_to_camera_home").value
@@ -2236,7 +2242,14 @@ class YoloCupPickNode(Node):
 
     def run(self):
         log = self.get_logger()
-        if self.move_to_camera_home:
+        if self.skip_initial_home_move:
+            log.info("Skip initial home move; using current robot pose as camera home")
+            try:
+                transform = get_ee_matrix(self.robot)
+                self.update_home_orientation_from_matrix(transform)
+            except Exception as exc:
+                log.warning(f"Could not read current EE orientation before scan: {exc}")
+        elif self.move_to_camera_home:
             if self.move_joint_home_before_camera_home:
                 log.info("Move JOINT HOME before high camera home")
                 if not self.move_joint_home():
@@ -2259,6 +2272,9 @@ class YoloCupPickNode(Node):
 
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.01)
+            if self.exit_after_pick and self.has_picked_once and not self.picking:
+                log.info("exit_after_pick=true and one pick completed; closing side_grip node")
+                break
             if self.color_image is None:
                 continue
 

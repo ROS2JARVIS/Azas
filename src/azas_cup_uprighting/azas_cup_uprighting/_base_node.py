@@ -18,6 +18,7 @@
   - _handle_key_extra(key)        — 추가 키 (e.g. 's' for box scan)
 """
 
+import os
 import threading
 import time
 
@@ -46,6 +47,14 @@ except ImportError as e:
     raise ImportError("pip install ultralytics") from e
 
 
+def _parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 class BaseMoveItPickNode(Node):
     """MoveIt + RealSense + YOLO + RG2 그리퍼 통합 베이스."""
 
@@ -64,10 +73,15 @@ class BaseMoveItPickNode(Node):
         self.intrinsics  = None
 
         # ── 픽 상태 ──
+        self.declare_parameter("auto_pick", False)
+        self.declare_parameter("skip_initial_home_move", False)
         self.picking = False
         self.home_xyz = None     # (x, y, z) [m] — initialize_home 에서 설정
         self.home_ori = None     # quat dict {x, y, z, w}
-        self._auto_mode = False
+        self._auto_mode = _parse_bool(self.get_parameter("auto_pick").value)
+        self._skip_initial_home_move = _parse_bool(
+            self.get_parameter("skip_initial_home_move").value
+        )
         self._last_pick_time = 0.0
         self._detections: list[dict] = []
         self._frozen_frame = None
@@ -92,8 +106,16 @@ class BaseMoveItPickNode(Node):
             "pilz_industrial_motion_planner", "PTP", vel=0.15, acc=0.1, time=2.0)
 
         # ── YOLO ──
-        log.info(f"YOLO 모델 로드: {cfg.YOLO_MODEL_PATH}")
-        self.yolo = YOLO(cfg.YOLO_MODEL_PATH)
+        self.declare_parameter("model_path", cfg.YOLO_MODEL_PATH)
+        self.model_path = str(self.get_parameter("model_path").value).strip()
+        self.model_path = os.path.expanduser(self.model_path)
+        log.info(f"YOLO 모델 로드: {self.model_path}")
+        if not os.path.isfile(self.model_path):
+            raise FileNotFoundError(
+                f"YOLO model_path does not exist: {self.model_path}. "
+                "Set model_path:=... or AZAS_CUP_UPRIGHTING_MODEL_PATH."
+            )
+        self.yolo = YOLO(self.model_path)
         log.info("YOLO 모델 로드 완료")
 
         # ── 카메라 구독 ──
@@ -287,6 +309,22 @@ class BaseMoveItPickNode(Node):
     # ════════════════════════════════════════════
     def initialize_home(self) -> bool:
         log = self.get_logger()
+        if self._skip_initial_home_move:
+            log.info("[Init] Home 이동 생략: 현재 로봇 자세를 관찰 시작 자세로 사용")
+            T = get_ee_matrix(self.robot)
+            self.home_xyz = (T[0, 3], T[1, 3], T[2, 3])
+            qx, qy, qz, qw = Rotation.from_matrix(T[:3, :3]).as_quat()
+            self.home_ori = {
+                "x": float(qx),
+                "y": float(qy),
+                "z": float(qz),
+                "w": float(qw),
+            }
+            log.info(f"[Init] Current = ({T[0,3]:.3f}, {T[1,3]:.3f}, {T[2,3]:.3f}) m")
+            self.gripper.open_gripper()
+            time.sleep(1.0)
+            return True
+
         log.info("[Init] Home 이동")
         if not self.go_home_pose():
             log.error("Home 실패")

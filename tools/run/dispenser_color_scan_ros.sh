@@ -21,8 +21,13 @@ source_setup() {
 source_setup /opt/ros/humble/setup.bash
 source_setup "$ROOT/install/local_setup.bash"
 
+mkdir -p "$ROOT/outputs"
+# Fail closed against stale UI results: a new scan must create a new JSON.
+rm -f "$ROOT/outputs/dispenser_color_map.json" "$ROOT/outputs/dispenser_color_map.json.failed"
+
+PYTHONUNBUFFERED=1 timeout "${AZAS_COLOR_SCAN_TIMEOUT_SEC:-18s}" \
 python3 "$ROOT/tools/perception/dispenser_color_scan.py" --ros \
-    --settle-sec "${AZAS_COLOR_SCAN_SETTLE_SEC:-1.5}" \
-    --sample-frames "${AZAS_COLOR_SCAN_SAMPLE_FRAMES:-5}" \
+    --settle-sec "${AZAS_COLOR_SCAN_SETTLE_SEC:-0.6}" \
+    --sample-frames "${AZAS_COLOR_SCAN_SAMPLE_FRAMES:-3}" \
     --debug-image "$ROOT/outputs/dispenser_color_scan_debug.jpg" \
     --output "$ROOT/outputs/dispenser_color_map.json"

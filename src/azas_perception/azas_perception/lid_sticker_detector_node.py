@@ -112,8 +112,9 @@ class LidStickerDetectorNode(Node):
         self.declare_parameter("red_min_saturation", 80)
         self.declare_parameter("red_min_value", 40)
         self.declare_parameter("red_morph_kernel_px", 3)
-        self.declare_parameter("aruco_dictionary", "DICT_4X4_50")
-        self.declare_parameter("aruco_marker_id", -1)
+        self.declare_parameter("aruco_dictionary", "DICT_6X6_250")
+        self.declare_parameter("aruco_marker_id", 0)
+        self.declare_parameter("aruco_fallback_markers", "DICT_4X4_50:14")
         self.declare_parameter("aruco_marker_length_m", 0.03)
         self.declare_parameter("use_aruco_axis_for_orientation", True)
         self.declare_parameter("aruco_finger_axis_quarter_turns", 1)
@@ -383,12 +384,23 @@ class LidStickerDetectorNode(Node):
     def _detect_marker(self, image: np.ndarray, marker_roi: ImageRoi) -> ArucoMarker | RedCircle | None:
         marker_type = self._marker_type()
         if marker_type == "aruco":
-            return detect_aruco_marker(
-                image,
-                marker_roi,
-                dictionary_name=str(self.get_parameter("aruco_dictionary").value),
-                marker_id=int(self.get_parameter("aruco_marker_id").value),
-            )
+            for dictionary_name, marker_id in self._aruco_marker_candidates():
+                marker = detect_aruco_marker(
+                    image,
+                    marker_roi,
+                    dictionary_name=dictionary_name,
+                    marker_id=marker_id,
+                )
+                if marker is not None:
+                    if (
+                        dictionary_name != str(self.get_parameter("aruco_dictionary").value)
+                        or marker_id != int(self.get_parameter("aruco_marker_id").value)
+                    ):
+                        self.get_logger().info(
+                            f"Detected fallback ArUco marker dictionary={dictionary_name} id={marker_id}"
+                        )
+                    return marker
+            return None
         if marker_type == "red":
             marker = detect_red_circle_marker(image, marker_roi, self._red_circle_config())
             if marker is not None:
@@ -402,6 +414,40 @@ class LidStickerDetectorNode(Node):
                     circularity=0.0,
                 )
         return None
+
+    def _aruco_marker_candidates(self) -> list[tuple[str, int]]:
+        """Primary configured ArUco marker followed by explicit fallbacks.
+
+        The lab has used both IsaacSim-style DICT_6X6_250/id0 and the earlier
+        lid-closing setup DICT_4X4_50/id14.  Try only configured pairs so the
+        detector remains strict and does not accept arbitrary table markers.
+        """
+        primary = (
+            str(self.get_parameter("aruco_dictionary").value).strip() or "DICT_6X6_250",
+            int(self.get_parameter("aruco_marker_id").value),
+        )
+        candidates: list[tuple[str, int]] = [primary]
+        raw = str(self.get_parameter("aruco_fallback_markers").value or "").strip()
+        for item in raw.replace(";", ",").split(","):
+            token = item.strip()
+            if not token:
+                continue
+            if ":" in token:
+                dictionary_name, marker_id_text = token.rsplit(":", 1)
+            elif "=" in token:
+                dictionary_name, marker_id_text = token.rsplit("=", 1)
+            else:
+                continue
+            dictionary_name = dictionary_name.strip()
+            try:
+                marker_id = int(marker_id_text.strip())
+            except ValueError:
+                self.get_logger().warn(f"Ignoring invalid aruco_fallback_markers entry: {token!r}")
+                continue
+            candidate = (dictionary_name, marker_id)
+            if candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
 
     def _finger_axis_hint(
         self,

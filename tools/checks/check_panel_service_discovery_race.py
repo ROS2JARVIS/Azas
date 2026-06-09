@@ -47,6 +47,7 @@ def main() -> int:
         expected_color_scan_order = [
             "connect_robot",
             "status_check",
+            "start_collision_scene",
             "move_to_color_scan_pose",
             "start_camera",
             "color_scan",
@@ -80,10 +81,48 @@ def main() -> int:
 
         side_grip = next(step for step in panel.STEPS if step.key == "side_grip")
         side_grip_command = panel.command_for(side_grip, {"service_prefix": "dsr01"})
-        expected_package_source = "install/dsr_practice/share/dsr_practice/package.bash"
+        expected_package_source = "tools/run/run_changhyun_side_grip_direct.sh"
         if expected_package_source not in side_grip_command:
-            print("[FAIL] side_grip command does not force the Azas dsr_practice overlay")
+            print("[FAIL] side_grip command does not use the field-tested direct runner")
             print(side_grip_command)
+            return 1
+
+        cup_uprighting = next(step for step in panel.STEPS if step.key == "cup_uprighting")
+        cup_uprighting_command = panel.command_for(cup_uprighting, {"service_prefix": "dsr01"})
+        if "tools/run/run_somyeong_cup_uprighting_direct.sh" not in cup_uprighting_command:
+            print("[FAIL] cup_uprighting command does not use the direct runner")
+            print(cup_uprighting_command)
+            return 1
+        if "colcon build" in cup_uprighting_command:
+            print("[FAIL] cup_uprighting command must not run colcon build from the panel")
+            print(cup_uprighting_command)
+            return 1
+
+        lid_grip_close = next(step for step in panel.STEPS if step.key == "lid_grip_close")
+        lid_grip_close_command = panel.command_for(lid_grip_close, {"service_prefix": "dsr01"})
+        if "tools/run/run_kang_lid_grip_close_direct.sh" not in lid_grip_close_command:
+            print("[FAIL] lid_grip_close command does not use the direct runner")
+            print(lid_grip_close_command)
+            return 1
+
+        non_tmux_background = [
+            step.key
+            for step in panel.STEPS
+            if step.kind == "background" and step.implemented and step.key not in panel.PANEL_TMUX_STEPS
+        ]
+        if non_tmux_background:
+            print("[FAIL] background steps must run through tmux, not panel-owned Popen")
+            print(non_tmux_background)
+            return 1
+
+        auto_build_steps = [
+            step.key
+            for step in panel.STEPS
+            if step.implemented and "colcon build" in panel.command_for(step, {"service_prefix": "dsr01"})
+        ]
+        if auto_build_steps:
+            print("[FAIL] panel commands must not run colcon build")
+            print(auto_build_steps)
             return 1
 
         shake = next(step for step in panel.STEPS if step.key == "shake_closed_cup")
