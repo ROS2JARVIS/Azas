@@ -1,5 +1,7 @@
+from copy import deepcopy
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -7,6 +9,53 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
+
+
+def _runtime_nodes(context, moveit_params, moveit_py_params):
+    controller_name = LaunchConfiguration("moveit_controller_name").perform(context)
+    runtime_moveit_params = deepcopy(moveit_params)
+    runtime_moveit_params["moveit_simple_controller_manager"] = {
+        "controller_names": [controller_name],
+        controller_name: {
+            "type": "FollowJointTrajectory",
+            "action_ns": "follow_joint_trajectory",
+            "default": True,
+            "joints": [
+                "joint_1",
+                "joint_2",
+                "joint_3",
+                "joint_4",
+                "joint_5",
+                "joint_6",
+            ],
+        },
+    }
+
+    yolo_cup_uprighting_node = Node(
+        package="azas_cup_uprighting",
+        executable="yolo_cup_uprighting",
+        name="yolo_cup_uprighting_py",
+        output="screen",
+        parameters=[
+            runtime_moveit_params,
+            moveit_py_params,
+            {
+                "model_path": ParameterValue(
+                    LaunchConfiguration("model_path"),
+                    value_type=str,
+                ),
+                "auto_pick": LaunchConfiguration("auto_pick"),
+                "skip_initial_home_move": LaunchConfiguration("skip_initial_home_move"),
+                "controller_action_name": ParameterValue(
+                    LaunchConfiguration("controller_action_name"),
+                    value_type=str,
+                ),
+                "controller_action_wait_sec": 60.0,
+            },
+        ],
+    )
+    return [yolo_cup_uprighting_node]
+
 
 def generate_launch_description():
     # 1. 두산 M0609 로봇의 MoveIt 파라미터 빌드 (URDF, SRDF, Kinematics 등)
@@ -52,6 +101,16 @@ def generate_launch_description():
         "skip_initial_home_move",
         default_value="false",
         description="Use the current robot pose as the camera observation pose without commanding Home first.",
+    )
+    moveit_controller_name_arg = DeclareLaunchArgument(
+        "moveit_controller_name",
+        default_value="/dsr01/dsr_moveit_controller",
+        description="MoveIt FollowJointTrajectory controller name for namespaced Doosan bringup.",
+    )
+    controller_action_name_arg = DeclareLaunchArgument(
+        "controller_action_name",
+        default_value="/dsr01/dsr_moveit_controller/follow_joint_trajectory",
+        description="Full FollowJointTrajectory action name used for direct controller execution.",
     )
 
     # 3. 공통 안전/충돌 장면: side-grip, dispenser, cup-uprighting이 같은 바닥/벽/디스펜서 기준을 보도록 통일
@@ -103,33 +162,18 @@ def generate_launch_description():
         }],
     )
 
-    # 4. 컵 직립화(Uprighting) 노드 실행 및 파라미터 주입
-    yolo_cup_uprighting_node = Node(
-        package="azas_cup_uprighting",
-        executable="yolo_cup_uprighting",
-        name="yolo_cup_uprighting_py", 
-        output="screen",
-        parameters=[
-            moveit_config.to_dict(),
-            moveit_py_params,
-            {
-                "model_path": ParameterValue(
-                    LaunchConfiguration("model_path"),
-                    value_type=str,
-                ),
-                "auto_pick": LaunchConfiguration("auto_pick"),
-                "skip_initial_home_move": LaunchConfiguration("skip_initial_home_move"),
-            },
-        ],
-    )
-
     return LaunchDescription([
         model_path_arg,
         publish_hand_eye_tf_arg,
         auto_pick_arg,
         skip_initial_home_move_arg,
+        moveit_controller_name_arg,
+        controller_action_name_arg,
         workspace_collision_scene,
         world_base_tf,
         hand_eye_tf,
-        yolo_cup_uprighting_node,
+        OpaqueFunction(
+            function=_runtime_nodes,
+            args=[moveit_config.to_dict(), moveit_py_params],
+        ),
     ])

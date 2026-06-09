@@ -771,6 +771,7 @@ PANEL_FIELD_VERIFIED_DIRECT_TMUX_STEPS = {
     # mechanism are allowed to start from the panel. Static package/launch checks
     # are not enough for real-motion GUI workflows.
     "side_grip",
+    "cup_uprighting",
 }
 
 DOOSAN_STACK_PATTERNS = (
@@ -3506,14 +3507,19 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                 ),
             }
         cleanup_output = ""
-        if step.key == "side_grip":
-            cleanup_output = "\n".join(cleanup_side_grip_stack(grace_sec=3.0))
+        if step.key in {"side_grip", "cup_uprighting"}:
+            if step.key == "side_grip":
+                cleanup_output = "\n".join(cleanup_side_grip_stack(grace_sec=3.0))
+                label = "창현 side_grip"
+            else:
+                cleanup_output = "\n".join(cleanup_cup_uprighting_stack(grace_sec=3.0))
+                label = "소명 cup_uprighting"
             time.sleep(1.0)
             cmd = command_for(step, payload)
             restart_output = "\n".join(
                 part
                 for part in (
-                    "[Azas] field-verified tmux mode: 창현 side_grip은 ROS CLI discovery preflight로 막지 않고 검증된 tmux 명령을 직접 실행합니다.",
+                    f"[Azas] field-verified tmux mode: {label}은 ROS CLI discovery preflight로 막지 않고 검증된 tmux 명령을 직접 실행합니다.",
                     "[Azas] 전제: 먼저 'tmux 연결 스택 시작'으로 robot/gripper/camera/joint_relay 창이 떠 있어야 합니다.",
                     cleanup_output,
                 )

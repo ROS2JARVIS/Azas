@@ -7,8 +7,10 @@ DISPLAY="${DISPLAY:-:0}"
 XAUTHORITY="${XAUTHORITY:-/run/user/1000/gdm/Xauthority}"
 MODEL_PATH="${MODEL_PATH:-${ROOT}/src/azas_perception/config/yolo_cup_uprighting_best.pt}"
 AUTO_PICK="${AUTO_PICK:-false}"
-SKIP_INITIAL_HOME_MOVE="${SKIP_INITIAL_HOME_MOVE:-true}"
+SKIP_INITIAL_HOME_MOVE="${SKIP_INITIAL_HOME_MOVE:-false}"
 PUBLISH_HAND_EYE_TF="${PUBLISH_HAND_EYE_TF:-true}"
+MOVEIT_CONTROLLER_NAME="${MOVEIT_CONTROLLER_NAME:-/dsr01/dsr_moveit_controller}"
+CONTROLLER_ACTION_NAME="${CONTROLLER_ACTION_NAME:-${MOVEIT_CONTROLLER_NAME}/follow_joint_trajectory}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
 ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
 
@@ -41,6 +43,8 @@ echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XA
 echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}"
 echo "[Azas] model_path=${MODEL_PATH}"
 echo "[Azas] auto_pick=${AUTO_PICK} skip_initial_home_move=${SKIP_INITIAL_HOME_MOVE} publish_hand_eye_tf=${PUBLISH_HAND_EYE_TF}"
+echo "[Azas] moveit_controller_name=${MOVEIT_CONTROLLER_NAME}"
+echo "[Azas] controller_action_name=${CONTROLLER_ACTION_NAME}"
 
 if [[ ! -f "${MODEL_PATH}" ]]; then
   echo "[Azas][FAIL] YOLO model missing: ${MODEL_PATH}" >&2
@@ -56,4 +60,6 @@ ros2 launch "${ROOT}/src/azas_cup_uprighting/launch/yolo_cup_uprighting.launch.p
   model_path:="${MODEL_PATH}" \
   auto_pick:="${AUTO_PICK}" \
   skip_initial_home_move:="${SKIP_INITIAL_HOME_MOVE}" \
-  publish_hand_eye_tf:="${PUBLISH_HAND_EYE_TF}"
+  publish_hand_eye_tf:="${PUBLISH_HAND_EYE_TF}" \
+  moveit_controller_name:="${MOVEIT_CONTROLLER_NAME}" \
+  controller_action_name:="${CONTROLLER_ACTION_NAME}"

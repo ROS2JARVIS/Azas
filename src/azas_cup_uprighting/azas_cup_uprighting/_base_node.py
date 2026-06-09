@@ -75,6 +75,8 @@ class BaseMoveItPickNode(Node):
         # ── 픽 상태 ──
         self.declare_parameter("auto_pick", False)
         self.declare_parameter("skip_initial_home_move", False)
+        self.declare_parameter("controller_action_name", "/dsr01/dsr_moveit_controller/follow_joint_trajectory")
+        self.declare_parameter("controller_action_wait_sec", 60.0)
         self.picking = False
         self.home_xyz = None     # (x, y, z) [m] — initialize_home 에서 설정
         self.home_ori = None     # quat dict {x, y, z, w}
@@ -94,16 +96,14 @@ class BaseMoveItPickNode(Node):
         self.gripper = RG(cfg.GRIPPER_NAME, cfg.TOOLCHARGER_IP, cfg.TOOLCHARGER_PORT)
 
         # ── MoveIt ──
-        log.info("MoveItPy 초기화 중...")
-        self.robot       = MoveItPy(node_name=self.MOVEIT_NODE_NAME)
-        self.arm         = self.robot.get_planning_component(cfg.GROUP_NAME)
-        self.robot_model = self.robot.get_robot_model()
-        log.info("MoveItPy 초기화 완료")
-
-        self.ompl_params = self._make_plan_params(
-            "ompl", "RRTConnect", vel=0.2, acc=0.1, time=2.0)
-        self.pilz_params = self._make_plan_params(
-            "pilz_industrial_motion_planner", "PTP", vel=0.15, acc=0.1, time=2.0)
+        # 현장 실행은 카메라 확인이 먼저다. MoveItPy가 joint state/PlanningScene
+        # 대기에서 막혀도 OpenCV 화면은 떠야 하므로 모션이 필요해지는 순간까지
+        # 초기화를 미룬다.
+        self.robot = None
+        self.arm = None
+        self.robot_model = None
+        self.ompl_params = None
+        self.pilz_params = None
 
         # ── YOLO ──
         self.declare_parameter("model_path", cfg.YOLO_MODEL_PATH)
@@ -139,6 +139,23 @@ class BaseMoveItPickNode(Node):
         p.planning_time = time
         return p
 
+    def _ensure_moveit(self) -> bool:
+        if self.robot is not None:
+            return True
+
+        log = self.get_logger()
+        log.info("MoveItPy 지연 초기화 중...")
+        self.robot = MoveItPy(node_name=self.MOVEIT_NODE_NAME)
+        self.arm = self.robot.get_planning_component(cfg.GROUP_NAME)
+        self.robot_model = self.robot.get_robot_model()
+        self.ompl_params = self._make_plan_params(
+            "ompl", "RRTConnect", vel=0.2, acc=0.1, time=2.0)
+        self.pilz_params = self._make_plan_params(
+            "pilz_industrial_motion_planner", "PTP", vel=0.15, acc=0.1, time=2.0)
+        self.on_moveit_ready()
+        log.info("MoveItPy 지연 초기화 완료")
+        return True
+
     # ── 콜백 ──
     def _cam_info_cb(self, msg):
         self.intrinsics = {
@@ -156,9 +173,13 @@ class BaseMoveItPickNode(Node):
     #  Perception 래퍼
     # ════════════════════════════════════════════
     def transform_to_base(self, cam_xyz_m):
+        if not self._ensure_moveit():
+            return None
         return perc.transform_to_base(self.robot, self.gripper2cam, cam_xyz_m)
 
     def pixel_to_base(self, px, py):
+        if not self._ensure_moveit():
+            return None
         return perc.pixel_to_base(
             self.robot, self.gripper2cam,
             self.depth_image, self.intrinsics,
@@ -171,19 +192,35 @@ class BaseMoveItPickNode(Node):
     #  Motion 래퍼
     # ════════════════════════════════════════════
     def plan_pose(self, x, y, z, ori, params=None) -> bool:
+        if not self._ensure_moveit():
+            return False
         return plan_and_execute(
             self.robot, self.arm, self.get_logger(),
             pose_goal=make_pose(x, y, z, ori),
-            params=params or self.pilz_params)
+            params=params or self.pilz_params,
+            node=self,
+            controller_action_name=self.get_parameter("controller_action_name").value,
+            controller_action_wait_sec=float(
+                self.get_parameter("controller_action_wait_sec").value
+            ))
 
     def plan_state(self, state, params=None) -> bool:
+        if not self._ensure_moveit():
+            return False
         return plan_and_execute(
             self.robot, self.arm, self.get_logger(),
             state_goal=state,
-            params=params or self.ompl_params)
+            params=params or self.ompl_params,
+            node=self,
+            controller_action_name=self.get_parameter("controller_action_name").value,
+            controller_action_wait_sec=float(
+                self.get_parameter("controller_action_wait_sec").value
+            ))
 
     def go_home_pose(self) -> bool:
         """관절 home 자세로 이동."""
+        if not self._ensure_moveit():
+            return False
         home_state = RobotState(self.robot_model)
         home_state.joint_positions = cfg.HOME_JOINTS
         home_state.update()
@@ -200,6 +237,8 @@ class BaseMoveItPickNode(Node):
         log = self.get_logger()
         ori = self.home_ori
         ox, oy = cfg.APPROACH_OFFSET
+        if not self._ensure_moveit():
+            return None
         cur_ee = get_ee_matrix(self.robot)
         ax = target_xy[0] + ox
         ay = target_xy[1] + oy
@@ -296,6 +335,10 @@ class BaseMoveItPickNode(Node):
         """Home 이동 완료 후 호출. 자식이 추가 init 가능 (e.g. scan_box)."""
         pass
 
+    def on_moveit_ready(self):
+        """MoveIt 지연 초기화 직후 호출. 자식이 planning scene 설정 가능."""
+        pass
+
     def is_auto_ready(self) -> bool:
         """auto 모드 트리거 전제 조건."""
         return True
@@ -310,22 +353,14 @@ class BaseMoveItPickNode(Node):
     def initialize_home(self) -> bool:
         log = self.get_logger()
         if self._skip_initial_home_move:
-            log.info("[Init] Home 이동 생략: 현재 로봇 자세를 관찰 시작 자세로 사용")
-            T = get_ee_matrix(self.robot)
-            self.home_xyz = (T[0, 3], T[1, 3], T[2, 3])
-            qx, qy, qz, qw = Rotation.from_matrix(T[:3, :3]).as_quat()
-            self.home_ori = {
-                "x": float(qx),
-                "y": float(qy),
-                "z": float(qz),
-                "w": float(qw),
-            }
-            log.info(f"[Init] Current = ({T[0,3]:.3f}, {T[1,3]:.3f}, {T[2,3]:.3f}) m")
+            log.info("[Init] Home 이동/MoveIt 초기화 생략: 카메라 화면을 먼저 시작")
             self.gripper.open_gripper()
             time.sleep(1.0)
             return True
 
         log.info("[Init] Home 이동")
+        if not self._ensure_moveit():
+            return False
         if not self.go_home_pose():
             log.error("Home 실패")
             return False

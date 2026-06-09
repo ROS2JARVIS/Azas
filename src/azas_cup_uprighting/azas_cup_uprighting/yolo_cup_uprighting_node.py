@@ -31,6 +31,8 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
 
     def __init__(self):
         super().__init__()
+
+    def on_moveit_ready(self):
         self.setup_safety_environment()
 
     def setup_safety_environment(self):
