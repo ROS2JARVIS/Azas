@@ -128,7 +128,16 @@ ensure_collision_scene() {
       dispenser_collision_enabled:=true \
       dispenser_collision_publish_objects:=true \
       dispenser_collision_publish_markers:=true &
-    ros2 launch azas_bringup rg2_link6_tcp.launch.py publish_gripper_collision:=true &
+    ros2 launch azas_bringup rg2_link6_tcp.launch.py publish_gripper_collision:=false &
+    timeout 12s ros2 run azas_motion link6_gripper_collision_node \
+      --ros-args -p operation:=remove -p publish_once:=true -p publish_markers:=false || true
+    ros2 run azas_motion link6_gripper_collision_node \
+      --ros-args \
+      -p palm_size_x_m:=0.075 -p palm_size_y_m:=0.115 -p palm_size_z_m:=0.040 -p palm_z_m:=0.070 \
+      -p finger_size_x_m:=0.030 -p finger_size_y_m:=0.014 -p finger_size_z_m:=0.120 \
+      -p finger_y_m:=0.050 -p finger_z_m:=0.125 \
+      -p pad_size_x_m:=0.022 -p pad_size_y_m:=0.010 -p pad_size_z_m:=0.025 \
+      -p pad_y_m:=0.037 -p pad_z_m:=0.180 &
     ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 --frame-id world --child-frame-id base_link &
     ros2 run azas_perception hand_eye_static_tf_node --ros-args -p compose_timeout_sec:=30.0 -p allow_direct_fallback:=false &
     python3 -m azas_motion.tumbler_collision_scene_node --ros-args -p action:=publish_detected -p object_id:=detected_tumbler -p use_lidded_height:=true
@@ -164,7 +173,7 @@ run_side_grip() {
       workspace_collision_scene_enabled:=true table_collision_enabled:=true table_surface_z:=0.0 table_thickness:=0.04 \
       table_size_x:=1.10 table_size_y:=0.65 table_center_x:=0.29 table_center_y:=0.0 table_collision_expand_to_workspace_walls:=true \
       workspace_boundary_collision_enabled:=true dispenser_collision_enabled:=true dispenser_collision_publish_objects:=true \
-      dispenser_collision_publish_markers:=true link6_gripper_collision_enabled:=true \
+      dispenser_collision_publish_markers:=true link6_gripper_collision_enabled:=false \
       dispenser_collision_config_path:="${ROOT}/src/azas_bringup/config/measured_dispenser_collision.yaml" \
       moveit_controller_name:=/${SERVICE_PREFIX}/dsr_moveit_controller start_joint_state_relay:=false
   )

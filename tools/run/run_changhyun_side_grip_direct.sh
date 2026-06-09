@@ -74,7 +74,15 @@ ros2 run azas_perception hand_eye_static_tf_node \
 # picker. Keep the launch-side include disabled because it also starts an
 # auxiliary robot_state_publisher and can stall MoveItPy initialization in the
 # field tmux workflow.
-ros2 run azas_motion link6_gripper_collision_node &
+timeout 12s ros2 run azas_motion link6_gripper_collision_node \
+  --ros-args -p operation:=remove -p publish_once:=true -p publish_markers:=false || true
+ros2 run azas_motion link6_gripper_collision_node \
+  --ros-args \
+  -p palm_size_x_m:=0.075 -p palm_size_y_m:=0.115 -p palm_size_z_m:=0.040 -p palm_z_m:=0.070 \
+  -p finger_size_x_m:=0.030 -p finger_size_y_m:=0.014 -p finger_size_z_m:=0.120 \
+  -p finger_y_m:=0.050 -p finger_z_m:=0.125 \
+  -p pad_size_x_m:=0.022 -p pad_size_y_m:=0.010 -p pad_size_z_m:=0.025 \
+  -p pad_y_m:=0.037 -p pad_z_m:=0.180 &
 
 should_start_relay=false
 if [[ "${START_JOINT_STATE_RELAY:-auto}" == "true" ]]; then
