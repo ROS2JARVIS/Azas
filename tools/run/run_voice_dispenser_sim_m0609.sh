@@ -7,6 +7,11 @@ set -euo pipefail
 #   1) virtual Doosan M0609 (MoveIt + RViz)         -> provides /motion/* services
 #   2) Azas collision scene (safety zone + dispenser box)
 #   3) azas_voice stack with the dispenser executor (hardware execution enabled)
+#      incl. the voice screen web UI on VOICE_PORT (default 8090)
+#   4) the kiosk web UI on KIOSK_PORT (default 8080) unless WITH_KIOSK=false
+#
+# Order from http://localhost:8080 (kiosk: pick menu -> 시작) or
+#            http://localhost:8090 (voice: say an order -> "응").
 #
 # Then publish a confirmed recipe decision to drive the arm to the dispensers, e.g.:
 #   ros2 topic pub --once /azas/voice/confirmed_recipe_decision std_msgs/msg/String \
@@ -21,6 +26,12 @@ REQUIRE_TCP="${REQUIRE_TCP:-false}"             # sim has no named TCP -> keep f
 USE_TTS="${USE_TTS:-false}"                     # silence audio for a quiet sim by default
 SERVICE_WAIT_SEC="${SERVICE_WAIT_SEC:-60}"      # how long to wait for the virtual robot
 AUTO_ORDER="${AUTO_ORDER:-false}"               # set to true to auto-fire a red/blue test order
+WITH_KIOSK="${WITH_KIOSK:-true}"                # also launch the kiosk web UI on KIOSK_PORT
+KIOSK_PORT="${KIOSK_PORT:-8080}"
+VOICE_PORT="${VOICE_PORT:-8090}"                # voice screen web UI port
+# Point the kiosk "제어 상태" display at the dispenser executor's status so it
+# reflects the real run (queued/starting/completed) instead of staying "대기".
+KIOSK_STATUS_TOPIC="${KIOSK_STATUS_TOPIC:-/azas/voice/dispenser_execution_status}"
 
 set +u
 source /opt/ros/humble/setup.bash
@@ -34,6 +45,7 @@ set -u
 robot_pid=""
 scene_pid=""
 voice_pid=""
+kiosk_pid=""
 
 terminate_tree() {
   local pid="$1"
@@ -47,10 +59,11 @@ terminate_tree() {
 
 cleanup() {
   echo "[Azas] Shutting down voice-dispenser sim..."
+  terminate_tree "${kiosk_pid}"
   terminate_tree "${voice_pid}"
   terminate_tree "${scene_pid}"
   terminate_tree "${robot_pid}"
-  wait "${voice_pid}" "${scene_pid}" "${robot_pid}" 2>/dev/null || true
+  wait "${kiosk_pid}" "${voice_pid}" "${scene_pid}" "${robot_pid}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -84,14 +97,34 @@ ros2 launch azas_voice azas_voice.launch.py \
   enable_dispenser_hardware_execution:=true \
   dispenser_service_prefix:="${SERVICE_PREFIX}" \
   dispenser_require_tcp_for_taught_posx:="${REQUIRE_TCP}" \
+  run_voice_screen:=true \
+  voice_screen_port:="${VOICE_PORT}" \
   use_tts:="${USE_TTS}" &
 voice_pid=$!
 sleep 3
 
+if [[ "${WITH_KIOSK}" == "true" ]]; then
+  echo "[Azas] (+) Starting kiosk web UI on port ${KIOSK_PORT}..."
+  ros2 launch azas_kiosk azas_kiosk.launch.py \
+    host:=0.0.0.0 port:="${KIOSK_PORT}" \
+    cocktail_status_topic:="${KIOSK_STATUS_TOPIC}" &
+  kiosk_pid=$!
+  sleep 2
+fi
+
 echo ""
 echo "[Azas] ============================================================"
-echo "[Azas] Voice-dispenser sim is up. Send a confirmed order with:"
+echo "[Azas] Voice-dispenser sim is up. Order through the web UIs:"
 echo "[Azas]"
+if [[ "${WITH_KIOSK}" == "true" ]]; then
+  echo "[Azas]   Kiosk : http://localhost:${KIOSK_PORT}   (click a menu, then click 시작/Start)"
+fi
+echo "[Azas]   Voice : http://localhost:${VOICE_PORT}   (say/type an order, then \"응\")"
+echo "[Azas]"
+echo "[Azas] A click/utterance alone only stages the order; the CONFIRM step"
+echo "[Azas] (시작 button / \"응\") is what triggers the robot."
+echo "[Azas]"
+echo "[Azas] Or fire a confirmed order directly:"
 echo "[Azas]   ros2 topic pub --once /azas/voice/confirmed_recipe_decision std_msgs/msg/String \\"
 echo "[Azas]     '{data: \"{\\\"intent\\\":\\\"make_cocktail\\\",\\\"confirmed\\\":true,\\\"recipe_id\\\":\\\"sim\\\",\\\"dispenser_ids\\\":[\\\"red\\\",\\\"blue\\\"],\\\"dispenser_amounts\\\":{\\\"red\\\":2,\\\"blue\\\":1}}\"}'"
 echo "[Azas]"
@@ -107,4 +140,4 @@ if [[ "${AUTO_ORDER}" == "true" ]]; then
 fi
 
 # Keep the sim alive until any component exits or the user hits Ctrl+C.
-wait -n "${robot_pid}" "${scene_pid}" "${voice_pid}"
+wait -n "${robot_pid}" "${scene_pid}" "${voice_pid}" ${kiosk_pid:+"${kiosk_pid}"}
