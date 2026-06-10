@@ -54,6 +54,16 @@ Visualization Manager:
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
+        Value: /azas/collision_scene/markers
+      Name: Full Collision Scene
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /azas/link6_gripper/markers
       Name: Link6 RG2 Gripper Markers
       Value: true

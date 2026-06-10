@@ -14,49 +14,6 @@ Visualization Manager:
       Plane Cell Count: 20
       Reference Frame: <Fixed Frame>
       Value: true
-    - Class: rviz_default_plugins/RobotModel
-      Description Topic:
-        Depth: 5
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /robot_description
-      Enabled: true
-      Name: M0609 Robot
-      TF Prefix: ""
-      Update Interval: 0
-      Value: true
-      Visual Enabled: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Marker Topic:
-        Depth: 5
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /azas/workspace_collision/markers
-      Name: Workspace Safety Walls/Floor
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Marker Topic:
-        Depth: 5
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /azas/measured_dispenser_collision/markers
-      Name: Measured Dispenser Collision
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Marker Topic:
-        Depth: 5
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /azas/collision_scene/markers
-      Name: Full Collision Scene
-      Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Marker Topic:
@@ -68,15 +25,15 @@ Visualization Manager:
       Name: Collision Scene Default Topic
       Value: true
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: false
+      Enabled: true
       Marker Topic:
         Depth: 5
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /jarvis/shake_animation/markers
-      Name: Independent Shake Preview
-      Value: false
+        Value: /azas/collision_scene/markers
+      Name: Full Collision Scene
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 24; 24; 28
@@ -95,16 +52,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.6
+      Distance: 1.15
       Focal Point:
-        X: 0.35
-        Y: -0.12
-        Z: 0.32
+        X: 0.62
+        Y: -0.02
+        Z: 0.34
       Name: Current View
       Pitch: 0.58
       Target Frame: base_link
       Value: Orbit (rviz)
-      Yaw: 2.45
+      Yaw: 2.65
     Saved: ~
 Window Geometry:
   Height: 900

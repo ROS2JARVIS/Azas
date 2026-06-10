@@ -34,9 +34,19 @@ Visualization Manager:
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /azas/workspace_collision/markers
-      Name: Workspace Safety Walls/Floor
+        Value: /azas/collision_scene/markers
+      Name: Full Collision Scene
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /azas/workspace_collision/markers
+      Name: Workspace Safety
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Marker Topic:
@@ -51,11 +61,21 @@ Visualization Manager:
       Enabled: true
       Marker Topic:
         Depth: 5
-        Durability Policy: Transient Local
+        Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /azas/collision_scene/markers
-      Name: Full Collision Scene
+        Value: /azas/dispenser_sequence/markers
+      Name: Rule Motion Cup And Steps
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /jarvis/robot_arm/markers
+      Name: Rule Motion Demo Arm
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
@@ -64,19 +84,32 @@ Visualization Manager:
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /visualization_marker_array
-      Name: Collision Scene Default Topic
+        Value: /azas/link6_gripper/markers
+      Name: Link6 RG2 Gripper
       Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: false
-      Marker Topic:
+    - Class: rviz_default_plugins/Path
+      Buffer Length: 1
+      Color: 255; 230; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.025
+      Name: Rule Motion Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 230; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Length: 0.1
+      Shaft Radius: 0.01
+      Topic:
         Depth: 5
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /jarvis/shake_animation/markers
-      Name: Independent Shake Preview
-      Value: false
+        Value: /azas/dispenser_sequence/plan
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 24; 24; 28
@@ -95,16 +128,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.6
+      Distance: 1.25
       Focal Point:
-        X: 0.35
-        Y: -0.12
-        Z: 0.32
+        X: 0.48
+        Y: -0.16
+        Z: 0.30
       Name: Current View
-      Pitch: 0.58
+      Pitch: 0.62
       Target Frame: base_link
       Value: Orbit (rviz)
-      Yaw: 2.45
+      Yaw: 2.55
     Saved: ~
 Window Geometry:
   Height: 900

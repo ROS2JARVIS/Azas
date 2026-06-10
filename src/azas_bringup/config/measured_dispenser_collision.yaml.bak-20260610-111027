@@ -16,18 +16,58 @@ front_hold_poses:
     position_xyz_m: [0.603855, 0.083532, 0.079630]
     quaternion_xyzw: [0.476935, 0.550359, 0.474620, 0.494343]
     rpy_deg: [93.496, 5.244, 93.242]
+    - 0.087
+    quaternion_xyzw:
+    - 0.489
+    - 0.517
+    - 0.517
+    - 0.475
+    rpy_deg:
+    - 90.798
+    - -0.845
+    - 93.984
   dispenser_2:
-    position_xyz_m: [0.588709, 0.039032, 0.073706]
+    position_xyz_m: [0.608709, 0.039032, 0.073706]
     quaternion_xyzw: [0.506185, 0.526041, 0.482369, 0.484126]
     rpy_deg: [93.778, 1.204, 91.077]
+    - 0.082
+    quaternion_xyzw:
+    - 0.504
+    - 0.504
+    - 0.5
+    - 0.491
+    rpy_deg:
+    - 90.946
+    - -0.512
+    - 90.501
   dispenser_3:
     position_xyz_m: [0.607892, -0.038249, 0.083077]
     quaternion_xyzw: [0.477410, 0.540579, 0.505177, 0.473973]
     rpy_deg: [92.310, 1.724, 95.446]
+    - 0.079
+    quaternion_xyzw:
+    - 0.504
+    - 0.504
+    - 0.498
+    - 0.494
+    rpy_deg:
+    - 90.926
+    - -0.278
+    - 90.234
   dispenser_4:
-    position_xyz_m: [0.606769, -0.093142, 0.084589]
-    quaternion_xyzw: [0.463470, 0.552601, 0.487955, 0.491658]
-    rpy_deg: [92.322, 5.226, 95.008]
+    position_xyz_m:
+    - 0.607
+    - -0.083
+    - 0.075
+    quaternion_xyzw:
+    - 0.511
+    - 0.498
+    - 0.492
+    - 0.499
+    rpy_deg:
+    - 91.042
+    - -0.28
+    - 88.871
 raw_probe_poses:
   left_front_bottom_probe:
     position_xyz_m:

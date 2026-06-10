@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -81,7 +82,7 @@ def parse_colors_arg(raw: str) -> list[tuple[str, int]]:
         elif "x" in item:
             color, count_raw = item.split("x", 1)
         else:
-            match = __import__("re").match(r"^([a-zA-Z가-힣_ -]+?)(\d+)?$", item)
+            match = re.match(r"^([a-zA-Z가-힣_ -]+?)(\d+)?$", item)
             if not match:
                 raise ValueError(f"invalid color token: {part!r}")
             color, count_raw = match.group(1), match.group(2) or "1"
@@ -98,6 +99,74 @@ def parse_colors_arg(raw: str) -> list[tuple[str, int]]:
     if not result:
         raise ValueError("color input is empty")
     return result
+
+
+def parse_recipe_data(recipe: object) -> list[tuple[str, int]]:
+    """Return color pump counts from supported recipe JSON shapes.
+
+    Supported examples:
+      {"colors": ["red", "green"], "pumps": {"red": 3, "green": 3}}
+      {"pumps": {"red": 3, "green": 3}}
+      {"red": 3, "green": 3}
+      [{"color": "red", "count": 3}, {"color": "green", "pumps": 3}]
+    """
+    color_pumps: list[tuple[str, int]] = []
+
+    def add(color: object, count: object = 1) -> None:
+        color_name = str(color).lower().strip()
+        if not color_name:
+            return
+        try:
+            pump_count = int(count)
+        except (TypeError, ValueError):
+            raise ValueError(f"invalid pump count for color {color_name}: {count!r}")
+        if pump_count < 1:
+            raise ValueError(f"pump count must be >= 1 for color {color_name}")
+        color_pumps.append((color_name, pump_count))
+
+    if isinstance(recipe, list):
+        for item in recipe:
+            if isinstance(item, dict):
+                color = item.get("color") or item.get("name")
+                count = item.get("pumps", item.get("count", item.get("presses", 1)))
+                if color:
+                    add(color, count)
+            else:
+                add(item, 1)
+        return color_pumps
+
+    if not isinstance(recipe, dict):
+        raise ValueError("recipe JSON must be an object or list")
+
+    colors = recipe.get("colors")
+    pumps = None
+    for key in ("pumps", "presses", "counts"):
+        if key in recipe:
+            pumps = recipe.get(key)
+            break
+
+    if isinstance(colors, list):
+        if not isinstance(pumps, dict):
+            pumps = {}
+        for color in colors:
+            key = str(color).lower().strip()
+            add(key, pumps.get(key, pumps.get(str(color), 1)))
+        return color_pumps
+
+    if isinstance(pumps, dict):
+        for color, count in pumps.items():
+            add(color, count)
+        return color_pumps
+
+    # Compact operator JSON: {"red": 3, "green": 3}
+    metadata_keys = {"source", "note", "notes", "created_at", "updated_at"}
+    for color, count in recipe.items():
+        if str(color).lower().strip() in metadata_keys:
+            continue
+        if isinstance(count, (int, float, str)):
+            add(color, count)
+
+    return color_pumps
 
 
 def parse_direct_dispenser_sequence(raw: str) -> list[str]:
@@ -142,8 +211,16 @@ def main() -> int:
                         help="직접 물리 디스펜서 지정: '1,2,2,3' 또는 '1x1,2x2,3x1'")
     parser.add_argument("--color-map-json", default="",
                         help="패널이 현재 알고 있는 dispenser_id→color JSON. --colors 직접 입력 시 우선 사용")
-    parser.add_argument("--confirm", action="store_true",
-                        help=f"확인 구문({CONFIRM_PHRASE}) 자동 전달")
+    parser.add_argument(
+        "--confirm",
+        nargs="?",
+        const=CONFIRM_PHRASE,
+        default="",
+        help=(
+            f"실행 확인. 값 없이 --confirm만 써도 되고, 기존 습관대로 확인 문구를 붙여도 됩니다. "
+            f"내부 measured sequence에는 {CONFIRM_PHRASE}를 전달합니다."
+        ),
+    )
     parser.add_argument("--execute", action="store_true",
                         help="실제 measured dispenser sequence를 실행")
     parser.add_argument("--press-min-transit-z-m", default="0.500")
@@ -153,19 +230,52 @@ def main() -> int:
     parser.add_argument("--press-travel-acceleration", default="60.0")
     parser.add_argument("--press-contact-joint-velocity", default="22.0")
     parser.add_argument("--press-contact-joint-acceleration", default="30.0")
+    parser.add_argument("--press-contact-entry-lift-m", default="0.050")
+    parser.add_argument("--press-depth-m", default="0.020")
+    parser.add_argument(
+        "--press-extra-depth-m",
+        default="0.010",
+        help="--press-depth-m에 추가할 Z-only 프레스 하강량. 기본 0.010m.",
+    )
+    parser.add_argument(
+        "--press-lock-contact-joints",
+        default="6",
+        help=(
+            "measured sequence로 전달할 contact 조인트 잠금 축. 기본 6: "
+            "프레스 contact에서 J6을 pre 자세 값으로 유지해 손목 회전을 막습니다."
+        ),
+    )
     parser.add_argument("--press-pre-lift-m", default="0.080")
     parser.add_argument("--press-transit-height-m", default="0.080")
-    parser.add_argument("--press-pre-lift-retreat-x-m", default="0.0")
-    parser.add_argument("--press-pre-lift-retreat-y-m", default="-0.050")
-    parser.add_argument("--move-release-offset-x-m", default="0.0")
-    parser.add_argument("--move-release-offset-y-m", default="-0.060")
-    parser.add_argument("--move-release-offset-z-m", default="-0.010")
+    # Base frame in the measured dispenser setup:
+    #   +X points from the robot toward the dispenser body, so backing away
+    #   from the dispenser toward the robot is negative X.
+    #   Y separates dispenser slots left/right.  Do not use Y as a safety
+    #   retreat; on dispenser 4 it pushes the cup farther to the robot-view
+    #   right side and can move outside the measured dispenser footprint.
+    parser.add_argument("--press-pre-lift-retreat-x-m", default="-0.050")
+    parser.add_argument("--press-pre-lift-retreat-y-m", default="0.0")
+    parser.add_argument("--move-release-offset-x-m", default="-0.020")
+    parser.add_argument("--move-release-offset-y-m", default="0.0")
+    parser.add_argument("--move-release-offset-z-m", default="0.0")
+    parser.add_argument("--regrasp-retreat-x-m", default="-0.080")
+    parser.add_argument("--regrasp-retreat-y-m", default="0.0")
+    parser.add_argument("--post-press-safe-lift-z-m", default="0.470")
+    parser.add_argument("--regrasp-rear-entry-offset-x-m", default="-0.080")
+    parser.add_argument("--regrasp-rear-entry-offset-y-m", default="0.0")
+    parser.add_argument(
+        "--allow-tcp-set-failure",
+        action="store_true",
+        help="Doosan TCP 설정 서비스가 success=false를 반환해도 현재 TCP로 measured sequence를 계속 실행",
+    )
     parser.add_argument("--force-cartesian-press", action="store_true")
     parser.add_argument("--gripper-open-settle-seconds", default="1.5")
     parser.add_argument("--gripper-settle-seconds", default="0.8")
     parser.add_argument("--wait-service-sec", default="15.0")
     parser.add_argument("--pose-read-retries", default="3")
     parser.add_argument("--pose-read-retry-sleep-sec", default="0.5")
+    parser.add_argument("--safe-lift-target-tolerance-mm", default="30.0")
+    parser.add_argument("--post-press-safe-lift-target-tolerance-mm", default="60.0")
     parser.add_argument(
         "--allow-missing-color-map-fallback",
         action="store_true",
@@ -185,20 +295,33 @@ def main() -> int:
         "--move-release-offset-x-m", str(args.move_release_offset_x_m),
         "--move-release-offset-y-m", str(args.move_release_offset_y_m),
         "--move-release-offset-z-m", str(args.move_release_offset_z_m),
+        "--regrasp-retreat-x-m", str(args.regrasp_retreat_x_m),
+        "--regrasp-retreat-y-m", str(args.regrasp_retreat_y_m),
+        "--post-press-safe-lift-z-m", str(args.post_press_safe_lift_z_m),
+        "--regrasp-rear-entry-offset-x-m", str(args.regrasp_rear_entry_offset_x_m),
+        "--regrasp-rear-entry-offset-y-m", str(args.regrasp_rear_entry_offset_y_m),
         "--press-line-velocity", str(args.press_line_velocity),
         "--press-line-acceleration", str(args.press_line_acceleration),
         "--press-travel-velocity", str(args.press_travel_velocity),
         "--press-travel-acceleration", str(args.press_travel_acceleration),
         "--press-contact-joint-velocity", str(args.press_contact_joint_velocity),
         "--press-contact-joint-acceleration", str(args.press_contact_joint_acceleration),
+        "--press-contact-entry-lift-m", str(args.press_contact_entry_lift_m),
+        "--press-depth-m", str(args.press_depth_m),
+        "--press-extra-depth-m", str(args.press_extra_depth_m),
+        "--press-lock-contact-joints", str(args.press_lock_contact_joints),
         "--gripper-open-settle-seconds", str(args.gripper_open_settle_seconds),
         "--gripper-settle-seconds", str(args.gripper_settle_seconds),
         "--wait-service-sec", str(args.wait_service_sec),
         "--pose-read-retries", str(args.pose_read_retries),
         "--pose-read-retry-sleep-sec", str(args.pose_read_retry_sleep_sec),
+        "--safe-lift-target-tolerance-mm", str(args.safe_lift_target_tolerance_mm),
+        "--post-press-safe-lift-target-tolerance-mm", str(args.post_press_safe_lift_target_tolerance_mm),
         "--safe-lift-joint-fallback",
         "--no-integrated-regrasp-fallback-subprocess",
     ]
+    if args.allow_tcp_set_failure:
+        sequence_extra_args.append("--allow-tcp-set-failure")
     if args.force_cartesian_press:
         sequence_extra_args.append("--force-cartesian-press")
 
@@ -259,9 +382,14 @@ def main() -> int:
             print("[run_color_recipe] listen_stt_recipe 스텝을 먼저 실행하세요.", file=sys.stderr)
             return 1
         recipe = json.loads(RECIPE_PATH.read_text(encoding="utf-8"))
-        colors = recipe.get("colors", [])
-        pumps  = recipe.get("pumps", {})
-        color_pumps = [(c, int(pumps.get(c, 1))) for c in colors]
+        try:
+            color_pumps = parse_recipe_data(recipe)
+        except ValueError as exc:
+            print(f"[run_color_recipe] 레시피 JSON 파싱 실패: {exc}", file=sys.stderr)
+            return 1
+        if not color_pumps:
+            print(f"[run_color_recipe] 레시피에 실행할 색상/펌프 수가 없습니다: {RECIPE_PATH}", file=sys.stderr)
+            return 1
 
     print(f"[run_color_recipe] 레시피 색깔+펌프: {color_pumps}")
 

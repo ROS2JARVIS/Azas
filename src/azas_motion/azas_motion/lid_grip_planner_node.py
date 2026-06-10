@@ -84,6 +84,7 @@ class LidGripPlannerNode(Node):
         self.declare_parameter("log_json_status", False)
         self.declare_parameter("approach_offset_m", 0.08)
         self.declare_parameter("lift_offset_m", 0.10)
+        self.declare_parameter("min_approach_z_m", 0.0)
         self.declare_parameter("surface_offset_m", 0.0)
         self.declare_parameter("offset_axis", "local_z")
         self.declare_parameter("tcp_grasp_offset_x_m", 0.0)
@@ -744,9 +745,6 @@ class LidGripPlannerNode(Node):
             )
 
         refined_rz = stats["pick_rz_deg"] if apply_yaw else self._pick_rz_deg(refined_msg.pose)
-        align_pos = self._pose_to_dsr_pos_with_rz(refined_plan.approach_pose, refined_rz)
-        grasp_pos = self._pose_to_dsr_pos_with_rz(refined_plan.grasp_pose, refined_rz)
-        lift_pos = self._pose_to_dsr_pos_with_rz(refined_plan.lift_pose, refined_rz)
         self._approach_pub.publish(self._pose_stamped(refined_plan.approach_pose, refined_msg))
         self._grasp_pub.publish(self._pose_stamped(refined_plan.grasp_pose, refined_msg))
         self._lift_pub.publish(self._pose_stamped(refined_plan.lift_pose, refined_msg))
@@ -769,9 +767,9 @@ class LidGripPlannerNode(Node):
             real_motion=True,
         )
         return (
-            ("visual_refine_align_lid", align_pos),
-            ("grasp_lid", grasp_pos),
-            ("lift_lid", lift_pos),
+            ("visual_refine_align_lid", refined_plan.approach_pose),
+            ("grasp_lid", refined_plan.grasp_pose),
+            ("lift_lid", refined_plan.lift_pose),
         )
 
     def _visual_refine_fallback_steps(self, fallback_plan, *, reason: str, details: dict):
@@ -2708,6 +2706,7 @@ class LidGripPlannerNode(Node):
         return LidGripConfig(
             approach_offset_m=float(self.get_parameter("approach_offset_m").value),
             lift_offset_m=float(self.get_parameter("lift_offset_m").value),
+            min_approach_z_m=float(self.get_parameter("min_approach_z_m").value),
             surface_offset_m=float(self.get_parameter("surface_offset_m").value),
             offset_axis=str(self.get_parameter("offset_axis").value),
             tcp_grasp_offset_x_m=float(self.get_parameter("tcp_grasp_offset_x_m").value),

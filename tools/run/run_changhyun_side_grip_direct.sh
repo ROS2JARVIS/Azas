@@ -7,6 +7,7 @@ DISPLAY="${DISPLAY:-:0}"
 XAUTHORITY="${XAUTHORITY:-/run/user/1000/gdm/Xauthority}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
 ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
+FASTDDS_BUILTIN_TRANSPORTS="${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
 
 cd "${ROOT}"
 
@@ -26,7 +27,7 @@ fi
 source "${ROOT}/install/dsr_practice/share/dsr_practice/package.bash"
 set -u
 
-export DISPLAY XAUTHORITY ROS_DOMAIN_ID ROS_LOCALHOST_ONLY
+export DISPLAY XAUTHORITY ROS_DOMAIN_ID ROS_LOCALHOST_ONLY FASTDDS_BUILTIN_TRANSPORTS
 export ROS_LOG_DIR="${ROS_LOG_DIR:-/tmp/azas_ros_logs}"
 export PYTHONPATH="${ROOT}/tools/run/python_compat:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
@@ -36,7 +37,7 @@ mkdir -p "${ROS_LOG_DIR}"
 echo "[Azas] START Changhyun side-grip direct tmux command"
 echo "[Azas] OpenCV window: confirm cup, then press p. On successful side-grip this command exits for the next pipeline step."
 echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
-echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}"
+echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS}"
 echo "[Azas] start_joint_state_relay=${START_JOINT_STATE_RELAY:-auto}"
 echo "[Azas] moving to side-grip camera scan pose before starting YOLO"
 

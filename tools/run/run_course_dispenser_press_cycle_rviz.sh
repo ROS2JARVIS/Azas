@@ -17,7 +17,8 @@ PORT="${PORT:-12345}"
 MODEL="${MODEL:-m0609}"
 COLOR="${COLOR:-white}"
 RT_HOST="${RT_HOST:-192.168.137.50}"
-JOINT_STATES_TOPIC="${JOINT_STATES_TOPIC:-/${ROBOT_NAME}/joint_states}"
+JOINT_STATE_RELAY_INPUT_TOPIC="${JOINT_STATE_RELAY_INPUT_TOPIC:-/${ROBOT_NAME}/joint_states}"
+JOINT_STATES_TOPIC="${JOINT_STATES_TOPIC:-/joint_states}"
 MOVEIT_CONTROLLER_ACTION="${MOVEIT_CONTROLLER_ACTION:-/${ROBOT_NAME}/dsr_moveit_controller/follow_joint_trajectory}"
 CONTROLLER_SETTLE_SEC="${CONTROLLER_SETTLE_SEC:-5}"
 START_DOOSAN="${START_DOOSAN:-auto}"  # auto|1|0; auto reuses an existing Doosan/MoveIt session.
@@ -43,10 +44,21 @@ DISPENSER_COLLISION_OBJECTS="${DISPENSER_COLLISION_OBJECTS:-1}"
 DISPENSER_COLLISION_EXCLUDE_IDS="${DISPENSER_COLLISION_EXCLUDE_IDS:-dispenser_head_nozzle_merged_horizontal_spout_box}"
 REMOVE_COURSE_WORKSPACE_WALLS="${REMOVE_COURSE_WORKSPACE_WALLS:-0}"
 WORKSPACE_COLLISION_ENABLED="${WORKSPACE_COLLISION_ENABLED:-1}"
+FULL_COLLISION_SCENE_ENABLED="${FULL_COLLISION_SCENE_ENABLED:-1}"
+FULL_COLLISION_SHOW_CEILING="${FULL_COLLISION_SHOW_CEILING:-0}"
 SHOW_LINK6_GRIPPER="${SHOW_LINK6_GRIPPER:-1}"
+START_JOINT_STATE_RELAY="${START_JOINT_STATE_RELAY:-auto}"
 DISPENSER_COLLISION_CONFIG="${DISPENSER_COLLISION_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/measured_dispenser_collision.yaml}"
 if [[ ! -f "${DISPENSER_COLLISION_CONFIG}" ]]; then
   DISPENSER_COLLISION_CONFIG="${ROOT_DIR}/src/azas_bringup/config/measured_dispenser_collision.yaml"
+fi
+SAFETY_CONFIG="${SAFETY_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/safety.yaml}"
+if [[ ! -f "${SAFETY_CONFIG}" ]]; then
+  SAFETY_CONFIG="${ROOT_DIR}/src/azas_bringup/config/safety.yaml"
+fi
+CALIBRATION_CONFIG="${CALIBRATION_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/calibration.yaml}"
+if [[ ! -f "${CALIBRATION_CONFIG}" ]]; then
+  CALIBRATION_CONFIG="${ROOT_DIR}/src/azas_bringup/config/calibration.yaml"
 fi
 mkdir -p "${LOG_DIR}"
 
@@ -146,10 +158,28 @@ else
   : >"${LOG_DIR}/course_dispenser_bringup.log"
 fi
 echo "[Azas] Waiting for controller joint states on ${JOINT_STATES_TOPIC}"
+echo "[Azas] Joint-state relay source: ${JOINT_STATE_RELAY_INPUT_TOPIC}"
 echo "[Azas] MoveIt controller action: ${MOVEIT_CONTROLLER_ACTION}"
 if [[ "${PRESS_ONLY}" == "1" || "${PRESS_ONLY}" == "true" ]]; then
   echo "[Azas] PRESS_ONLY=${PRESS_ONLY}: RViz will show measured press joints + Z-only pump strokes only."
   echo "[Azas] PRESS_ONLY=${PRESS_ONLY}: skipping cup placement/return IK paths so press motion can be judged directly."
+fi
+
+if [[ "${START_JOINT_STATE_RELAY}" == "1" || "${START_JOINT_STATE_RELAY}" == "true" || "${START_JOINT_STATE_RELAY}" == "auto" ]]; then
+  if [[ "${JOINT_STATES_TOPIC}" == "/joint_states" && "${JOINT_STATE_RELAY_INPUT_TOPIC}" != "/joint_states" ]]; then
+    if ! pgrep -af "joint_state_relay.py.*input_topic:=${JOINT_STATE_RELAY_INPUT_TOPIC}.*output_topic:=/joint_states|joint_state_relay.py.*output_topic:=/joint_states.*input_topic:=${JOINT_STATE_RELAY_INPUT_TOPIC}" | grep -v 'pgrep -af' >/dev/null; then
+      python3 "${ROOT_DIR}/src/dsr_practice/dsr_practice/joint_state_relay.py" \
+        --ros-args \
+        -r __node:=azas_course_joint_state_relay \
+        -p input_topic:="${JOINT_STATE_RELAY_INPUT_TOPIC}" \
+        -p output_topic:="${JOINT_STATES_TOPIC}" \
+        >"${LOG_DIR}/course_joint_state_relay.log" 2>&1 &
+      PIDS+=("$!")
+      echo "[Azas] Started joint-state relay: ${JOINT_STATE_RELAY_INPUT_TOPIC} -> ${JOINT_STATES_TOPIC}"
+    else
+      echo "[Azas] Reusing existing joint-state relay: ${JOINT_STATE_RELAY_INPUT_TOPIC} -> ${JOINT_STATES_TOPIC}"
+    fi
+  fi
 fi
 
 joint_deadline=$((SECONDS + JOINT_WAIT_SEC))
@@ -255,6 +285,27 @@ if [[ "${DISPENSER_COLLISION_ENABLED}" == "1" || "${DISPENSER_COLLISION_ENABLED}
       echo '[Azas] Collision markers enabled; marker sample did not capture label yet.' >&2
       tail -80 "${LOG_DIR}/measured_dispenser_collision_scene.log" >&2 || true
     fi
+  fi
+fi
+
+if [[ "${FULL_COLLISION_SCENE_ENABLED}" == "1" || "${FULL_COLLISION_SCENE_ENABLED}" == "true" ]]; then
+  if [[ "${FULL_COLLISION_SHOW_CEILING}" == "1" || "${FULL_COLLISION_SHOW_CEILING}" == "true" ]]; then
+    FULL_COLLISION_SHOW_CEILING_BOOL=true
+  else
+    FULL_COLLISION_SHOW_CEILING_BOOL=false
+  fi
+  if pgrep -af 'collision_scene_rviz_publisher.py|collision_scene_rviz_publisher' | grep -v 'pgrep -af' >/dev/null; then
+    echo "[Azas] Reusing existing full collision RViz publisher on /azas/collision_scene/markers."
+  else
+    python3 "${ROOT_DIR}/src/azas_bringup/azas_bringup/collision_scene_rviz_publisher.py" \
+      --ros-args \
+      -p safety_config_path:="${SAFETY_CONFIG}" \
+      -p dispenser_collision_config_path:="${DISPENSER_COLLISION_CONFIG}" \
+      -p calibration_path:="${CALIBRATION_CONFIG}" \
+      -p publish_workspace_ceiling:="${FULL_COLLISION_SHOW_CEILING_BOOL}" \
+      >"${LOG_DIR}/full_collision_scene_rviz_publisher.log" 2>&1 &
+    PIDS+=("$!")
+    echo "[Azas] FULL_COLLISION_SCENE_ENABLED=${FULL_COLLISION_SCENE_ENABLED}: publishing table/walls/dispenser/front-hold markers on /azas/collision_scene/markers."
   fi
 fi
 

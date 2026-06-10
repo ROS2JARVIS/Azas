@@ -74,6 +74,7 @@ class BaseMoveItPickNode(Node):
 
         # ── 픽 상태 ──
         self.declare_parameter("auto_pick", False)
+        self.declare_parameter("exit_after_pick", False)
         self.declare_parameter("skip_initial_home_move", False)
         self.declare_parameter("controller_action_name", "/dsr01/dsr_moveit_controller/follow_joint_trajectory")
         self.declare_parameter("controller_action_wait_sec", 60.0)
@@ -81,6 +82,7 @@ class BaseMoveItPickNode(Node):
         self.home_xyz = None     # (x, y, z) [m] — initialize_home 에서 설정
         self.home_ori = None     # quat dict {x, y, z, w}
         self._auto_mode = _parse_bool(self.get_parameter("auto_pick").value)
+        self._exit_after_pick = _parse_bool(self.get_parameter("exit_after_pick").value)
         self._skip_initial_home_move = _parse_bool(
             self.get_parameter("skip_initial_home_move").value
         )
@@ -315,10 +317,14 @@ class BaseMoveItPickNode(Node):
         self._frozen_frame = frame.copy()
 
         def _work():
+            success = False
             try:
-                self.detect_and_pick(frame)
+                success = bool(self.detect_and_pick(frame))
             finally:
                 self._frozen_frame = None
+            if success and self._exit_after_pick:
+                self.get_logger().info("exit_after_pick=true and pick completed; closing cup_uprighting node")
+                rclpy.shutdown()
 
         threading.Thread(target=_work, daemon=True).start()
 

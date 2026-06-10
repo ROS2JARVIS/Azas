@@ -142,7 +142,7 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
 
         self.picking = True
         try:
-            self._pick_and_straighten(bx, by, bz, cup_theta)
+            return self._pick_and_straighten(bx, by, bz, cup_theta)
         finally:
             self.picking = False
 

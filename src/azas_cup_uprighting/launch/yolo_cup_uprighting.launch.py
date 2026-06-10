@@ -45,6 +45,7 @@ def _runtime_nodes(context, moveit_params, moveit_py_params):
                     value_type=str,
                 ),
                 "auto_pick": LaunchConfiguration("auto_pick"),
+                "exit_after_pick": LaunchConfiguration("exit_after_pick"),
                 "skip_initial_home_move": LaunchConfiguration("skip_initial_home_move"),
                 "controller_action_name": ParameterValue(
                     LaunchConfiguration("controller_action_name"),
@@ -96,6 +97,11 @@ def generate_launch_description():
         "auto_pick",
         default_value="false",
         description="Automatically run the first detected fallen-cup upright sequence. false keeps manual p-key confirmation.",
+    )
+    exit_after_pick_arg = DeclareLaunchArgument(
+        "exit_after_pick",
+        default_value="false",
+        description="Exit the OpenCV node after one successful manual/auto upright sequence.",
     )
     skip_initial_home_move_arg = DeclareLaunchArgument(
         "skip_initial_home_move",
@@ -166,6 +172,7 @@ def generate_launch_description():
         model_path_arg,
         publish_hand_eye_tf_arg,
         auto_pick_arg,
+        exit_after_pick_arg,
         skip_initial_home_move_arg,
         moveit_controller_name_arg,
         controller_action_name_arg,

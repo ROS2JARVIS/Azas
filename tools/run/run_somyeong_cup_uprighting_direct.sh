@@ -7,6 +7,7 @@ DISPLAY="${DISPLAY:-:0}"
 XAUTHORITY="${XAUTHORITY:-/run/user/1000/gdm/Xauthority}"
 MODEL_PATH="${MODEL_PATH:-${ROOT}/src/azas_perception/config/yolo_cup_uprighting_best.pt}"
 AUTO_PICK="${AUTO_PICK:-false}"
+EXIT_AFTER_PICK="${EXIT_AFTER_PICK:-false}"
 SKIP_INITIAL_HOME_MOVE="${SKIP_INITIAL_HOME_MOVE:-false}"
 PUBLISH_HAND_EYE_TF="${PUBLISH_HAND_EYE_TF:-true}"
 MOVEIT_CONTROLLER_NAME="${MOVEIT_CONTROLLER_NAME:-/dsr01/dsr_moveit_controller}"
@@ -42,7 +43,7 @@ echo "[Azas] OpenCV window: confirm fallen cup, then press p. Quit with q/Esc."
 echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
 echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}"
 echo "[Azas] model_path=${MODEL_PATH}"
-echo "[Azas] auto_pick=${AUTO_PICK} skip_initial_home_move=${SKIP_INITIAL_HOME_MOVE} publish_hand_eye_tf=${PUBLISH_HAND_EYE_TF}"
+echo "[Azas] auto_pick=${AUTO_PICK} exit_after_pick=${EXIT_AFTER_PICK} skip_initial_home_move=${SKIP_INITIAL_HOME_MOVE} publish_hand_eye_tf=${PUBLISH_HAND_EYE_TF}"
 echo "[Azas] moveit_controller_name=${MOVEIT_CONTROLLER_NAME}"
 echo "[Azas] controller_action_name=${CONTROLLER_ACTION_NAME}"
 
@@ -59,6 +60,7 @@ fi
 ros2 launch "${ROOT}/src/azas_cup_uprighting/launch/yolo_cup_uprighting.launch.py" \
   model_path:="${MODEL_PATH}" \
   auto_pick:="${AUTO_PICK}" \
+  exit_after_pick:="${EXIT_AFTER_PICK}" \
   skip_initial_home_move:="${SKIP_INITIAL_HOME_MOVE}" \
   publish_hand_eye_tf:="${PUBLISH_HAND_EYE_TF}" \
   moveit_controller_name:="${MOVEIT_CONTROLLER_NAME}" \

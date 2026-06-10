@@ -37,6 +37,7 @@ ROS_SETUP = (
     "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
     "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-9} && "
     "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0} && "
+    "export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4} && "
     "if [ -f /home/ssu/ws_moveit/install/setup.bash ]; then "
     "source /home/ssu/ws_moveit/install/setup.bash; "
     "fi && "
@@ -236,6 +237,111 @@ def _compact_dispenser_sequence(sequence: list[str]) -> str:
     return ",".join(groups)
 
 
+def _recipe_color_pumps(recipe: Any) -> tuple[list[tuple[str, int]], list[str]]:
+    color_pumps: list[tuple[str, int]] = []
+    issues: list[str] = []
+
+    def add(color: Any, count: Any = 1) -> None:
+        color_name = str(color).lower().strip()
+        if not color_name:
+            return
+        try:
+            pump_count = int(count)
+        except (TypeError, ValueError):
+            issues.append(f"invalid pump count for color: {color_name}")
+            return
+        if pump_count < 1:
+            issues.append(f"pump count must be >=1 for color: {color_name}")
+            return
+        color_pumps.append((color_name, pump_count))
+
+    if isinstance(recipe, list):
+        for item in recipe:
+            if isinstance(item, dict):
+                color = item.get("color") or item.get("name")
+                count = item.get("pumps", item.get("count", item.get("presses", 1)))
+                if color:
+                    add(color, count)
+            else:
+                add(item, 1)
+        return color_pumps, issues
+
+    if not isinstance(recipe, dict):
+        issues.append("recipe JSON must be an object or list")
+        return color_pumps, issues
+
+    colors = recipe.get("colors")
+    pumps = None
+    for key in ("pumps", "presses", "counts"):
+        if key in recipe:
+            pumps = recipe.get(key)
+            break
+    if isinstance(colors, list):
+        if not isinstance(pumps, dict):
+            pumps = {}
+        for raw_color in colors:
+            color = str(raw_color).lower().strip()
+            add(color, pumps.get(color, pumps.get(str(raw_color), 1)))
+        return color_pumps, issues
+
+    if isinstance(pumps, dict):
+        for color, count in pumps.items():
+            add(color, count)
+        return color_pumps, issues
+
+    metadata_keys = {"source", "note", "notes", "created_at", "updated_at"}
+    for color, count in recipe.items():
+        if str(color).lower().strip() in metadata_keys:
+            continue
+        if isinstance(count, (int, float, str)):
+            add(color, count)
+
+    if not color_pumps:
+        issues.append("recipe has no executable colors")
+    return color_pumps, issues
+
+
+def _color_recipe_direct_arg(payload: dict[str, Any]) -> str:
+    recipe_override = str(payload.get("recipe_dispenser_ids") or "").strip()
+    if not recipe_override:
+        return ""
+    tokens = [token.strip() for token in re.split(r"[,;]+", recipe_override) if token.strip()]
+    numeric_dispenser_override = bool(tokens) and all(
+        re.match(r"^[1-4](?:\s*(?:x|:)\s*\d+)?$", token.lower())
+        for token in tokens
+    )
+    if numeric_dispenser_override:
+        return f" --dispenser-ids {shlex.quote(recipe_override)}"
+    direct_color_map = json.dumps(DISPENSER_PRESS_TARGETS, ensure_ascii=False)
+    return (
+        f" --colors {shlex.quote(recipe_override)}"
+        f" --color-map-json {shlex.quote(direct_color_map)}"
+    )
+
+
+def color_recipe_sequence_command(payload: dict[str, Any]) -> str:
+    return (
+        f"cd {ROOT} && {ROS_SETUP} && "
+        "python3 tools/run/run_color_recipe_sequence.py --press-depth-m 0.020 --execute --confirm"
+        f"{_color_recipe_direct_arg(payload)}"
+    )
+
+
+def chain_recipe_after_manual_command(manual_cmd: str, payload: dict[str, Any], label: str) -> str:
+    recipe_cmd = color_recipe_sequence_command(payload)
+    return (
+        f"( {manual_cmd} ); "
+        "manual_rc=$?; "
+        "if [ ${manual_rc} -eq 0 ]; then "
+        f"echo '[Azas] {label} 성공 종료 -> 통합 디스펜서 색상 레시피를 즉시 실행합니다.'; "
+        f"{recipe_cmd}; "
+        "else "
+        f"echo '[Azas] {label} 실패/중단 rc='${{manual_rc}}' -> 디스펜서 레시피 실행을 건너뜁니다.'; "
+        "exit ${manual_rc}; "
+        "fi"
+    )
+
+
 def hand_eye_static_tf_command(*, compose_timeout_sec: float = 30.0) -> str:
     """Start the measured hand-eye TF publisher without inventing camera poses."""
     return (
@@ -331,26 +437,13 @@ def dispenser_color_map_status() -> dict[str, Any]:
         color_to_id[color] = dispenser_id
 
     sequence: list[str] = []
-    if isinstance(recipe, dict):
-        colors = recipe.get("colors") or []
-        pumps = recipe.get("pumps") or {}
-        if not isinstance(colors, list) or not colors:
-            issues.append("recipe.colors is empty or invalid")
-        if not isinstance(pumps, dict):
-            pumps = {}
-        for raw_color in colors if isinstance(colors, list) else []:
-            color = str(raw_color).lower().strip()
+    if recipe is not None:
+        color_pumps, recipe_issues = _recipe_color_pumps(recipe)
+        issues.extend(recipe_issues)
+        for color, count in color_pumps:
             dispenser_id = color_to_id.get(color)
             if not dispenser_id:
                 issues.append(f"recipe color has no dispenser: {color}")
-                continue
-            try:
-                count = int(pumps.get(color, 1))
-            except (TypeError, ValueError):
-                issues.append(f"invalid pump count for color: {color}")
-                continue
-            if count < 1:
-                issues.append(f"pump count must be >=1 for color: {color}")
                 continue
             sequence.extend([dispenser_id] * count)
 
@@ -441,6 +534,15 @@ STEPS = [
         True,
         False,
         "검증된 tmux 방식으로 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작. status_check/개별 연결 큐를 반복하지 않음",
+    ),
+    Step(
+        "stop_azas_all",
+        "전체 정지 / ROS 정리",
+        "run",
+        "tools/run/stop_azas_all.sh",
+        True,
+        False,
+        "azas tmux 스택과 모든 ROS 노드/좀비 프로세스를 종료하고 FastDDS 공유메모리 잔여물(/dev/shm/fastrtps_*)을 정리. 패널/에이전트 프로세스는 보호됨. 정리 후 'tmux 연결 스택 시작'으로 재시작",
     ),
     Step("status_check", "연결 확인", "run", "ros2 service list | grep /dsr01/motion", True, False, "명령 후보만 있음: /dsr01/motion 서비스가 보여야 통과"),
     Step("connect_gripper", "그리퍼 연결", "background", "ros2 launch azas_gripper rg2_trigger.launch.py", True, False, "RG2 Trigger 서비스(/jarvis/rg2/open, close, set_width) 시작"),
@@ -850,6 +952,7 @@ AUXILIARY_STACK_PATTERNS = (
     "cup_detection_pose_bridge_node",
     "hand_eye_static_tf_node",
     "measured_dispenser_collision_scene_node",
+    "collision_scene_rviz_publisher",
     "tumbler_collision_scene_node",
     "link6_gripper_collision_node",
     "rg2_link6_tcp.launch.py",
@@ -861,6 +964,7 @@ COLLISION_SCENE_STACK_PATTERNS = (
     "workspace_collision_scene.launch.py",
     "workspace_collision_scene_node",
     "measured_dispenser_collision_scene_node",
+    "collision_scene_rviz_publisher",
     "tumbler_collision_scene_node",
     "link6_gripper_collision_node",
     "rg2_link6_tcp.launch.py",
@@ -908,6 +1012,7 @@ RUN_STEP_STACK_PATTERNS = (
     "run_cocktail_now_real.sh",
     "run_cocktail_collision_rviz_preview.sh",
     "stop_cocktail_motion_preview.sh",
+    "stop_azas_all.sh",
     "rg2_full_open_verify.sh",
     "move_to_measured_dispenser_front_hold.py",
     "pick_from_measured_dispenser_front_hold.py",
@@ -1096,7 +1201,16 @@ def start_panel_tmux_window(step_key: str, cmd: str, env: dict[str, str]) -> Pat
     log_path.write_text(f"[Azas panel tmux] command: {cmd}\n\n", encoding="utf-8")
     exports = " ".join(
         f"export {name}={shlex.quote(str(env.get(name, '')))};"
-        for name in ("ROS_DOMAIN_ID", "ROS_LOCALHOST_ONLY", "ROBOT_HOST", "ROBOT_NAME", "SERVICE_PREFIX", "DISPLAY", "XAUTHORITY")
+        for name in (
+            "ROS_DOMAIN_ID",
+            "ROS_LOCALHOST_ONLY",
+            "FASTDDS_BUILTIN_TRANSPORTS",
+            "ROBOT_HOST",
+            "ROBOT_NAME",
+            "SERVICE_PREFIX",
+            "DISPLAY",
+            "XAUTHORITY",
+        )
     )
     shell_cmd = (
         f"{exports} cd {shlex.quote(str(ROOT))}; "
@@ -2330,23 +2444,33 @@ finally:
     rclpy.shutdown()
 """
     env = shell_env({})
+    proc = None
     try:
-        completed = subprocess.run(
+        proc = subprocess.Popen(
             ["bash", "-lc", f"{ROS_SETUP} && python3 -c {shlex.quote(script)}"],
             cwd=str(ROOT),
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=6.0,
-            check=False,
+            start_new_session=True,
         )
+        stdout, stderr = proc.communicate(timeout=6.0)
     except subprocess.TimeoutExpired:
+        if proc is not None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                proc.wait(timeout=1.0)
+            except Exception:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
+                    pass
         return False, b"", "camera snapshot timed out"
     except Exception as exc:  # pragma: no cover - operator diagnostics only.
         return False, b"", f"camera snapshot failed: {exc}"
-    if completed.returncode != 0 or not completed.stdout:
-        return False, b"", completed.stderr.decode("utf-8", errors="replace")[-2000:]
-    return True, completed.stdout, ""
+    if proc.returncode != 0 or not stdout:
+        return False, b"", stderr.decode("utf-8", errors="replace")[-2000:]
+    return True, stdout, ""
 
 
 def side_grip_preflight(env: dict[str, str], service_prefix: str) -> tuple[bool, str]:
@@ -2917,6 +3041,23 @@ def with_collision_scene_prereq(selected: list[str]) -> list[str]:
             ordered.insert(first_collision_index, "start_collision_scene")
     return list(dict.fromkeys(ordered))
 
+
+def configure_manual_recipe_chain(selected: list[str], payload: dict[str, Any]) -> list[str]:
+    """Run dispenser recipe inside manual OpenCV tmux step after success.
+
+    The manual PR #20 / cup-uprighting steps are long-running GUI commands.
+    If the panel loop keeps `run_color_recipe_sequence` as a separate next
+    step, it starts immediately after the tmux window is opened, before the
+    operator presses `p`.  Instead, mark the manual command for shell-level
+    chaining and remove the separate recipe step from the server loop.
+    """
+    manual_keys = {"side_grip", "cup_uprighting"}
+    if not any(key in selected for key in manual_keys):
+        return selected
+    payload["_auto_recipe_after_manual_logic"] = True
+    return [key for key in selected if key != "run_color_recipe_sequence"]
+
+
 def run_timeout_for_step(step: Step) -> float:
     if step.key == "side_grip":
         return 300.0
@@ -2946,6 +3087,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         or DEFAULT_ROS_DOMAIN_ID
     )
     env["ROS_LOCALHOST_ONLY"] = str(env.get("ROS_LOCALHOST_ONLY") or "0")
+    env["FASTDDS_BUILTIN_TRANSPORTS"] = str(env.get("FASTDDS_BUILTIN_TRANSPORTS") or "UDPv4")
     env["ROBOT_HOST"] = str(payload.get("robot_host") or env.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
     env["ROBOT_NAME"] = str(payload.get("robot_name") or env.get("ROBOT_NAME") or "dsr01")
     env["SERVICE_PREFIX"] = str(payload.get("service_prefix") or env.get("SERVICE_PREFIX") or "dsr01")
@@ -3079,28 +3221,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "echo '[INFO] camera/hand-eye TF is checked after RealSense + MoveIt collision scene startup, not during core robot status_check.'"
         )
     if step.key == "run_color_recipe_sequence":
-        recipe_override = str(payload.get("recipe_dispenser_ids") or "").strip()
-        direct_arg = ""
-        if recipe_override:
-            # Operators now enter color pump counts in the direct field, e.g.
-            # red1,blue3.  Numeric diagnostics such as 1x2,3x2 still mean
-            # physical dispenser IDs; route only non-digit-leading tokens
-            # through --colors so x in 1x2 is not mistaken for a color name.
-            tokens = [token.strip() for token in re.split(r"[,;]+", recipe_override) if token.strip()]
-            numeric_dispenser_override = bool(tokens) and all(re.match(r"^[1-4](?:\s*(?:x|:)\s*\d+)?$", token.lower()) for token in tokens)
-            if numeric_dispenser_override:
-                direct_arg = f" --dispenser-ids {shlex.quote(recipe_override)}"
-            else:
-                direct_color_map = json.dumps(DISPENSER_PRESS_TARGETS, ensure_ascii=False)
-                direct_arg = (
-                    f" --colors {shlex.quote(recipe_override)}"
-                    f" --color-map-json {shlex.quote(direct_color_map)}"
-                )
-        return (
-            f"cd {ROOT} && {ROS_SETUP} && "
-            "python3 tools/run/run_color_recipe_sequence.py --execute --confirm"
-            f"{direct_arg}"
-        )
+        return color_recipe_sequence_command(payload)
     if step.key == "rviz_cocktail_collision_preview":
         recipe_dispenser_ids = str(payload.get("recipe_dispenser_ids") or "").strip()
         recipe_env = ""
@@ -3113,6 +3234,10 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key == "stop_cocktail_motion_preview":
         return f"cd {ROOT} && tools/run/stop_cocktail_motion_preview.sh"
+    if step.key == "stop_azas_all":
+        # No ROS_SETUP: the cleanup script must not depend on (or re-spawn) the
+        # ROS daemon it is about to kill.
+        return f"cd {ROOT} && bash tools/run/stop_azas_all.sh"
     if step.key == "check_one_click_cocktail_ready":
         robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
         robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or service_prefix)
@@ -3247,6 +3372,12 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 "
             "--frame-id world --child-frame-id base_link & "
             f"{hand_eye_static_tf_command(compose_timeout_sec=30.0)} & "
+            f"python3 {shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'azas_bringup' / 'collision_scene_rviz_publisher.py'))} "
+            "--ros-args "
+            f"-p safety_config_path:={shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'safety.yaml'))} "
+            f"-p dispenser_collision_config_path:={shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'measured_dispenser_collision.yaml'))} "
+            f"-p calibration_path:={shlex.quote(str(ROOT / 'src' / 'azas_bringup' / 'config' / 'calibration.yaml'))} "
+            "-p publish_workspace_ceiling:=false & "
             "python3 -m azas_motion.tumbler_collision_scene_node --ros-args "
             "-p action:=publish_detected "
             "-p object_id:=detected_tumbler "
@@ -3288,25 +3419,32 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key == "cup_uprighting":
         direct_script = ROOT / "tools" / "run" / "run_somyeong_cup_uprighting_direct.sh"
-        return (
+        manual_cmd = (
             f"cd {ROOT} && "
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             f"MODEL_PATH={shlex.quote(str(CUP_UPRIGHTING_YOLO_MODEL_PATH))} "
+            "EXIT_AFTER_PICK=true "
             f"bash {shlex.quote(str(direct_script))}"
         )
+        if payload.get("_auto_recipe_after_manual_logic"):
+            return chain_recipe_after_manual_command(manual_cmd, payload, "소명 cup_uprighting")
+        return manual_cmd
     if step.key == "voice_input":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py"
     if step.key == "side_grip":
         direct_script = ROOT / "tools" / "run" / "run_changhyun_side_grip_direct.sh"
-        return (
+        manual_cmd = (
             f"cd {ROOT} && "
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             f"bash {shlex.quote(str(direct_script))}"
         )
+        if payload.get("_auto_recipe_after_manual_logic"):
+            return chain_recipe_after_manual_command(manual_cmd, payload, "창현 side_grip")
+        return manual_cmd
     if step.key == "gripper_soft_grasp":
         return (
             f"cd {ROOT} && {ROS_SETUP} && "
@@ -4284,6 +4422,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     selected = with_collision_scene_prereq(raw_selected)
                     selected = list(dict.fromkeys(selected))
+                selected = configure_manual_recipe_chain(selected, payload)
                 steps_by_key = {step.key: step for step in STEPS}
                 results = []
                 for key in selected:

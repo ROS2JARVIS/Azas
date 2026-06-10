@@ -23,7 +23,9 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
+            "collision_scene_rviz_publisher = azas_bringup.collision_scene_rviz_publisher:main",
             "joint_state_relay_legacy = azas_bringup.joint_state_relay_legacy:main",
+            "rule_motion_joint_preview_node = azas_bringup.rule_motion_joint_preview_node:main",
         ],
     },
 )

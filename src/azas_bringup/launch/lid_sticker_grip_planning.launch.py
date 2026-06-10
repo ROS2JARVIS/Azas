@@ -96,6 +96,7 @@ def generate_launch_description():
         DeclareLaunchArgument("max_plane_rmse_m", default_value="0.015"),
         DeclareLaunchArgument("approach_offset_m", default_value="0.08"),
         DeclareLaunchArgument("lift_offset_m", default_value="0.10"),
+        DeclareLaunchArgument("min_approach_z_m", default_value="0.0"),
         DeclareLaunchArgument("surface_offset_m", default_value="0.0"),
         DeclareLaunchArgument("offset_axis", default_value="local_z"),
         DeclareLaunchArgument("tcp_grasp_offset_x_m", default_value="0.0"),
@@ -381,6 +382,10 @@ def generate_launch_description():
                     value_type=float,
                 ),
                 "lift_offset_m": ParameterValue(LaunchConfiguration("lift_offset_m"), value_type=float),
+                "min_approach_z_m": ParameterValue(
+                    LaunchConfiguration("min_approach_z_m"),
+                    value_type=float,
+                ),
                 "surface_offset_m": ParameterValue(
                     LaunchConfiguration("surface_offset_m"),
                     value_type=float,

@@ -12,6 +12,7 @@ ARUCO_FALLBACK_MARKERS="${ARUCO_FALLBACK_MARKERS:-}"
 ARUCO_MARKER_LENGTH_M="${ARUCO_MARKER_LENGTH_M:-0.03}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
 ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
+FASTDDS_BUILTIN_TRANSPORTS="${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
 MOVE_TO_LID_VIEW_POSE="${MOVE_TO_LID_VIEW_POSE:-true}"
 
 cd "${ROOT}"
@@ -31,7 +32,7 @@ else
 fi
 set -u
 
-export DISPLAY XAUTHORITY ROS_DOMAIN_ID ROS_LOCALHOST_ONLY
+export DISPLAY XAUTHORITY ROS_DOMAIN_ID ROS_LOCALHOST_ONLY FASTDDS_BUILTIN_TRANSPORTS
 export ROS_LOG_DIR="${ROS_LOG_DIR:-/tmp/azas_ros_logs}"
 export PYTHONPATH="${ROOT}/src/azas_motion:${ROOT}/tools/run/python_compat:${PYTHONPATH:-}"
 mkdir -p "${ROS_LOG_DIR}" "${ROOT}/log/tmux_logic"
@@ -43,7 +44,7 @@ fi
 echo "[Azas] START Kang lid_grip_close direct command"
 echo "[Azas] OpenCV window: confirm lid ArUco, then press p. Quit with q/Esc."
 echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
-echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}"
+echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS}"
 echo "[Azas] aruco=${ARUCO_DICTIONARY}:${ARUCO_MARKER_ID} fallback=${ARUCO_FALLBACK_MARKERS} length_m=${ARUCO_MARKER_LENGTH_M}"
 
 if [[ ! -f "${MODEL_PATH}" ]]; then
@@ -84,8 +85,8 @@ launch_args=(
   approach_lid_with_movej:=true approach_movej_velocity:=20.0 approach_movej_acceleration:=20.0 \
   lid_overhead_approach_enabled:=true lid_overhead_min_z_m:=0.260 \
   rx:=108.41 ry:=-176.32 rz:=175.98 offset_axis:=base_z surface_offset_m:=0.0 \
-  tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:=0.0 min_grasp_z_m:=0.065 \
-  approach_offset_m:=0.08 lift_offset_m:=0.10 settle_seconds_before_grasp:=0.5 hold_seconds_after_grasp:=3.0 \
+  tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:=0.160 min_grasp_z_m:=0.180 \
+  approach_offset_m:=0.08 min_approach_z_m:=0.260 lift_offset_m:=0.10 settle_seconds_before_grasp:=0.5 hold_seconds_after_grasp:=3.0 \
   line_velocity:=15.0 line_acceleration:=8.0 move_timeout_sec:=90.0 \
   enable_gripper_service_calls:=true gripper_set_service:=/jarvis/rg2/set_width \
   gripper_preopen_width_m:=0.110 gripper_grasp_width_m:=0.020 gripper_force_n:=12.0 \
