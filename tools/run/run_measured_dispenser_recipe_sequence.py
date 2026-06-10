@@ -61,6 +61,7 @@ INVALID_PRESS_CONTACT_STATUSES = {
     "reteach_required",
     "확인 필요",
 }
+INVALID_CUP_PLACE_STATUSES = INVALID_PRESS_CONTACT_STATUSES
 
 DR_BASE = 0
 MOVE_MODE_ABSOLUTE = 0
@@ -76,12 +77,23 @@ def angular_delta_deg(target: float, current: float) -> float:
 
 def equivalent_angle_near_current_deg(target: float, current: float, *, max_abs: float) -> float:
     """Choose the equivalent joint angle closest to the current controller reading."""
-    candidates = [float(target) + 360.0 * step for step in range(-2, 3)]
+    target_value = float(target)
+    current_value = float(current)
+    center_step = round((current_value - target_value) / 360.0)
+    candidates = [target_value + 360.0 * (center_step + step) for step in range(-2, 3)]
+    modulo = ((target_value + 180.0) % 360.0) - 180.0
+    candidates.extend(
+        [
+            modulo,
+            modulo + 360.0,
+            modulo - 360.0,
+        ]
+    )
     if max_abs > 0.0:
         bounded = [candidate for candidate in candidates if abs(candidate) <= max_abs]
         if bounded:
             candidates = bounded
-    return min(candidates, key=lambda candidate: abs(candidate - float(current)))
+    return min(candidates, key=lambda candidate: abs(candidate - current_value))
 
 
 def parse_dispenser_ids(raw: str) -> list[str]:
@@ -174,6 +186,19 @@ def ensure_press_contact_enabled(dispenser_id: str, block: dict[str, Any]) -> No
         raise ValueError(
             f"dispenser_outlets.{dispenser_id}.press_contact_joints_deg is marked "
             f"{status!r}; refusing real press motion until PRESS{dispenser_id}_CONTACT is re-taught"
+        )
+
+
+def cup_place_status(block: dict[str, Any]) -> str:
+    return str(block.get("cup_place_status", "")).strip()
+
+
+def ensure_cup_place_enabled(dispenser_id: str, block: dict[str, Any]) -> None:
+    status = cup_place_status(block)
+    if status.lower() in INVALID_CUP_PLACE_STATUSES:
+        raise ValueError(
+            f"dispenser_outlets.{dispenser_id}.cup_place_joints_deg is marked "
+            f"{status!r}; refusing real cup place/re-grasp motion until DISP{dispenser_id} cup place is re-taught"
         )
 
 
@@ -328,6 +353,7 @@ def load_cup_pre_place_joints_deg(dispenser_id: str) -> list[float] | None:
     block = outlets.get(str(dispenser_id))
     if not isinstance(block, dict):
         raise ValueError(f"dispenser_outlets.{dispenser_id} is missing in {CALIBRATION_CONFIG}")
+    ensure_cup_place_enabled(dispenser_id, block)
     raw_joints = block.get("cup_pre_place_joints_deg")
     if raw_joints is None:
         return None
@@ -344,6 +370,7 @@ def load_cup_place_joints_deg(dispenser_id: str) -> list[float] | None:
     block = outlets.get(str(dispenser_id))
     if not isinstance(block, dict):
         raise ValueError(f"dispenser_outlets.{dispenser_id} is missing in {CALIBRATION_CONFIG}")
+    ensure_cup_place_enabled(dispenser_id, block)
     raw_joints = block.get("cup_place_joints_deg")
     if raw_joints is None:
         return None
@@ -703,6 +730,7 @@ class IntegratedRecipeMotion:
         label: str,
         velocity: float,
         acceleration: float,
+        verify_tolerance_mm: float | None = None,
     ) -> None:
         joints_deg = self.ikin_posj(posx_mm_deg, label=f"{label} IK joint fallback")
         joints_deg = self.normalize_ik_joints_near_current(joints_deg, label=label)
@@ -713,7 +741,152 @@ class IntegratedRecipeMotion:
             velocity=velocity,
             acceleration=acceleration,
         )
-        self.wait_for_target(posx_mm_deg, label=f"{label} IK MoveJoint fallback posx")
+        self.wait_for_target(
+            posx_mm_deg,
+            label=f"{label} IK MoveJoint fallback posx",
+            tolerance_mm=verify_tolerance_mm,
+        )
+
+    def measured_cup_place_posx_with_release_offset(self, joints_deg: list[float], *, label: str) -> list[float]:
+        posx = self.fkin_posx(joints_deg, label=f"{label} measured FK")
+        adjusted = list(posx)
+        adjusted[0] += self.args.move_release_offset_x_m * 1000.0
+        adjusted[1] += self.args.move_release_offset_y_m * 1000.0
+        adjusted[2] += self.args.move_release_offset_z_m * 1000.0
+        print(
+            "[Azas] "
+            f"{label}: applying measured cup-place offset "
+            f"dx={self.args.move_release_offset_x_m * 1000.0:.1f}mm "
+            f"dy={self.args.move_release_offset_y_m * 1000.0:.1f}mm "
+            f"dz={self.args.move_release_offset_z_m * 1000.0:.1f}mm "
+            f"target_posx=[{adjusted[0]:.1f}, {adjusted[1]:.1f}, {adjusted[2]:.1f}, "
+            f"{adjusted[3]:.1f}, {adjusted[4]:.1f}, {adjusted[5]:.1f}]"
+        )
+        return adjusted
+
+    def move_measured_cup_place_with_offset(
+        self,
+        joints_deg: list[float],
+        *,
+        label: str,
+        velocity: float,
+        acceleration: float,
+    ) -> None:
+        if (
+            abs(self.args.move_release_offset_x_m) <= 1e-6
+            and abs(self.args.move_release_offset_y_m) <= 1e-6
+            and abs(self.args.move_release_offset_z_m) <= 1e-6
+        ):
+            joints_deg = self.normalize_joints_near_current(joints_deg, label=label)
+            self.movej(joints_deg, label=label, velocity=velocity, acceleration=acceleration)
+            return
+        target = self.measured_cup_place_posx_with_release_offset(joints_deg, label=label)
+        self.move_posx_joint_fallback(
+            target,
+            label=f"{label} with release offset",
+            velocity=velocity,
+            acceleration=acceleration,
+        )
+
+    def move_measured_cup_place_via_high_entry(
+        self,
+        joints_deg: list[float],
+        *,
+        dispenser_id: str,
+    ) -> None:
+        final_target = self.measured_cup_place_posx_with_release_offset(
+            joints_deg,
+            label=f"move to measured DISP{dispenser_id}_PLACE cup-place joints",
+        )
+        high_target = list(final_target)
+        desired_high_z = max(
+            final_target[2] + max(self.args.move_prehold_offset_z_m, 0.0) * 1000.0,
+            max(self.args.regrasp_min_transit_z_m, 0.0) * 1000.0,
+        )
+        max_high_z = max(self.args.regrasp_max_transit_z_m, 0.0) * 1000.0
+        if max_high_z > 0.0:
+            desired_high_z = min(desired_high_z, max_high_z)
+        high_target[2] = max(final_target[2], desired_high_z)
+        print(
+            "[Azas] "
+            f"measured cup placement high entry: dispenser={dispenser_id} "
+            f"target_posx=[{high_target[0]:.1f}, {high_target[1]:.1f}, {high_target[2]:.1f}, "
+            f"{high_target[3]:.1f}, {high_target[4]:.1f}, {high_target[5]:.1f}]"
+        )
+        self.move_posx_joint_fallback(
+            high_target,
+            label=f"measured DISP{dispenser_id} high entry before cup place",
+            velocity=self.args.move_prehold_velocity,
+            acceleration=self.args.move_prehold_acceleration,
+        )
+        self.move_posx(
+            final_target,
+            label=f"final measured DISP{dispenser_id} cup-place descent",
+            velocity=self.args.move_velocity,
+            acceleration=self.args.move_acceleration,
+            timeout_sec=self.args.move_timeout_sec,
+        )
+
+    def move_measured_cup_regrasp_with_rear_entry(
+        self,
+        joints_deg: list[float],
+        *,
+        dispenser_id: str,
+    ) -> None:
+        final_target = self.measured_cup_place_posx_with_release_offset(
+            joints_deg,
+            label=f"return to measured DISP{dispenser_id}_PLACE cup re-grasp joints",
+        )
+        rear_target = list(final_target)
+        rear_target[0] += self.args.regrasp_rear_entry_offset_x_m * 1000.0
+        rear_target[1] += self.args.regrasp_rear_entry_offset_y_m * 1000.0
+        high_rear_target = list(rear_target)
+        desired_high_z = max(
+            final_target[2] + max(self.args.regrasp_approach_offset_z_m, 0.0) * 1000.0,
+            max(self.args.regrasp_min_transit_z_m, 0.0) * 1000.0,
+        )
+        max_high_z = max(self.args.regrasp_max_transit_z_m, 0.0) * 1000.0
+        if max_high_z > 0.0:
+            desired_high_z = min(desired_high_z, max_high_z)
+        high_rear_target[2] = max(rear_target[2], desired_high_z)
+        if (
+            abs(self.args.regrasp_rear_entry_offset_x_m) > 1e-6
+            or abs(self.args.regrasp_rear_entry_offset_y_m) > 1e-6
+        ):
+            print(
+                "[Azas] "
+                f"measured cup re-grasp high rear entry: dispenser={dispenser_id} "
+                f"target_posx=[{high_rear_target[0]:.1f}, {high_rear_target[1]:.1f}, "
+                f"{high_rear_target[2]:.1f}, {high_rear_target[3]:.1f}, "
+                f"{high_rear_target[4]:.1f}, {high_rear_target[5]:.1f}]"
+            )
+            self.move_posx_joint_fallback(
+                high_rear_target,
+                label=f"measured DISP{dispenser_id} high rear entry before cup re-grasp",
+                velocity=self.args.regrasp_approach_velocity,
+                acceleration=self.args.regrasp_approach_acceleration,
+            )
+            print(
+                "[Azas] "
+                f"measured cup re-grasp lowered rear entry: dispenser={dispenser_id} "
+                f"dx={self.args.regrasp_rear_entry_offset_x_m * 1000.0:.1f}mm "
+                f"dy={self.args.regrasp_rear_entry_offset_y_m * 1000.0:.1f}mm "
+                f"target_posx=[{rear_target[0]:.1f}, {rear_target[1]:.1f}, {rear_target[2]:.1f}, "
+                f"{rear_target[3]:.1f}, {rear_target[4]:.1f}, {rear_target[5]:.1f}]"
+            )
+            self.move_posx_joint_fallback(
+                rear_target,
+                label=f"measured DISP{dispenser_id} lowered rear entry before cup re-grasp",
+                velocity=self.args.pick_approach_velocity,
+                acceleration=self.args.pick_approach_acceleration,
+            )
+        self.move_posx(
+            final_target,
+            label=f"final measured DISP{dispenser_id} re-grasp forward approach to cup",
+            velocity=self.args.pick_approach_velocity,
+            acceleration=self.args.pick_approach_acceleration,
+            timeout_sec=self.args.pick_timeout_sec,
+        )
 
     def move_front_hold_joint_fallback(self, posx_mm_deg: list[float], *, label: str) -> None:
         joints_deg = self.ikin_posj(posx_mm_deg, label=f"{label} IK joint fallback")
@@ -746,6 +919,11 @@ class IntegratedRecipeMotion:
             )
             return
         target = [pose[0], pose[1], target_z_mm, pose[3], pose[4], pose[5]]
+        safe_lift_tolerance_mm = (
+            self.args.safe_lift_target_tolerance_mm
+            if verify_tolerance_mm is None
+            else verify_tolerance_mm
+        )
         try:
             self.move_posx(
                 target,
@@ -753,11 +931,7 @@ class IntegratedRecipeMotion:
                 velocity=velocity,
                 acceleration=acceleration,
                 timeout_sec=timeout_sec,
-                verify_tolerance_mm=(
-                    self.args.safe_lift_target_tolerance_mm
-                    if verify_tolerance_mm is None
-                    else verify_tolerance_mm
-                ),
+                verify_tolerance_mm=safe_lift_tolerance_mm,
             )
         except RuntimeError as exc:
             if not self.args.safe_lift_joint_fallback:
@@ -771,6 +945,7 @@ class IntegratedRecipeMotion:
                 label=label,
                 velocity=self.args.safe_lift_joint_fallback_velocity,
                 acceleration=self.args.safe_lift_joint_fallback_acceleration,
+                verify_tolerance_mm=safe_lift_tolerance_mm,
             )
 
     def move_posx(
@@ -1122,32 +1297,15 @@ class IntegratedRecipeMotion:
             time.sleep(settle_sec)
 
     def move_and_release(self, dispenser_id: str) -> None:
-        cup_pre_joints = load_cup_pre_place_joints_deg(dispenser_id)
         cup_place_joints = load_cup_place_joints_deg(dispenser_id)
-        if cup_pre_joints is not None and cup_place_joints is not None:
+        if cup_place_joints is not None:
             print(
                 f"[Azas] cup placement: dispenser={dispenser_id} using measured "
-                "DISP_PRE -> DISP_PLACE joint pair; not front_hold_poses"
+                "DISP_PLACE with generated high entry; not front_hold_poses"
             )
-            cup_pre_joints = self.normalize_joints_near_current(
-                cup_pre_joints,
-                label=f"move to measured DISP{dispenser_id}_PRE cup-place joints",
-            )
-            self.movej(
-                cup_pre_joints,
-                label=f"move to measured DISP{dispenser_id}_PRE cup-place joints",
-                velocity=self.args.move_prehold_velocity,
-                acceleration=self.args.move_prehold_acceleration,
-            )
-            cup_place_joints = self.normalize_joints_near_current(
+            self.move_measured_cup_place_via_high_entry(
                 cup_place_joints,
-                label=f"move to measured DISP{dispenser_id}_PLACE cup-place joints",
-            )
-            self.movej(
-                cup_place_joints,
-                label=f"move to measured DISP{dispenser_id}_PLACE cup-place joints",
-                velocity=self.args.move_velocity,
-                acceleration=self.args.move_acceleration,
+                dispenser_id=dispenser_id,
             )
             self.gripper_command(
                 "open",
@@ -1208,15 +1366,30 @@ class IntegratedRecipeMotion:
         print("[Azas] RG2 full-open release complete; continuing only after open settle wait")
 
     def regrasp_and_lift(self, dispenser_id: str) -> None:
-        self.safe_lift_current(
-            label="safe vertical lift after press before re-grasp transit",
-            min_z_m=self.args.post_press_safe_lift_z_m,
-            velocity=self.args.regrasp_approach_velocity,
-            acceleration=self.args.regrasp_approach_acceleration,
-            timeout_sec=self.args.move_timeout_sec,
-            verify_tolerance_mm=self.args.post_press_safe_lift_target_tolerance_mm,
-        )
-        if abs(self.args.regrasp_retreat_y_m) > 1e-6 or abs(self.args.regrasp_retreat_x_m) > 1e-6:
+        if self.args.regrasp_reset_before_cup:
+            print(
+                "[Azas] re-grasp transit: moving through HOME joint waypoint before returning to cup; "
+                "skipping post-press Cartesian high-Z lift"
+            )
+            self.movej(
+                list(self.args.regrasp_reset_joints_deg),
+                label="move to re-grasp HOME joints before cup return",
+                velocity=self.args.regrasp_reset_joint_velocity,
+                acceleration=self.args.regrasp_reset_joint_acceleration,
+            )
+        else:
+            self.safe_lift_current(
+                label="safe vertical lift after press before re-grasp transit",
+                min_z_m=self.args.post_press_safe_lift_z_m,
+                velocity=self.args.regrasp_approach_velocity,
+                acceleration=self.args.regrasp_approach_acceleration,
+                timeout_sec=self.args.move_timeout_sec,
+                verify_tolerance_mm=self.args.post_press_safe_lift_target_tolerance_mm,
+            )
+        if (
+            not self.args.regrasp_reset_before_cup
+            and (abs(self.args.regrasp_retreat_y_m) > 1e-6 or abs(self.args.regrasp_retreat_x_m) > 1e-6)
+        ):
             pose = self.current_posx()
             retreat = [
                 pose[0] + self.args.regrasp_retreat_x_m * 1000.0,
@@ -1234,12 +1407,11 @@ class IntegratedRecipeMotion:
                 timeout_sec=self.args.move_timeout_sec,
                 verify_tolerance_mm=self.args.safe_lift_target_tolerance_mm,
             )
-        cup_pre_joints = load_cup_pre_place_joints_deg(dispenser_id)
         cup_place_joints = load_cup_place_joints_deg(dispenser_id)
-        if cup_pre_joints is not None and cup_place_joints is not None:
+        if cup_place_joints is not None:
             print(
                 f"[Azas] cup re-grasp: dispenser={dispenser_id} using measured "
-                "DISP_PRE -> DISP_PLACE joint pair; not front_hold_poses"
+                "DISP_PLACE with generated high rear-entry; not front_hold_poses"
             )
             self.gripper_command(
                 "open",
@@ -1247,25 +1419,9 @@ class IntegratedRecipeMotion:
                 force_n=self.args.gripper_open_force_n,
                 label="RG2 open at safe robot-side retreat before measured cup re-grasp",
             )
-            cup_pre_joints = self.normalize_joints_near_current(
-                cup_pre_joints,
-                label=f"return to measured DISP{dispenser_id}_PRE cup re-grasp joints",
-            )
-            self.movej(
-                cup_pre_joints,
-                label=f"return to measured DISP{dispenser_id}_PRE cup re-grasp joints",
-                velocity=self.args.regrasp_approach_velocity,
-                acceleration=self.args.regrasp_approach_acceleration,
-            )
-            cup_place_joints = self.normalize_joints_near_current(
+            self.move_measured_cup_regrasp_with_rear_entry(
                 cup_place_joints,
-                label=f"return to measured DISP{dispenser_id}_PLACE cup re-grasp joints",
-            )
-            self.movej(
-                cup_place_joints,
-                label=f"return to measured DISP{dispenser_id}_PLACE cup re-grasp joints",
-                velocity=self.args.pick_approach_velocity,
-                acceleration=self.args.pick_approach_acceleration,
+                dispenser_id=dispenser_id,
             )
             self.gripper_command(
                 "set_width",
@@ -2117,6 +2273,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--regrasp-approach-velocity", type=float, default=14.0)
     parser.add_argument("--regrasp-approach-acceleration", type=float, default=18.0)
     parser.add_argument(
+        "--regrasp-reset-before-cup",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "After pressing, move through a fixed HOME joint waypoint before returning to the cup. "
+            "Default true because the Cartesian post-press high-Z lift can stall near the dispenser."
+        ),
+    )
+    parser.add_argument(
+        "--regrasp-reset-joints-deg",
+        default="0,0,90,0,90,180",
+        help="HOME joint pose used after dispenser press, before returning to cup re-grasp.",
+    )
+    parser.add_argument("--regrasp-reset-joint-velocity", type=float, default=30.0)
+    parser.add_argument("--regrasp-reset-joint-acceleration", type=float, default=35.0)
+    parser.add_argument(
         "--regrasp-retreat-x-m",
         type=float,
         default=-0.080,
@@ -2210,10 +2382,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--press-reset-before-press",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "After cup release, safe lift, and empty-gripper close, move through a fixed HOME joint pose "
-            "before approaching generated PRESS_PRE. Default true to avoid direct cup-place -> press Cartesian transitions."
+            "before approaching generated PRESS_PRE. Default false; generated PRESS_PRE itself is approached by IK MoveJoint."
         ),
     )
     parser.add_argument(
@@ -2477,6 +2649,11 @@ def parse_args() -> argparse.Namespace:
         args.press_reset_joints_deg,
         expected_count=6,
         label="--press-reset-joints-deg",
+    )
+    args.regrasp_reset_joints_deg = parse_float_list(
+        args.regrasp_reset_joints_deg,
+        expected_count=6,
+        label="--regrasp-reset-joints-deg",
     )
     args.press_lock_contact_joint_indexes = parse_joint_index_set(
         args.press_lock_contact_joints,

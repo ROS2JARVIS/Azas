@@ -30,3 +30,24 @@ Confirmed state:
 - D4 press-only real-motion check also works normally. The earlier observed `MoveLine returned success=false` was caused by a cable disconnect, not by the saved D4 contact. D4 status is `press_contact_status: measured_confirmed`.
 
 Do not resurrect the stale `PRESS1_CONTACT invalid_reteach_required` note unless the operator newly invalidates the saved D1 contact.
+
+## 2026-06-10 Dispenser Cup Place Mapping
+
+Operator-confirmed correction:
+
+- Previous DISP2 cup place/re-grasp pose was actually the physical DISP4 cup position.
+- Previous DISP3 cup place/re-grasp pose was actually the physical DISP2 cup position.
+- Physical DISP3 cup place/re-grasp pose still needs re-teaching.
+
+Current intended calibration state:
+
+- D1 cup place: measured confirmed.
+- D2 cup place: uses the previous D3 measured cup place values.
+- D3 cup place: re-taught and measured confirmed at 2026-06-10T18:41-18:42+09:00.
+- D4 cup place: uses the previous D2 measured cup place values.
+
+Re-grasp path correction:
+
+- Do not lower to measured `DISP_PRE` before the cup re-grasp intermediate point.
+- After press, use `HOME joint -> high rear-entry -> lowered rear-entry -> final cup grasp`.
+- For cup placement/re-grasp offset, `--move-release-offset-x-m -0.030` is 10 mm closer to the dispenser than `-0.040`.

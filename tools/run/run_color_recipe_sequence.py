@@ -233,6 +233,15 @@ def main() -> int:
     parser.add_argument("--pick-lift-acceleration", default="25.0")
     parser.add_argument("--regrasp-approach-velocity", default="14.0")
     parser.add_argument("--regrasp-approach-acceleration", default="18.0")
+    parser.add_argument(
+        "--regrasp-reset-before-cup",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="프레스 후 컵 재접근 전에 HOME joint waypoint를 경유",
+    )
+    parser.add_argument("--regrasp-reset-joints-deg", default="0,0,90,0,90,180")
+    parser.add_argument("--regrasp-reset-joint-velocity", default="30.0")
+    parser.add_argument("--regrasp-reset-joint-acceleration", default="35.0")
     parser.add_argument("--press-min-transit-z-m", default="0.500")
     parser.add_argument("--press-line-velocity", default="18.0")
     parser.add_argument("--press-line-acceleration", default="25.0")
@@ -244,7 +253,7 @@ def main() -> int:
     parser.add_argument(
         "--press-reset-before-press",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="컵을 놓은 뒤 프레스 PRE로 가기 전에 HOME joint waypoint를 경유",
     )
     parser.add_argument("--press-reset-joints-deg", default="0,0,90,0,90,0")
@@ -316,6 +325,9 @@ def main() -> int:
         "--pick-lift-acceleration", str(args.pick_lift_acceleration),
         "--regrasp-approach-velocity", str(args.regrasp_approach_velocity),
         "--regrasp-approach-acceleration", str(args.regrasp_approach_acceleration),
+        "--regrasp-reset-joints-deg", str(args.regrasp_reset_joints_deg),
+        "--regrasp-reset-joint-velocity", str(args.regrasp_reset_joint_velocity),
+        "--regrasp-reset-joint-acceleration", str(args.regrasp_reset_joint_acceleration),
         "--press-min-transit-z-m", str(args.press_min_transit_z_m),
         "--press-pre-lift-m", str(args.press_pre_lift_m),
         "--press-transit-height-m", str(args.press_transit_height_m),
@@ -354,6 +366,9 @@ def main() -> int:
     ]
     sequence_extra_args.append(
         "--press-reset-before-press" if args.press_reset_before_press else "--no-press-reset-before-press"
+    )
+    sequence_extra_args.append(
+        "--regrasp-reset-before-cup" if args.regrasp_reset_before_cup else "--no-regrasp-reset-before-cup"
     )
     if args.allow_tcp_set_failure:
         sequence_extra_args.append("--allow-tcp-set-failure")
