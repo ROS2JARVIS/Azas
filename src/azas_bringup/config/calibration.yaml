@@ -73,6 +73,7 @@ dispenser_outlets:
       position_rad: [0.08982130140066147, 0.9058733582496643, 0.008466404862701893, 1.3044253587722778, 0.033748552203178406, 1.6839158535003662]
     press_pre_joints_deg: [-4.52, 25.97, 74.19, 146.71, 10.73, -141.99]  # operator measured, 2026-06-10
     press_contact_joints_deg: [-7.38, 27.46, 75.42, 146.62, 8.12, -141.99]  # operator measured PRESS1, 2026-06-10
+    press_contact_status: invalid_reteach_required  # operator reported wrong PRESS1 contact, 2026-06-10; block real press until re-taught
     clearance_m: null
   "2":
     cup_pre_place_joints_deg: [-11.43, 45.17, 110.50, 165.41, 64.36, -85.88]  # operator measured, 2026-06-10

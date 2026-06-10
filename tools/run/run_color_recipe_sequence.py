@@ -223,6 +223,16 @@ def main() -> int:
     )
     parser.add_argument("--execute", action="store_true",
                         help="실제 measured dispenser sequence를 실행")
+    parser.add_argument("--move-velocity", default="18.0")
+    parser.add_argument("--move-acceleration", default="25.0")
+    parser.add_argument("--move-prehold-velocity", default="16.0")
+    parser.add_argument("--move-prehold-acceleration", default="22.0")
+    parser.add_argument("--pick-approach-velocity", default="10.0")
+    parser.add_argument("--pick-approach-acceleration", default="14.0")
+    parser.add_argument("--pick-lift-velocity", default="18.0")
+    parser.add_argument("--pick-lift-acceleration", default="25.0")
+    parser.add_argument("--regrasp-approach-velocity", default="14.0")
+    parser.add_argument("--regrasp-approach-acceleration", default="18.0")
     parser.add_argument("--press-min-transit-z-m", default="0.500")
     parser.add_argument("--press-line-velocity", default="18.0")
     parser.add_argument("--press-line-acceleration", default="25.0")
@@ -231,18 +241,18 @@ def main() -> int:
     parser.add_argument("--press-contact-joint-velocity", default="22.0")
     parser.add_argument("--press-contact-joint-acceleration", default="30.0")
     parser.add_argument("--press-contact-entry-lift-m", default="0.050")
-    parser.add_argument("--press-depth-m", default="0.020")
+    parser.add_argument("--press-depth-m", default="0.040")
     parser.add_argument(
         "--press-extra-depth-m",
-        default="0.010",
-        help="--press-depth-m에 추가할 Z-only 프레스 하강량. 기본 0.010m.",
+        default="0.0",
+        help="--press-depth-m에 추가할 Z-only 프레스 하강량. 기본 0.",
     )
     parser.add_argument(
         "--press-lock-contact-joints",
         default="6",
         help=(
             "measured sequence로 전달할 contact 조인트 잠금 축. 기본 6: "
-            "프레스 contact에서 J6을 pre 자세 값으로 유지해 손목 회전을 막습니다."
+            "호환 모드에서만 pre 자세 값으로 J6을 유지합니다. 기본 contact-only 경로에서는 사용하지 않습니다."
         ),
     )
     parser.add_argument("--press-pre-lift-m", default="0.080")
@@ -287,6 +297,16 @@ def main() -> int:
         return 2
 
     sequence_extra_args = [
+        "--move-velocity", str(args.move_velocity),
+        "--move-acceleration", str(args.move_acceleration),
+        "--move-prehold-velocity", str(args.move_prehold_velocity),
+        "--move-prehold-acceleration", str(args.move_prehold_acceleration),
+        "--pick-approach-velocity", str(args.pick_approach_velocity),
+        "--pick-approach-acceleration", str(args.pick_approach_acceleration),
+        "--pick-lift-velocity", str(args.pick_lift_velocity),
+        "--pick-lift-acceleration", str(args.pick_lift_acceleration),
+        "--regrasp-approach-velocity", str(args.regrasp_approach_velocity),
+        "--regrasp-approach-acceleration", str(args.regrasp_approach_acceleration),
         "--press-min-transit-z-m", str(args.press_min_transit_z_m),
         "--press-pre-lift-m", str(args.press_pre_lift_m),
         "--press-transit-height-m", str(args.press_transit_height_m),
@@ -395,11 +415,13 @@ def main() -> int:
 
     # 색깔 → 디스펜서 ID 매핑
     sequence: list[str] = []
+    mapped_steps: list[str] = []
     for color, pumps in color_pumps:
         did = color_to_dispenser_id(color, color_map)
         if did is None:
             print(f"[run_color_recipe] '{color}' 색깔이 색상 맵에 없음 → 건너뜀", file=sys.stderr)
             continue
+        mapped_steps.append(f"{color}->{did}x{pumps}")
         for _ in range(pumps):
             sequence.append(did)
 
@@ -408,6 +430,7 @@ def main() -> int:
         return 1
 
     dispenser_ids_str = ",".join(sequence)
+    print(f"[run_color_recipe] 색상→디스펜서 상세: {', '.join(mapped_steps)}")
     print(f"[run_color_recipe] 실행 순서: {dispenser_ids_str}")
 
     cmd = [

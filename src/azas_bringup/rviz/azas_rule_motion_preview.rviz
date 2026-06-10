@@ -58,7 +58,7 @@ Visualization Manager:
       Name: Measured Dispenser Collision
       Value: true
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
+      Enabled: false
       Marker Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -66,6 +66,16 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /azas/dispenser_sequence/markers
       Name: Rule Motion Cup And Steps
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /azas/measured_joint_preview/markers
+      Name: Measured Joint Preview Steps
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true

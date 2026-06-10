@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Run an ordered measured-dispenser recipe loop.
 
-For each dispenser ID this composes existing field primitives:
-  move/release cup at measured front-hold -> press dispenser -> re-grasp/lift cup.
+For each dispenser ID this composes measured rule-based primitives:
+  move/release cup at DISP_PRE/DISP_PLACE -> measured PRESS_CONTACT FK
+  -> generated Z-only PRESS_PRE -> measured contact -> Z-only pump stroke
+  -> re-grasp/lift cup at DISP_PLACE.
 
-All cup/dispenser positions come from measured front_hold_poses and taught
-press poses used by existing nodes.  This runner does not ask for or generate
-new robot coordinates.
+All cup/dispenser positions come from measured calibration data.  This runner
+does not ask for or generate new robot coordinates.
 """
 
 from __future__ import annotations
@@ -52,6 +53,13 @@ DISPENSER_TARGETS = {
     "2": "green",
     "3": "yellow",
     "4": "blue",
+}
+INVALID_PRESS_CONTACT_STATUSES = {
+    "invalid",
+    "invalid_reteach_required",
+    "needs_reteach",
+    "reteach_required",
+    "확인 필요",
 }
 
 DR_BASE = 0
@@ -156,6 +164,28 @@ def numeric_list(value: Any, label: str, count: int) -> list[float]:
         raise ValueError(f"{label} must contain only numbers") from exc
 
 
+def press_contact_status(block: dict[str, Any]) -> str:
+    return str(block.get("press_contact_status", "")).strip()
+
+
+def ensure_press_contact_enabled(dispenser_id: str, block: dict[str, Any]) -> None:
+    status = press_contact_status(block)
+    if status.lower() in INVALID_PRESS_CONTACT_STATUSES:
+        raise ValueError(
+            f"dispenser_outlets.{dispenser_id}.press_contact_joints_deg is marked "
+            f"{status!r}; refusing real press motion until PRESS{dispenser_id}_CONTACT is re-taught"
+        )
+
+
+def require_dispenser_press_contact_enabled(dispenser_id: str) -> None:
+    data = yaml.safe_load(CALIBRATION_CONFIG.read_text(encoding="utf-8")) or {}
+    outlets = data.get("dispenser_outlets") or {}
+    block = outlets.get(str(dispenser_id))
+    if not isinstance(block, dict):
+        raise ValueError(f"dispenser_outlets.{dispenser_id} is missing in {CALIBRATION_CONFIG}")
+    ensure_press_contact_enabled(dispenser_id, block)
+
+
 def quaternion_to_matrix_xyzw(quaternion: list[float]) -> list[list[float]]:
     x, y, z, w = quaternion
     norm = math.sqrt(x * x + y * y + z * z + w * w)
@@ -244,6 +274,7 @@ def load_press_pose(dispenser_id: str) -> tuple[list[float], list[float]]:
     block = outlets.get(str(dispenser_id))
     if not isinstance(block, dict):
         raise ValueError(f"dispenser_outlets.{dispenser_id} is missing in {CALIBRATION_CONFIG}")
+    ensure_press_contact_enabled(dispenser_id, block)
     position = numeric_list(
         block.get("press_pose_xyz_m"),
         f"dispenser_outlets.{dispenser_id}.press_pose_xyz_m",
@@ -263,6 +294,7 @@ def load_press_ready_joints_deg(dispenser_id: str) -> list[float] | None:
     block = outlets.get(str(dispenser_id))
     if not isinstance(block, dict):
         raise ValueError(f"dispenser_outlets.{dispenser_id} is missing in {CALIBRATION_CONFIG}")
+    ensure_press_contact_enabled(dispenser_id, block)
     raw_joints = block.get("press_contact_joints_deg", block.get("press_ready_joints_deg"))
     if raw_joints is None:
         return None
@@ -279,6 +311,7 @@ def load_press_pre_joints_deg(dispenser_id: str) -> list[float] | None:
     block = outlets.get(str(dispenser_id))
     if not isinstance(block, dict):
         raise ValueError(f"dispenser_outlets.{dispenser_id} is missing in {CALIBRATION_CONFIG}")
+    ensure_press_contact_enabled(dispenser_id, block)
     raw_joints = block.get("press_pre_joints_deg")
     if raw_joints is None:
         return None
@@ -319,6 +352,37 @@ def load_cup_place_joints_deg(dispenser_id: str) -> list[float] | None:
         f"dispenser_outlets.{dispenser_id}.cup_place_joints_deg",
         6,
     )
+
+
+def format_joints_deg(joints: list[float]) -> str:
+    return "[" + ", ".join(f"{value:.2f}" for value in joints) + "]"
+
+
+def print_dry_run_group_detail(args: argparse.Namespace, dispenser_id: str, press_count: int) -> None:
+    cup_pre = load_cup_pre_place_joints_deg(dispenser_id)
+    cup_place = load_cup_place_joints_deg(dispenser_id)
+    if cup_pre is not None and cup_place is not None:
+        print(
+            f"[PLAN] dispenser {dispenser_id}: cup DISP_PRE={format_joints_deg(cup_pre)} "
+            f"-> DISP_PLACE={format_joints_deg(cup_place)}"
+        )
+    else:
+        print(f"[PLAN] dispenser {dispenser_id}: cup placement fallback=front_hold_poses")
+
+    press_contact = load_press_ready_joints_deg(dispenser_id)
+    z_overdrive_mm = (max(args.press_depth_m, 0.0) + max(args.press_extra_depth_m, 0.0)) * 1000.0
+    if press_contact is not None:
+        print(
+            f"[PLAN] dispenser {dispenser_id}: press CONTACT={format_joints_deg(press_contact)} "
+            f"-> generated PRE=CONTACT+Z{max(args.press_contact_entry_lift_m, 0.0) * 1000.0:.1f}mm "
+            f"-> PRESS=CONTACT-Z{z_overdrive_mm:.1f}mm x{press_count}"
+        )
+    else:
+        press_xyz_m, press_rpy_deg = load_press_pose(dispenser_id)
+        print(
+            f"[PLAN] dispenser {dispenser_id}: press Cartesian fallback xyz_m={press_xyz_m} "
+            f"rpy_deg={press_rpy_deg} -> Z overdrive={z_overdrive_mm:.1f}mm x{press_count}"
+        )
 
 
 def group_consecutive_dispenser_ids(dispenser_ids: list[str]) -> list[tuple[str, int]]:
@@ -868,7 +932,13 @@ class IntegratedRecipeMotion:
         return normalized
 
     def normalize_joints_near_current(self, joints_deg: list[float], *, label: str) -> list[float]:
-        return self.normalize_ik_joints_near_current(joints_deg, label=label)
+        if self.args.normalize_measured_joints_near_current:
+            return self.normalize_ik_joints_near_current(joints_deg, label=label)
+        print(
+            "[Azas] "
+            f"{label}: using measured joint values exactly; no 360deg wrap normalization"
+        )
+        return list(joints_deg)
 
     def validate_ik_fallback_joints(self, joints_deg: list[float], *, label: str) -> None:
         max_abs = max(float(self.args.ik_fallback_max_abs_joint_deg), 0.0)
@@ -941,7 +1011,7 @@ class IntegratedRecipeMotion:
         last_progress_time = time.monotonic()
         while time.monotonic() < deadline:
             actual = self.current_posj(timeout_sec=5.0)
-            errors = [abs(actual[index] - target_joints_deg[index]) for index in range(6)]
+            errors = [abs(angular_delta_deg(target_joints_deg[index], actual[index])) for index in range(6)]
             last_error = max(errors)
             print(
                 f"[Azas] verify {label}: max_joint_error={last_error:.2f}deg "
@@ -1136,6 +1206,12 @@ class IntegratedRecipeMotion:
                 f"[Azas] cup re-grasp: dispenser={dispenser_id} using measured "
                 "DISP_PRE -> DISP_PLACE joint pair; not front_hold_poses"
             )
+            self.gripper_command(
+                "open",
+                width_m=self.args.gripper_open_width_m,
+                force_n=self.args.gripper_open_force_n,
+                label="RG2 open at safe robot-side retreat before measured cup re-grasp",
+            )
             cup_pre_joints = self.normalize_joints_near_current(
                 cup_pre_joints,
                 label=f"return to measured DISP{dispenser_id}_PRE cup re-grasp joints",
@@ -1145,12 +1221,6 @@ class IntegratedRecipeMotion:
                 label=f"return to measured DISP{dispenser_id}_PRE cup re-grasp joints",
                 velocity=self.args.regrasp_approach_velocity,
                 acceleration=self.args.regrasp_approach_acceleration,
-            )
-            self.gripper_command(
-                "open",
-                width_m=self.args.gripper_open_width_m,
-                force_n=self.args.gripper_open_force_n,
-                label="RG2 open at measured cup re-grasp pre-place",
             )
             cup_place_joints = self.normalize_joints_near_current(
                 cup_place_joints,
@@ -1265,7 +1335,11 @@ class IntegratedRecipeMotion:
         current_pose = self.current_posx()
         press_drop_m = max(self.args.press_depth_m, 0.0) + max(self.args.press_extra_depth_m, 0.0)
         contact_joints = None if self.args.force_cartesian_press else load_press_ready_joints_deg(dispenser_id)
-        pre_joints = None if self.args.force_cartesian_press else load_press_pre_joints_deg(dispenser_id)
+        pre_joints = (
+            load_press_pre_joints_deg(dispenser_id)
+            if (not self.args.force_cartesian_press and self.args.press_use_recorded_pre_joints)
+            else None
+        )
         joint_space_press = contact_joints is not None
         if contact_joints is None:
             x_mm = press_xyz_m[0] * 1000.0
@@ -1290,33 +1364,29 @@ class IntegratedRecipeMotion:
                     f"[Azas] dispenser {dispenser_id}: loading measured press contact joints "
                     f"(joint_6/link_6={contact_joints[5]:.2f}deg)"
                 )
-            x_mm = press_xyz_m[0] * 1000.0
-            y_mm = press_xyz_m[1] * 1000.0
-            contact_z = press_xyz_m[2] * 1000.0
-            rx, ry, rz = press_rpy_deg
-            self.validate_press_contact_joints(
-                dispenser_id,
+            contact_fk_posx = self.fkin_posx(
                 contact_joints,
-                [x_mm, y_mm, contact_z],
+                label=f"measured PRESS_CONTACT FK dispenser {dispenser_id}",
             )
+            x_mm, y_mm, contact_z, rx, ry, rz = contact_fk_posx[:6]
         if joint_space_press:
-            # Do not depend on /motion/fkin here.  The Doosan FK service can
-            # block on this setup, and the measured joint position itself is
-            # the authoritative press contact pose.  MoveJoint to the measured
-            # pose first, then read the live TCP as the contact reference.
-            pre_z = contact_z + max(self.args.press_pre_lift_m, 0.0) * 1000.0
+            # PRESS_CONTACT is the only taught press pose.  PRE and the actual
+            # pump stroke are generated by changing only Z from the FK contact
+            # pose so XY/orientation cannot drift to a neighboring dispenser.
+            generated_pre_lift_m = max(self.args.press_contact_entry_lift_m, 0.0)
+            pre_z = contact_z + generated_pre_lift_m * 1000.0
             transit_z = max(
-                current_pose[2] + max(self.args.press_transit_height_m, self.args.press_pre_lift_m, 0.0) * 1000.0,
+                current_pose[2] + max(self.args.press_transit_height_m, generated_pre_lift_m, 0.0) * 1000.0,
                 min(pre_z, max(self.args.press_min_transit_z_m, 0.0) * 1000.0),
             )
             pressed_z = contact_z - press_drop_m * 1000.0
             print(
                 "[Azas] integrated press: "
                 f"dispenser={dispenser_id} count={press_count} "
-                f"configured_contact=({x_mm:.1f}, {y_mm:.1f}, {contact_z:.1f}) "
-                f"configured_pre_z={pre_z:.1f} cartesian_fallback_pressed_z={pressed_z:.1f} "
-                f"cartesian_fallback_z_descent={contact_z - pressed_z:.1f}mm transit_z={transit_z:.1f} "
-                "source=measured PRESS_PRE/PRESS joint pair"
+                f"contact_fk=({x_mm:.1f}, {y_mm:.1f}, {contact_z:.1f}) "
+                f"generated_pre_z={pre_z:.1f} pressed_z={pressed_z:.1f} "
+                f"z_descent={contact_z - pressed_z:.1f}mm transit_z={transit_z:.1f} "
+                "source=measured PRESS_CONTACT only; PRE/PRESS are Z-only"
             )
         else:
             pre_z = contact_z + max(self.args.press_pre_lift_m, 0.0) * 1000.0
@@ -1382,9 +1452,69 @@ class IntegratedRecipeMotion:
                 acceleration=self.args.press_reset_joint_acceleration,
             )
 
+        if joint_space_press and pre_joints is None:
+            contact_posx = [x_mm, y_mm, contact_z, rx, ry, rz]
+            generated_pre_posx = list(contact_posx)
+            generated_pre_posx[2] = pre_z
+            print(
+                "[Azas] contact-only press path: "
+                f"dispenser={dispenser_id} contact_posx=[{x_mm:.1f}, {y_mm:.1f}, {contact_z:.1f}, "
+                f"{rx:.1f}, {ry:.1f}, {rz:.1f}] "
+                f"generated_pre_z={pre_z:.1f} press_drop_mm={press_drop_m * 1000.0:.1f}"
+            )
+            self.move_posx(
+                generated_pre_posx,
+                label="generated PRESS_PRE above measured contact",
+                velocity=self.args.press_travel_velocity,
+                acceleration=self.args.press_travel_acceleration,
+                timeout_sec=self.args.press_timeout_sec,
+            )
+            for press_index in range(1, max(int(press_count), 1) + 1):
+                suffix = f" {press_index}/{press_count}" if press_count > 1 else ""
+                self.move_posx(
+                    contact_posx,
+                    label=f"Z-only descend to measured PRESS_CONTACT{suffix}",
+                    velocity=self.args.press_line_velocity,
+                    acceleration=self.args.press_line_acceleration,
+                    timeout_sec=self.args.press_timeout_sec,
+                )
+                if press_drop_m > 0.0:
+                    pressed_posx = list(contact_posx)
+                    pressed_posx[2] -= press_drop_m * 1000.0
+                    self.move_posx(
+                        pressed_posx,
+                        label=f"Z-only press from measured contact{suffix}",
+                        velocity=self.args.press_line_velocity,
+                        acceleration=self.args.press_line_acceleration,
+                        timeout_sec=self.args.press_timeout_sec,
+                        verify_tolerance_mm=max(self.args.target_tolerance_mm, 25.0),
+                    )
+                    if self.args.press_hold_seconds > 0.0:
+                        time.sleep(self.args.press_hold_seconds)
+                    self.move_posx(
+                        contact_posx,
+                        label=f"return to measured PRESS_CONTACT{suffix}",
+                        velocity=self.args.press_line_velocity,
+                        acceleration=self.args.press_line_acceleration,
+                        timeout_sec=self.args.press_timeout_sec,
+                        verify_tolerance_mm=max(self.args.target_tolerance_mm, 25.0),
+                    )
+                elif self.args.press_hold_seconds > 0.0:
+                    time.sleep(self.args.press_hold_seconds)
+                self.move_posx(
+                    generated_pre_posx,
+                    label=f"Z-only retreat to generated PRESS_PRE{suffix}",
+                    velocity=self.args.press_line_velocity,
+                    acceleration=self.args.press_line_acceleration,
+                    timeout_sec=self.args.press_timeout_sec,
+                )
+            if self.args.press_post_retreat_wait_seconds > 0.0:
+                time.sleep(self.args.press_post_retreat_wait_seconds)
+            return
+
         if joint_space_press and pre_joints is not None:
             print(
-                "[Azas] joint-space press: measured PRESS_PRE -> PRESS joint pair; "
+                "[Azas] joint-space press: measured PRESS_PRE -> PRESS_CONTACT joint pair; "
                 "not using live TCP XY for Z-only press because TCP setup can be unavailable"
             )
             pre_joints = self.normalize_joints_near_current(
@@ -1760,8 +1890,8 @@ def press_cmd(args: argparse.Namespace, dispenser_id: str, press_count: int) -> 
         f"-p ry:={press_rpy_deg[1]:.6f} "
         f"-p rz:={press_rpy_deg[2]:.6f} "
         f"-p press_count:={int(press_count)} "
-        # calibration.yaml press_pose_xyz_m is the taught final press pose.
-        # Do not subtract an extra legacy pump depth here.
+        # Legacy helper path only receives the taught contact pose here.  The
+        # integrated path above is the normal hardware path for extra Z strokes.
         "-p press_depth:=0.0 "
         f"-p tcp_name:={tcp_name} "
         "-p require_tcp_for_taught_posx:=false "
@@ -1874,8 +2004,8 @@ def parse_args() -> argparse.Namespace:
             "the measured gripper TCP stays active for follow-up recipe motions."
         ),
     )
-    parser.add_argument("--move-velocity", type=float, default=35.0)
-    parser.add_argument("--move-acceleration", type=float, default=45.0)
+    parser.add_argument("--move-velocity", type=float, default=18.0)
+    parser.add_argument("--move-acceleration", type=float, default=25.0)
     parser.add_argument("--move-prehold-offset-x-m", type=float, default=-0.030)
     parser.add_argument(
         "--move-prehold-offset-y-m",
@@ -1914,19 +2044,19 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         help="Final cup release Z offset from measured front_hold. Default 0 uses the taught cup-place height exactly.",
     )
-    parser.add_argument("--move-prehold-velocity", type=float, default=50.0)
-    parser.add_argument("--move-prehold-acceleration", type=float, default=70.0)
+    parser.add_argument("--move-prehold-velocity", type=float, default=16.0)
+    parser.add_argument("--move-prehold-acceleration", type=float, default=22.0)
     parser.add_argument("--move-timeout-sec", type=float, default=180.0)
-    parser.add_argument("--pick-approach-velocity", type=float, default=35.0)
-    parser.add_argument("--pick-approach-acceleration", type=float, default=50.0)
+    parser.add_argument("--pick-approach-velocity", type=float, default=10.0)
+    parser.add_argument("--pick-approach-acceleration", type=float, default=14.0)
     parser.add_argument("--pick-pregrasp-offset-x-m", type=float, default=0.0)
     parser.add_argument("--pick-pregrasp-offset-y-m", type=float, default=0.0)
     parser.add_argument("--pick-pregrasp-offset-z-m", type=float, default=0.0)
     parser.add_argument("--pick-pregrasp-staging-velocity", type=float, default=12.0)
     parser.add_argument("--pick-pregrasp-staging-acceleration", type=float, default=16.0)
     parser.add_argument("--pick-lift-m", type=float, default=0.100)
-    parser.add_argument("--pick-lift-velocity", type=float, default=35.0)
-    parser.add_argument("--pick-lift-acceleration", type=float, default=50.0)
+    parser.add_argument("--pick-lift-velocity", type=float, default=18.0)
+    parser.add_argument("--pick-lift-acceleration", type=float, default=25.0)
     parser.add_argument("--pick-timeout-sec", type=float, default=120.0)
     parser.add_argument(
         "--regrasp-min-transit-z-m",
@@ -1958,8 +2088,8 @@ def parse_args() -> argparse.Namespace:
         default=0.560,
         help="Maximum absolute TCP/front-hold high approach Z used for post-press re-grasp transit.",
     )
-    parser.add_argument("--regrasp-approach-velocity", type=float, default=45.0)
-    parser.add_argument("--regrasp-approach-acceleration", type=float, default=60.0)
+    parser.add_argument("--regrasp-approach-velocity", type=float, default=14.0)
+    parser.add_argument("--regrasp-approach-acceleration", type=float, default=18.0)
     parser.add_argument(
         "--regrasp-retreat-x-m",
         type=float,
@@ -2002,20 +2132,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--press-depth-m",
         type=float,
-        default=0.020,
-        help="Z descent below the measured dispenser pre-contact pose. Default is 0.020 m (2 cm).",
+        default=0.040,
+        help=(
+            "Z-only pump stroke after the measured PRESS_CONTACT joints touch the dispenser. "
+            "Default is 0.040 m (4 cm)."
+        ),
     )
     parser.add_argument(
         "--press-extra-depth-m",
         type=float,
-        default=0.010,
-        help="Additional Z-only press descent added to --press-depth-m. Default 0.010 m (1 cm).",
+        default=0.0,
+        help=(
+            "Additional Z-only pump stroke added after PRESS_CONTACT. "
+            "Total stroke is --press-depth-m + this value. Default 0."
+        ),
     )
     parser.add_argument(
         "--press-pre-lift-m",
         type=float,
         default=0.080,
-        help="Z lift above the measured dispenser-head contact pose before descending to press.",
+        help="Cartesian fallback lift above the measured dispenser contact pose.",
     )
     parser.add_argument("--press-approach-height-m", type=float, default=0.100)
     parser.add_argument("--press-transit-height-m", type=float, default=0.080)
@@ -2062,16 +2198,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.050,
         help=(
-            "For measured press_contact_joints_deg, first move Cartesian to this height "
-            "above the measured press contact before the final MoveJoint. Default 0.050m "
-            "keeps the path above the outlet/spout instead of sweeping directly into contact."
+            "Generated Cartesian PRE height above the measured PRESS_CONTACT FK pose. "
+            "PRESS_PRE joints are ignored by default; PRE is CONTACT with Z raised by this amount."
         ),
     )
     parser.add_argument(
         "--press-joint-space-use-high-prepose",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="For measured press_contact_joints_deg, also climb to Cartesian pre_z after contact. Default false avoids the observed pre-pose stall.",
+        help=(
+            "Fallback-only option for old contact-joint mode. Default false; measured "
+            "PRESS_PRE/PRESS_CONTACT pairs do not need this Cartesian pre_z."
+        ),
     )
     parser.add_argument(
         "--press-move-configured-prepose-before-joint",
@@ -2150,6 +2288,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-stall-delta-mm", type=float, default=2.0)
     parser.add_argument("--joint-target-tolerance-deg", type=float, default=2.0)
     parser.add_argument(
+        "--normalize-measured-joints-near-current",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Compatibility mode for old measured-joint execution. Default false: "
+            "operator-measured DISP/PRESS joints are commanded exactly, without "
+            "rewriting them to a nearby 360deg-equivalent branch."
+        ),
+    )
+    parser.add_argument(
         "--ik-fallback-max-abs-joint-deg",
         type=float,
         default=360.0,
@@ -2212,8 +2360,16 @@ def parse_args() -> argparse.Namespace:
         default="6",
         help=(
             "Comma-separated joint numbers copied from press_pre_joints_deg into "
-            "press_contact_joints_deg before MoveJoint. Default 6 prevents wrist spin "
+            "press_contact_joints_deg before MoveJoint when --press-use-recorded-pre-joints is enabled. Default 6 prevents wrist spin "
             "when recorded contact J6 is an equivalent 233deg branch."
+        ),
+    )
+    parser.add_argument(
+        "--press-use-recorded-pre-joints",
+        action="store_true",
+        help=(
+            "Compatibility mode only: use press_pre_joints_deg as a measured joint pose. "
+            "Default false because PRESS_PRE is generated from PRESS_CONTACT by raising Z."
         ),
     )
     parser.add_argument(
@@ -2309,7 +2465,7 @@ def main() -> int:
         f"[Azas] measured_joint_press_z_overdrive_m={max(args.press_depth_m, 0.0) + max(args.press_extra_depth_m, 0.0):.3f} "
         f"(press_depth_m={args.press_depth_m:.3f}, extra={args.press_extra_depth_m:.3f})"
     )
-    print("[Azas] source=existing measured front_hold poses and calibration.yaml press poses")
+    print("[Azas] source=calibration.yaml measured DISP_PRE/DISP_PLACE and PRESS_CONTACT-only Z press")
 
     motion: IntegratedRecipeMotion | None = None
     if args.execute and not args.legacy_subprocess_primitives:
@@ -2329,12 +2485,20 @@ def main() -> int:
         total_groups = len(grouped_dispenser_ids)
         for index, (dispenser_id, press_count) in enumerate(grouped_dispenser_ids, start=1):
             label_prefix = f"recipe group {index}/{total_groups} dispenser {dispenser_id} x{press_count}"
+            print(f"[Azas] START {label_prefix}: physical_dispenser={dispenser_id}")
+            if args.execute:
+                try:
+                    require_dispenser_press_contact_enabled(dispenser_id)
+                except ValueError as exc:
+                    print(f"[BLOCKED] {label_prefix}: {exc}")
+                    return 1
             if not args.execute:
                 move_release_step = "skip initial move/release" if args.skip_initial_move_release else "integrated move/release"
                 print(
                     f"[PLAN] {label_prefix}: {move_release_step} -> "
                     f"integrated press {press_count} time(s) -> integrated re-grasp/lift"
                 )
+                print_dry_run_group_detail(args, dispenser_id, press_count)
                 continue
 
             if args.skip_initial_move_release:
@@ -2343,6 +2507,7 @@ def main() -> int:
                     "cup is assumed already released at dispenser front-hold"
                 )
             elif motion is None:
+                print(f"[Azas] {label_prefix}: MOVE/RELEASE physical_dispenser={dispenser_id}")
                 rc = run_command(f"{label_prefix}: move cup to front-hold and release", move_and_release_cmd(args, dispenser_id))
                 if rc != 0:
                     return rc
@@ -2351,6 +2516,7 @@ def main() -> int:
                     return rc
             else:
                 try:
+                    print(f"[Azas] {label_prefix}: MOVE/RELEASE physical_dispenser={dispenser_id}")
                     motion.move_and_release(dispenser_id)
                 except RuntimeError as exc:
                     print(f"[FAIL] {label_prefix}: integrated move/release failed: {exc}")
@@ -2368,6 +2534,7 @@ def main() -> int:
                 if rc != 0:
                     return rc
             if motion is None:
+                print(f"[Azas] {label_prefix}: PRESS physical_dispenser={dispenser_id} count={press_count}")
                 rc = run_command(
                     f"{label_prefix}: press dispenser {press_count} time(s)",
                     press_cmd(args, dispenser_id, press_count),
@@ -2376,17 +2543,20 @@ def main() -> int:
                     return rc
             else:
                 try:
+                    print(f"[Azas] {label_prefix}: PRESS physical_dispenser={dispenser_id} count={press_count}")
                     motion.press_dispenser(dispenser_id, press_count)
                 except RuntimeError as exc:
                     print(f"[FAIL] {label_prefix}: integrated press failed: {exc}")
                     return 1
 
             if motion is None:
+                print(f"[Azas] {label_prefix}: RE-GRASP physical_dispenser={dispenser_id}")
                 rc = run_command(f"{label_prefix}: re-grasp cup from front-hold", pick_cmd(args, dispenser_id))
                 if rc != 0:
                     return rc
             else:
                 try:
+                    print(f"[Azas] {label_prefix}: RE-GRASP physical_dispenser={dispenser_id}")
                     motion.regrasp_and_lift(dispenser_id)
                 except RuntimeError as exc:
                     if not args.integrated_regrasp_fallback_subprocess:

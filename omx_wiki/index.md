@@ -1,6 +1,10 @@
 # Wiki Index
 
-> 5 pages | Last updated: 2026-06-07T11:46:17.709Z
+> 6 pages | Last updated: 2026-06-10T15:50:45+09:00
+
+## operation-rules
+
+- [Robot Operation Rules](robot-operation-rules.md) — Real robot motion checks must not be replaced by dry-run commands.
 
 ## session-log
 

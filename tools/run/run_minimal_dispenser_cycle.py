@@ -34,6 +34,13 @@ DR_BASE = 0
 MOVE_MODE_ABSOLUTE = 0
 SYNC = 0
 BLENDING_SPEED_TYPE_DUPLICATE = 0
+INVALID_PRESS_CONTACT_STATUSES = {
+    "invalid",
+    "invalid_reteach_required",
+    "needs_reteach",
+    "reteach_required",
+    "확인 필요",
+}
 
 
 @dataclass(frozen=True)
@@ -189,6 +196,12 @@ def load_dispenser(calibration_path: Path, dispenser_id: str) -> DispenserCalibr
     block = (data.get("dispenser_outlets") or {}).get(dispenser_id)
     if not isinstance(block, dict):
         raise ValueError(f"dispenser_outlets.{dispenser_id} missing in {calibration_path}")
+    status = str(block.get("press_contact_status", "")).strip()
+    if status.lower() in INVALID_PRESS_CONTACT_STATUSES:
+        raise ValueError(
+            f"dispenser_outlets.{dispenser_id}.press_contact_joints_deg is marked "
+            f"{status!r}; refusing dispenser cycle until PRESS{dispenser_id}_CONTACT is re-taught"
+        )
     outlet_xyz_m = numeric_list(block.get("outlet_pose_xyz_m"), f"outlet {dispenser_id} outlet_pose_xyz_m", 3)
     outlet_q = numeric_list(block.get("outlet_pose_quaternion_xyzw"), f"outlet {dispenser_id} outlet_pose_quaternion_xyzw", 4)
     press_xyz_m = numeric_list(block.get("press_pose_xyz_m"), f"outlet {dispenser_id} press_pose_xyz_m", 3)

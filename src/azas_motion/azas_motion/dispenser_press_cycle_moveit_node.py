@@ -26,6 +26,14 @@ import yaml
 from geometry_msgs.msg import Pose, PoseStamped, Quaternion
 from moveit.core.robot_state import RobotState
 from moveit.planning import MoveItPy, PlanRequestParameters
+
+INVALID_PRESS_CONTACT_STATUSES = {
+    "invalid",
+    "invalid_reteach_required",
+    "needs_reteach",
+    "reteach_required",
+    "확인 필요",
+}
 from rclpy.logging import get_logger
 
 GROUP_NAME = "manipulator"
@@ -122,6 +130,12 @@ def load_outlet(cfg: Config) -> OutletCalibration:
     block = outlets.get(str(cfg.dispenser_id))
     if not isinstance(block, dict):
         raise ValueError(f"dispenser_outlets.{cfg.dispenser_id} missing in {cfg.calibration_path}")
+    status = str(block.get("press_contact_status", "")).strip()
+    if status.lower() in INVALID_PRESS_CONTACT_STATUSES:
+        raise ValueError(
+            f"dispenser_outlets.{cfg.dispenser_id}.press_contact_joints_deg is marked "
+            f"{status!r}; refusing dispenser press cycle until PRESS{cfg.dispenser_id}_CONTACT is re-taught"
+        )
     return OutletCalibration(
         outlet_xyz_m=_numeric_list(block.get("outlet_pose_xyz_m"), f"outlet {cfg.dispenser_id} outlet_pose_xyz_m", 3),
         outlet_quat_xyzw=_numeric_list(block.get("outlet_pose_quaternion_xyzw"), f"outlet {cfg.dispenser_id} outlet_pose_quaternion_xyzw", 4),

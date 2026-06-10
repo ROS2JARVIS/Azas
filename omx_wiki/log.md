@@ -1,5 +1,9 @@
 # Wiki Log
 
+## [2026-06-10T15:50:45+09:00] add
+- **Pages:** robot-operation-rules.md
+- **Summary:** Recorded the operator directive that dry-run / plan-only / no-execute commands are banned as substitutes for real robot motion checks.
+
 ## [2026-05-18T10:06:59.396Z] ingest
 - **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
 - **Summary:** Created new page "Azas Real Robot Handoff 2026-05-18 Dispenser Shake Panel"
@@ -61,4 +65,3 @@
 ## [2026-06-07T11:46:17.707Z] session-end
 - **Pages:** session-log-2026-06-07-9-5l0d8p.md
 - **Summary:** Auto-captured session log for omx-1780832772689-5l0d8p
-
