@@ -113,6 +113,14 @@ def generate_launch_description():
         DeclareLaunchArgument("lid_pose_yaw_axis", default_value="x"),
         DeclareLaunchArgument("lid_pose_yaw_offset_deg", default_value="0.0"),
         DeclareLaunchArgument("lid_pose_yaw_equivalence_deg", default_value="180.0"),
+        DeclareLaunchArgument("use_j6_yaw_for_pick", default_value="false"),
+        DeclareLaunchArgument("pick_j6_yaw_axis", default_value="y"),
+        DeclareLaunchArgument("pick_j6_yaw_sign", default_value="-1.0"),
+        DeclareLaunchArgument("pick_j6_yaw_offset_deg", default_value="1.2"),
+        DeclareLaunchArgument("pick_j6_yaw_equivalence_deg", default_value="360.0"),
+        DeclareLaunchArgument("pick_j6_yaw_tolerance_deg", default_value="1.0"),
+        DeclareLaunchArgument("pick_j6_velocity", default_value="30.0"),
+        DeclareLaunchArgument("pick_j6_acceleration", default_value="15.0"),
         DeclareLaunchArgument("line_velocity", default_value="15.0"),
         DeclareLaunchArgument("line_acceleration", default_value="30.0"),
         DeclareLaunchArgument("move_timeout_sec", default_value="10.0"),
@@ -166,6 +174,7 @@ def generate_launch_description():
         DeclareLaunchArgument("lid_twist_regrip_gripper_wait_sec", default_value="0.5"),
         DeclareLaunchArgument("lid_twist_force_settle_seconds", default_value="0.4"),
         DeclareLaunchArgument("lid_twist_force_release_time", default_value="0.2"),
+        DeclareLaunchArgument("lid_twist_preseat_mode", default_value="periodic"),
         DeclareLaunchArgument("lid_twist_preseat_periodic_before_turn", default_value="false"),
         DeclareLaunchArgument("lid_twist_preseat_periodic_x_amp_mm", default_value="0.0"),
         DeclareLaunchArgument("lid_twist_preseat_periodic_y_amp_mm", default_value="0.0"),
@@ -177,6 +186,11 @@ def generate_launch_description():
         DeclareLaunchArgument("lid_twist_preseat_periodic_acc_time_sec", default_value="0.2"),
         DeclareLaunchArgument("lid_twist_preseat_periodic_repeat", default_value="2"),
         DeclareLaunchArgument("lid_twist_preseat_periodic_ref", default_value="tool"),
+        DeclareLaunchArgument("lid_twist_preseat_periodic_descend_m", default_value="0.0"),
+        DeclareLaunchArgument("lid_twist_preseat_step_m", default_value="0.005"),
+        DeclareLaunchArgument("lid_twist_preseat_wiggle_deg", default_value="10.0"),
+        DeclareLaunchArgument("lid_twist_preseat_wiggle_velocity", default_value="50.0"),
+        DeclareLaunchArgument("lid_twist_preseat_down_velocity", default_value="8.0"),
         DeclareLaunchArgument("lid_twist_compliance_x_stiffness", default_value="3000.0"),
         DeclareLaunchArgument("lid_twist_compliance_y_stiffness", default_value="3000.0"),
         DeclareLaunchArgument("lid_twist_compliance_z_stiffness", default_value="300.0"),
@@ -431,6 +445,38 @@ def generate_launch_description():
                     LaunchConfiguration("lid_pose_yaw_equivalence_deg"),
                     value_type=float,
                 ),
+                "use_j6_yaw_for_pick": ParameterValue(
+                    LaunchConfiguration("use_j6_yaw_for_pick"),
+                    value_type=bool,
+                ),
+                "pick_j6_yaw_axis": ParameterValue(
+                    LaunchConfiguration("pick_j6_yaw_axis"),
+                    value_type=str,
+                ),
+                "pick_j6_yaw_sign": ParameterValue(
+                    LaunchConfiguration("pick_j6_yaw_sign"),
+                    value_type=float,
+                ),
+                "pick_j6_yaw_offset_deg": ParameterValue(
+                    LaunchConfiguration("pick_j6_yaw_offset_deg"),
+                    value_type=float,
+                ),
+                "pick_j6_yaw_equivalence_deg": ParameterValue(
+                    LaunchConfiguration("pick_j6_yaw_equivalence_deg"),
+                    value_type=float,
+                ),
+                "pick_j6_yaw_tolerance_deg": ParameterValue(
+                    LaunchConfiguration("pick_j6_yaw_tolerance_deg"),
+                    value_type=float,
+                ),
+                "pick_j6_velocity": ParameterValue(
+                    LaunchConfiguration("pick_j6_velocity"),
+                    value_type=float,
+                ),
+                "pick_j6_acceleration": ParameterValue(
+                    LaunchConfiguration("pick_j6_acceleration"),
+                    value_type=float,
+                ),
                 "line_velocity": ParameterValue(
                     LaunchConfiguration("line_velocity"),
                     value_type=float,
@@ -643,6 +689,10 @@ def generate_launch_description():
                     LaunchConfiguration("lid_twist_force_release_time"),
                     value_type=float,
                 ),
+                "lid_twist_preseat_mode": ParameterValue(
+                    LaunchConfiguration("lid_twist_preseat_mode"),
+                    value_type=str,
+                ),
                 "lid_twist_preseat_periodic_before_turn": ParameterValue(
                     LaunchConfiguration("lid_twist_preseat_periodic_before_turn"),
                     value_type=bool,
@@ -686,6 +736,26 @@ def generate_launch_description():
                 "lid_twist_preseat_periodic_ref": ParameterValue(
                     LaunchConfiguration("lid_twist_preseat_periodic_ref"),
                     value_type=str,
+                ),
+                "lid_twist_preseat_periodic_descend_m": ParameterValue(
+                    LaunchConfiguration("lid_twist_preseat_periodic_descend_m"),
+                    value_type=float,
+                ),
+                "lid_twist_preseat_step_m": ParameterValue(
+                    LaunchConfiguration("lid_twist_preseat_step_m"),
+                    value_type=float,
+                ),
+                "lid_twist_preseat_wiggle_deg": ParameterValue(
+                    LaunchConfiguration("lid_twist_preseat_wiggle_deg"),
+                    value_type=float,
+                ),
+                "lid_twist_preseat_wiggle_velocity": ParameterValue(
+                    LaunchConfiguration("lid_twist_preseat_wiggle_velocity"),
+                    value_type=float,
+                ),
+                "lid_twist_preseat_down_velocity": ParameterValue(
+                    LaunchConfiguration("lid_twist_preseat_down_velocity"),
+                    value_type=float,
                 ),
                 "lid_twist_compliance_x_stiffness": ParameterValue(
                     LaunchConfiguration("lid_twist_compliance_x_stiffness"),

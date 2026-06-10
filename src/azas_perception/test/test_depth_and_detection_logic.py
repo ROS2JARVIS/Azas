@@ -17,6 +17,17 @@ from azas_perception.yolo_tumbler_detector_node import (
 )
 
 
+def _generate_aruco_marker_image(dictionary, marker_id: int, side_px: int):
+    aruco = cv2.aruco
+    if hasattr(aruco, "generateImageMarker"):
+        return aruco.generateImageMarker(dictionary, marker_id, side_px)
+    if hasattr(aruco, "drawMarker"):
+        marker_image = np.zeros((side_px, side_px), dtype=np.uint8)
+        aruco.drawMarker(dictionary, marker_id, side_px, marker_image, 1)
+        return marker_image
+    pytest.skip("OpenCV aruco marker image generation API is unavailable")
+
+
 def test_pixel_depth_to_camera_point_projects_metric_coordinates():
     point = pixel_depth_to_camera_point(
         330,
@@ -72,7 +83,7 @@ def test_detect_red_circle_marker_uses_lid_roi():
 def test_detect_aruco_marker_uses_configured_dictionary_and_roi():
     image = np.full((160, 160, 3), 255, dtype=np.uint8)
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    marker_image = cv2.aruco.generateImageMarker(dictionary, 7, 60)
+    marker_image = _generate_aruco_marker_image(dictionary, 7, 60)
     image[50:110, 50:110] = cv2.cvtColor(marker_image, cv2.COLOR_GRAY2BGR)
     roi = ImageRoi(30, 30, 130, 130)
 
