@@ -17,6 +17,25 @@ from azas_perception.yolo_tumbler_detector_node import (
 )
 
 
+def _install_aruco_generate_image_marker_compat():
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None or hasattr(aruco, "generateImageMarker") or not hasattr(aruco, "drawMarker"):
+        return
+
+    def generate_image_marker(dictionary, marker_id, side_pixels, img=None, borderBits=1):
+        marker = np.zeros((int(side_pixels), int(side_pixels)), dtype=np.uint8)
+        aruco.drawMarker(dictionary, int(marker_id), int(side_pixels), marker, int(borderBits))
+        if img is not None:
+            img[...] = marker
+            return img
+        return marker
+
+    aruco.generateImageMarker = generate_image_marker
+
+
+_install_aruco_generate_image_marker_compat()
+
+
 def test_pixel_depth_to_camera_point_projects_metric_coordinates():
     point = pixel_depth_to_camera_point(
         330,

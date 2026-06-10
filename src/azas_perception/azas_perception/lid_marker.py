@@ -143,10 +143,20 @@ def detect_aruco_marker(
         return None
 
     gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
-    dictionary = cv2.aruco.getPredefinedDictionary(dictionary_id)
-    parameters = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(dictionary, parameters)
-    corners_list, ids, _rejected = detector.detectMarkers(gray)
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None:
+        return None
+
+    dictionary = aruco.getPredefinedDictionary(dictionary_id)
+    parameters = _aruco_detector_parameters()
+    if hasattr(aruco, "ArucoDetector"):
+        detector = aruco.ArucoDetector(dictionary, parameters)
+        corners_list, ids, _rejected = detector.detectMarkers(gray)
+    elif hasattr(aruco, "detectMarkers"):
+        kwargs = {"parameters": parameters} if parameters is not None else {}
+        corners_list, ids, _rejected = aruco.detectMarkers(gray, dictionary, **kwargs)
+    else:
+        return None
     if ids is None or len(ids) == 0:
         return None
 
@@ -177,12 +187,26 @@ def detect_aruco_marker(
 
 
 def _aruco_dictionary_id(dictionary_name: str) -> int | None:
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None:
+        return None
     name = str(dictionary_name).strip().upper()
     if not name:
         return None
     if not name.startswith("DICT_"):
         name = f"DICT_{name}"
-    return getattr(cv2.aruco, name, None)
+    return getattr(aruco, name, None)
+
+
+def _aruco_detector_parameters():
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None:
+        return None
+    if hasattr(aruco, "DetectorParameters"):
+        return aruco.DetectorParameters()
+    if hasattr(aruco, "DetectorParameters_create"):
+        return aruco.DetectorParameters_create()
+    return None
 
 
 def _aruco_side_px(corners: np.ndarray) -> float:
