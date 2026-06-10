@@ -1,6 +1,19 @@
+# Measured dispenser collision draft from real robot teaching.
+#
+# IMPORTANT:
+# - front_hold_poses were measured as base_link -> link_6 teaching poses.
+# - raw_probe_poses for the collision box were remeasured as
+#   base_link -> gripper_tcp poses so the RG2 TCP offset is reflected.
+# - The boxes below are conservative primitive estimates for MoveIt Planning
+#   Scene. Keep them disabled until verified in RViz against the real workcell.
+# - Conflict resolution 2026-06-10: probe/box numbers keep the integration
+#   branch field re-measurement; origin/develop carried an older measurement
+#   (combined body box center x 0.879 vs 0.765 here).
+
 metadata:
   frame_id: base_link
   measured_target_frame: link_6
+  collision_probe_target_frame: gripper_tcp
   source: operator_teaching_tf2_echo
   status: measured_draft_merged_horizontal_spout_block_not_enabled
   body_bottom_z_m: 0.0
