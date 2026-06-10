@@ -1089,75 +1089,12 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             return
         time.sleep(1.0)
 
-        # 4단계: 직립화 실행 (항상 카메라가 위를 향하는 Roll=90 고정)
-        log.info("[4] 컵 직립화 궤적 탐색 (카메라 상향 고정)...")
-
-        # grasp_yaw는 입구 방향 — 반대쪽(바닥)이 컵을 내려놓을 위치.
-        # 몸통 쪽으로 파지점을 옮긴 만큼 바닥까지의 남은 길이는 줄어듭니다.
-        bottom_offset_m = max(CUP_LENGTH_M / 2.0 - max(0.0, GRASP_BODY_OFFSET_M), CUP_RADIUS_M)
-        dx = bottom_offset_m * np.cos(grasp_yaw)
-        dy = bottom_offset_m * np.sin(grasp_yaw)
-        place_x = bx - dx
-        place_y = by - dy
-
-        target_roll = 90
-        quat_target = R.from_euler('xyz', [target_roll, 0, np.degrees(grasp_yaw)], degrees=True).as_quat()
-        ori_target = {"x": float(quat_target[0]), "y": float(quat_target[1]), "z": float(quat_target[2]), "w": float(quat_target[3])}
-
-        log.info(f"-> 카메라 상향(Roll=90) 궤적 플래닝 시도 중... (Z={safe_z:.3f})")
-        success = self.plan_pose(place_x, place_y, safe_z, ori_target)
-
-        if success:
-            log.info("=> 카메라 상향 직립화 궤적 채택 성공!")
-            best_ori = ori_target
-        else:
-            log.error("=> 치명적 오류: 관절 한계로 인해 직립화 궤적 생성에 실패했습니다.")
-            return 
-
-        log.info("[4-1] 공중에서 컵 수직 정렬 완료")
-        if HOLD_AFTER_UPRIGHT:
-            log.warn(
-                "[STOP] 내려놓기 단계는 비활성화되어 있습니다. "
-                "컵을 공중에서 세운 상태로 유지합니다."
-            )
-            log.info(f"[WAIT] observe/home 복귀 전 {UPRIGHT_HOLD_SEC:.1f}초 대기합니다.")
-            time.sleep(max(0.0, UPRIGHT_HOLD_SEC))
-            log.info("== 시퀀스 완료: upright hold ==")
-            return
-        
-        log.info(f"[4-2] 바닥 근처까지 천천히 하강 준비 (Z={pre_release_z:.3f})")
-        if not self.plan_pose(place_x, place_y, pre_release_z, best_ori):
-            log.error("[4-2] 높이 보정 실패. 시퀀스를 중단합니다.")
-            return
-        time.sleep(0.5)
-
-
-
-        
-        log.info(f"[5] 바닥 접촉 직전까지 하강 후 Release (Z={place_z:.3f})")
-        z = pre_release_z
-        while z - PLACE_DESCENT_STEP_M > place_z:
-            z -= PLACE_DESCENT_STEP_M
-            log.info(f"[5] 단계 하강 Z={z:.3f}")
-            if not self.plan_pose(place_x, place_y, z, best_ori):
-                log.error("[5] 단계 하강 실패. 그리퍼를 열지 않고 중단합니다.")
-                return
-            time.sleep(0.15)
-
-        if z > place_z:
-            log.info(f"[5] Release 높이 접근 Z={place_z:.3f}")
-            if not self.plan_pose(place_x, place_y, place_z, best_ori):
-                log.error("[5] 배치 자세 이동 실패. 그리퍼를 열지 않고 중단합니다.")
-                return
-        time.sleep(0.3)
-        self.gripper.open_gripper()
-        time.sleep(1.0)
-        
-        log.info("[6] Retract")
-        if not self.plan_pose(place_x, place_y, pre_release_z + 0.10, best_ori):
-            log.error("[6] 후퇴 실패. 수동 확인이 필요합니다.")
-            return
-        log.info("== 시퀀스 완료 ==")
+        log.info(
+            "[4] 컵 세우기/직립화 궤적은 비활성화되어 있습니다. "
+            "잡기와 리프트업까지만 수행하고 observe/home 복귀 단계로 넘어갑니다."
+        )
+        log.info("== 시퀀스 완료: grasp + lift only ==")
+        return
 
 def main(args=None):
     run_node(YoloCupUprightingNode)
