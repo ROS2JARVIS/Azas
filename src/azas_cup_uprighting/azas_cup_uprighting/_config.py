@@ -120,6 +120,8 @@ def _default_yolo_model_path():
 YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", _default_yolo_model_path())
 YOLO_CONF_THRESH   = 0.5
 AUTO_PICK_INTERVAL = 3.0    # 자동 모드 픽 간격 [s]
+AUTO_PICK_ENABLED = _env_bool("YOLO_AUTO_PICK", False)
+EXIT_AFTER_PICK = _env_bool("YOLO_EXIT_AFTER_PICK", False)
 PREVIEW_ONLY = _env_bool("YOLO_PREVIEW_ONLY", True)
 SHOW_WINDOW = _env_bool("YOLO_SHOW_WINDOW", False)
 

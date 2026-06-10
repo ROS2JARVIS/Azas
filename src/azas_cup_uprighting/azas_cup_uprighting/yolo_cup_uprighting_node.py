@@ -389,12 +389,12 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         
         if target is None:
             log.warn("쓰러진 컵을 찾을 수 없습니다.")
-            return
+            return False
 
         base = self.pixel_to_base(target["cx"], target["cy"])
         if base is None:
             log.error("픽셀 -> 베이스 3D 좌표 변환 실패.")
-            return
+            return False
         bx, by, bz = base
         
         # 각도 추출
@@ -432,13 +432,15 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         # ==========================================================
 
         self.picking = True
+        success = False
         try:
-            self._pick_and_straighten(
+            success = bool(self._pick_and_straighten(
                 bx, by, bz, cup_theta, grasp_yaw,
-            )
+            ))
         finally:
             self._return_to_observe_pose()
             self.picking = False
+        return success
 
        
 
@@ -1094,7 +1096,7 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             "잡기와 리프트업까지만 수행하고 observe/home 복귀 단계로 넘어갑니다."
         )
         log.info("== 시퀀스 완료: grasp + lift only ==")
-        return
+        return True
 
 def main(args=None):
     run_node(YoloCupUprightingNode)

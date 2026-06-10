@@ -126,6 +126,7 @@ def side_grip_command(args: argparse.Namespace) -> str:
             "side_low_retry_attempts:=5",
             "side_linear_approach_enabled:=true",
             "side_final_slide_enabled:=false",
+            "side_lift_after_grasp:=true",
             "side_fixed_grasp_z_enabled:=true",
             "side_fixed_grasp_z:=0.07",
             "side_project_bbox_center_to_fixed_z:=true",
@@ -175,7 +176,8 @@ def side_grip_command(args: argparse.Namespace) -> str:
             "min_motion_z:=0.07",
             "workspace_xy_clamp_enabled:=false",
             "return_home_after_task:=false",
-            "return_to_camera_home_after_attempt:=true",
+            "return_to_camera_home_after_attempt:=false",
+            "exit_after_first_pick:=true",
             "place_x:=0.45",
             "place_y:=0.0",
             "place_z:=0.30",
@@ -201,9 +203,32 @@ def uprighting_command(args: argparse.Namespace) -> str:
             "YOLO_MOUTH_UP_OPPOSITE_MAX_STEP_DEG=95",
             "YOLO_MOUTH_UP_OPPOSITE_GAIN=0.80",
             "YOLO_GRASP_BODY_OFFSET_M=0.025",
+            "YOLO_AUTO_PICK=1",
+            "YOLO_EXIT_AFTER_PICK=1",
+            "YOLO_RETURN_TO_OBSERVE_AFTER_RUN=0",
             "/home/ssu/Azas/tools/run/run_yolo_cup_uprighting.sh",
             "preview_only:=false",
             "show_window:=true",
+            "workspace_collision_scene_enabled:=true",
+            "workspace_collision_publish_period_sec:=2.0",
+            "table_collision_enabled:=true",
+            "table_surface_z:=0.0",
+            "table_thickness:=0.04",
+            "table_size_x:=1.10",
+            "table_size_y:=0.65",
+            "table_center_x:=0.29",
+            "table_center_y:=0.0",
+            "table_collision_expand_to_workspace_walls:=true",
+            "safety_config_path:=/home/ssu/Azas/src/azas_bringup/config/safety.yaml",
+            "workspace_boundary_collision_enabled:=true",
+            "workspace_boundary_collision_prefix:=side_grip_workspace",
+            "workspace_boundary_wall_thickness:=0.04",
+            "workspace_boundary_wall_clearance:=0.02",
+            "dispenser_collision_enabled:=true",
+            "dispenser_collision_config_path:=/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml",
+            "dispenser_collision_publish_period_sec:=1.0",
+            "dispenser_collision_publish_objects:=true",
+            "dispenser_collision_publish_markers:=true",
         ]
     )
 
@@ -350,6 +375,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-start-detector", dest="start_detector", action="store_false")
     parser.add_argument("--show-perception-window", action="store_true", default=True)
     parser.add_argument("--no-show-perception-window", dest="show_perception_window", action="store_false")
+    parser.add_argument(
+        "--route-hold-sec",
+        type=float,
+        default=2.0,
+        help="Keep the upright/lying decision visible for this many seconds before launching the selected flow.",
+    )
+    parser.add_argument("--keep-perception-window-during-motion", action="store_true", default=True)
+    parser.add_argument(
+        "--close-perception-window-before-motion",
+        dest="keep_perception_window_during_motion",
+        action="store_false",
+    )
     parser.add_argument("--timeout-sec", type=float, default=20.0)
     parser.add_argument("--stable-count", type=int, default=2)
     parser.add_argument("--service-prefix", default="dsr01")
@@ -361,6 +398,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--uprighting-yolo-model", default="/home/ssu/yolo_cup_uprighting/best.pt")
     parser.add_argument("--classifier", default="/home/ssu/Azas/cup_classifier_best.pth")
     parser.add_argument("--classifier-min-confidence", type=float, default=0.70)
+    parser.add_argument(
+        "--skip-dispenser-sequence",
+        action="store_true",
+        help="Deprecated/no-op: downstream dispenser sequence is currently disabled.",
+    )
     parser.add_argument("--color-topic", default="/camera/camera/color/image_raw")
     parser.add_argument("--depth-topic", default="/camera/camera/aligned_depth_to_color/image_raw")
     parser.add_argument("--camera-info-topic", default="/camera/camera/color/camera_info")
@@ -422,18 +464,16 @@ def main() -> int:
             viewer = start_process(perception_viewer_command(args), "upright/lying perception viewer")
         time.sleep(2.0)
 
-    try:
-        print(
-            f"[Azas route] /azas/cup_detection에서 안정적인 판별을 기다립니다 "
-            f"(stable_count={args.stable_count}, timeout={args.timeout_sec:.1f}s).",
-            flush=True,
-        )
-        route, status = wait_for_route(args)
-    finally:
-        stop_process(viewer, "upright/lying perception viewer")
-        stop_process(detector, "cup/lid detector")
+    print(
+        f"[Azas route] /azas/cup_detection에서 안정적인 판별을 기다립니다 "
+        f"(stable_count={args.stable_count}, timeout={args.timeout_sec:.1f}s).",
+        flush=True,
+    )
+    route, status = wait_for_route(args)
 
     if not route:
+        stop_process(viewer, "upright/lying perception viewer")
+        stop_process(detector, "cup/lid detector")
         print(
             f"[Azas route] no stable upright/lying decision within {args.timeout_sec:.1f}s; no motion launched",
             flush=True,
@@ -454,15 +494,57 @@ def main() -> int:
         )
     print(f"[Azas route] selected={route} status={status}", flush=True)
     selected_cmd = side_grip_command(args) if route == "side_grip" else uprighting_command(args)
+    hold_sec = max(0.0, float(args.route_hold_sec))
+    if hold_sec > 0.0:
+        print(
+            f"[Azas route] 판별 화면을 {hold_sec:.1f}초 유지한 뒤 다음 과정으로 넘어갑니다.",
+            flush=True,
+        )
+        time.sleep(hold_sec)
     if not args.execute:
         print("[Azas route] dry run only. Selected command:", flush=True)
         print(selected_cmd, flush=True)
+        print("[Azas route] dry run only. Post-lift RG2 open command:", flush=True)
+        print(gripper_open_command(), flush=True)
+        stop_process(viewer, "upright/lying perception viewer")
+        stop_process(detector, "cup/lid detector")
         return 0
 
+    if args.keep_perception_window_during_motion:
+        print(
+            "[Azas route] 선택된 모션 중에도 upright/lying overlay 창을 계속 유지합니다.",
+            flush=True,
+        )
+    else:
+        stop_process(viewer, "upright/lying perception viewer")
+        stop_process(detector, "cup/lid detector")
+
     print("[Azas route] 선택된 실제 실행 명령을 시작합니다.", flush=True)
-    completed = subprocess.run(["bash", "-lc", selected_cmd], cwd=str(ROOT), check=False)
-    print(f"[Azas route] 선택된 실행이 종료되었습니다. returncode={completed.returncode}", flush=True)
-    return int(completed.returncode)
+    try:
+        completed = subprocess.run(["bash", "-lc", selected_cmd], cwd=str(ROOT), check=False)
+        print(f"[Azas route] 선택된 실행이 종료되었습니다. returncode={completed.returncode}", flush=True)
+        if completed.returncode != 0:
+            print(
+                "[Azas route] 컵 grasp/uprighting handoff 실패로 판단하여 "
+                "RG2 open 후속 동작을 시작하지 않습니다.",
+                flush=True,
+            )
+            return int(completed.returncode)
+        print(
+            "[Azas route] 뒷부분 디스펜서 sequence는 비활성화되어 있습니다. "
+            "lift 확인 후 RG2를 open합니다.",
+            flush=True,
+        )
+        completed = subprocess.run(
+            ["bash", "-lc", gripper_open_command()],
+            cwd=str(ROOT),
+            check=False,
+        )
+        print(f"[Azas route] RG2 open 종료. returncode={completed.returncode}", flush=True)
+        return int(completed.returncode)
+    finally:
+        stop_process(viewer, "upright/lying perception viewer")
+        stop_process(detector, "cup/lid detector")
 
 
 if __name__ == "__main__":

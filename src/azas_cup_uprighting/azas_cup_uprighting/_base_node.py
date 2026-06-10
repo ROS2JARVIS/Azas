@@ -72,11 +72,12 @@ class BaseMoveItPickNode(Node):
         self.picking = False
         self.home_xyz = None     # (x, y, z) [m] — initialize_home 에서 설정
         self.home_ori = None     # quat dict {x, y, z, w}
-        self._auto_mode = False
+        self._auto_mode = cfg.AUTO_PICK_ENABLED
         self._last_pick_time = 0.0
         self._detections: list[dict] = []
         self._frozen_frame = None
         self._preview_only = cfg.PREVIEW_ONLY
+        self._request_exit = False
 
         self.gripper2cam = None
         self.gripper = None
@@ -302,7 +303,13 @@ class BaseMoveItPickNode(Node):
 
         def _work():
             try:
-                self.detect_and_pick(frame)
+                pick_ok = self.detect_and_pick(frame)
+                if cfg.EXIT_AFTER_PICK and pick_ok is True:
+                    self.get_logger().info(
+                        "YOLO_EXIT_AFTER_PICK=true; leaving cup-uprighting node "
+                        "for downstream dispenser handoff"
+                    )
+                    self._request_exit = True
             finally:
                 self._frozen_frame = None
 
@@ -377,6 +384,9 @@ class BaseMoveItPickNode(Node):
         last_wait_log = 0.0
 
         while rclpy.ok():
+            if self._request_exit:
+                break
+
             # ── Busy 분기 (pick / scan 진행 중): 동작 입력 프레임은 고정하되 화면은 live로 갱신 ──
             if self._frozen_frame is not None:
                 if self.color_image is None:

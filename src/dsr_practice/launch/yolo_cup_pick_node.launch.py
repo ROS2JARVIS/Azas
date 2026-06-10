@@ -1,7 +1,8 @@
 from copy import deepcopy
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, RegisterEventHandler, Shutdown
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -151,12 +152,11 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
             )
         )
 
-    nodes.append(
-        Node(
-            package="dsr_practice",
-            executable="yolo_cup_pick_node",
-            output="screen",
-            parameters=[
+    yolo_node = Node(
+        package="dsr_practice",
+        executable="yolo_cup_pick_node",
+        output="screen",
+        parameters=[
                 runtime_moveit_params,
                 moveit_py_params,
                 side_prepose_params,
@@ -227,6 +227,9 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     ),
                     "side_final_slide_enabled": LaunchConfiguration(
                         "side_final_slide_enabled"
+                    ),
+                    "side_lift_after_grasp": LaunchConfiguration(
+                        "side_lift_after_grasp"
                     ),
                     "side_fixed_grasp_z_enabled": LaunchConfiguration(
                         "side_fixed_grasp_z_enabled"
@@ -345,12 +348,23 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "return_to_camera_home_after_attempt": LaunchConfiguration(
                         "return_to_camera_home_after_attempt"
                     ),
+                    "exit_after_first_pick": LaunchConfiguration(
+                        "exit_after_first_pick"
+                    ),
                     "place_x": LaunchConfiguration("place_x"),
                     "place_y": LaunchConfiguration("place_y"),
                     "place_z": LaunchConfiguration("place_z"),
                     "auto_pick": LaunchConfiguration("auto_pick"),
                 },
-            ],
+        ],
+    )
+    nodes.append(yolo_node)
+    nodes.append(
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=yolo_node,
+                on_exit=[Shutdown(reason="yolo_cup_pick_node exited")],
+            )
         )
     )
     return nodes
@@ -497,6 +511,11 @@ def generate_launch_description():
         "side_final_slide_enabled",
         default_value="false",
         description="If true, move pre-grasp first and then perform an extra final slide into guarded close pose.",
+    )
+    side_lift_after_grasp_arg = DeclareLaunchArgument(
+        "side_lift_after_grasp",
+        default_value="false",
+        description="After closing RG2 on a side grasp, lift the held cup before handing off to downstream tasks.",
     )
     side_fixed_grasp_z_enabled_arg = DeclareLaunchArgument(
         "side_fixed_grasp_z_enabled",
@@ -768,6 +787,11 @@ def generate_launch_description():
         default_value="true",
         description="After each pick attempt, return to camera home even if the attempt failed.",
     )
+    exit_after_first_pick_arg = DeclareLaunchArgument(
+        "exit_after_first_pick",
+        default_value="false",
+        description="Exit this node after one successful pick so a wrapper can continue with the held cup.",
+    )
     place_x_arg = DeclareLaunchArgument("place_x", default_value="0.45")
     place_y_arg = DeclareLaunchArgument("place_y", default_value="0.0")
     place_z_arg = DeclareLaunchArgument("place_z", default_value="0.30")
@@ -817,6 +841,7 @@ def generate_launch_description():
             side_candidate_plan_check_enabled_arg,
             side_linear_approach_enabled_arg,
             side_final_slide_enabled_arg,
+            side_lift_after_grasp_arg,
             side_fixed_grasp_z_enabled_arg,
             side_fixed_grasp_z_arg,
             side_project_bbox_center_to_fixed_z_arg,
@@ -877,6 +902,7 @@ def generate_launch_description():
             workspace_xy_clamp_enabled_arg,
             return_home_after_task_arg,
             return_to_camera_home_after_attempt_arg,
+            exit_after_first_pick_arg,
             place_x_arg,
             place_y_arg,
             place_z_arg,

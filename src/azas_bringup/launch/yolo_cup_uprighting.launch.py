@@ -25,6 +25,50 @@ def generate_launch_description():
             "use_mock_vision": LaunchConfiguration("use_mock_vision"),
             "max_velocity_scale": LaunchConfiguration("max_velocity_scale"),
             "max_acceleration_scale": LaunchConfiguration("max_acceleration_scale"),
+            "workspace_collision_scene_enabled": LaunchConfiguration(
+                "workspace_collision_scene_enabled"
+            ),
+            "workspace_collision_publish_period_sec": LaunchConfiguration(
+                "workspace_collision_publish_period_sec"
+            ),
+            "table_collision_enabled": LaunchConfiguration("table_collision_enabled"),
+            "table_surface_z": LaunchConfiguration("table_surface_z"),
+            "table_thickness": LaunchConfiguration("table_thickness"),
+            "table_size_x": LaunchConfiguration("table_size_x"),
+            "table_size_y": LaunchConfiguration("table_size_y"),
+            "table_center_x": LaunchConfiguration("table_center_x"),
+            "table_center_y": LaunchConfiguration("table_center_y"),
+            "table_collision_expand_to_workspace_walls": LaunchConfiguration(
+                "table_collision_expand_to_workspace_walls"
+            ),
+            "safety_config_path": LaunchConfiguration("safety_config_path"),
+            "workspace_boundary_collision_enabled": LaunchConfiguration(
+                "workspace_boundary_collision_enabled"
+            ),
+            "workspace_boundary_collision_prefix": LaunchConfiguration(
+                "workspace_boundary_collision_prefix"
+            ),
+            "workspace_boundary_wall_thickness": LaunchConfiguration(
+                "workspace_boundary_wall_thickness"
+            ),
+            "workspace_boundary_wall_clearance": LaunchConfiguration(
+                "workspace_boundary_wall_clearance"
+            ),
+            "dispenser_collision_enabled": LaunchConfiguration(
+                "dispenser_collision_enabled"
+            ),
+            "dispenser_collision_config_path": LaunchConfiguration(
+                "dispenser_collision_config_path"
+            ),
+            "dispenser_collision_publish_period_sec": LaunchConfiguration(
+                "dispenser_collision_publish_period_sec"
+            ),
+            "dispenser_collision_publish_objects": LaunchConfiguration(
+                "dispenser_collision_publish_objects"
+            ),
+            "dispenser_collision_publish_markers": LaunchConfiguration(
+                "dispenser_collision_publish_markers"
+            ),
         }.items(),
     )
 
@@ -39,5 +83,42 @@ def generate_launch_description():
         DeclareLaunchArgument("use_mock_vision", default_value="false"),
         DeclareLaunchArgument("max_velocity_scale", default_value="0.1"),
         DeclareLaunchArgument("max_acceleration_scale", default_value="0.1"),
+        DeclareLaunchArgument("workspace_collision_scene_enabled", default_value="true"),
+        DeclareLaunchArgument("workspace_collision_publish_period_sec", default_value="2.0"),
+        DeclareLaunchArgument("table_collision_enabled", default_value="true"),
+        DeclareLaunchArgument("table_surface_z", default_value="0.0"),
+        DeclareLaunchArgument("table_thickness", default_value="0.04"),
+        DeclareLaunchArgument("table_size_x", default_value="1.20"),
+        DeclareLaunchArgument("table_size_y", default_value="1.00"),
+        DeclareLaunchArgument("table_center_x", default_value="0.45"),
+        DeclareLaunchArgument("table_center_y", default_value="0.0"),
+        DeclareLaunchArgument("table_collision_expand_to_workspace_walls", default_value="true"),
+        DeclareLaunchArgument(
+            "safety_config_path",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("azas_bringup"), "config", "safety.yaml"]
+            ),
+        ),
+        DeclareLaunchArgument("workspace_boundary_collision_enabled", default_value="true"),
+        DeclareLaunchArgument(
+            "workspace_boundary_collision_prefix",
+            default_value="side_grip_workspace",
+        ),
+        DeclareLaunchArgument("workspace_boundary_wall_thickness", default_value="0.04"),
+        DeclareLaunchArgument("workspace_boundary_wall_clearance", default_value="0.02"),
+        DeclareLaunchArgument("dispenser_collision_enabled", default_value="true"),
+        DeclareLaunchArgument(
+            "dispenser_collision_config_path",
+            default_value=PathJoinSubstitution(
+                [
+                    FindPackageShare("azas_bringup"),
+                    "config",
+                    "measured_dispenser_collision.yaml",
+                ]
+            ),
+        ),
+        DeclareLaunchArgument("dispenser_collision_publish_period_sec", default_value="1.0"),
+        DeclareLaunchArgument("dispenser_collision_publish_objects", default_value="true"),
+        DeclareLaunchArgument("dispenser_collision_publish_markers", default_value="true"),
         upstream_launch,
     ])

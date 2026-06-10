@@ -236,6 +236,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_candidate_plan_check_enabled", True)
         self.declare_parameter("side_linear_approach_enabled", True)
         self.declare_parameter("side_final_slide_enabled", False)
+        self.declare_parameter("side_lift_after_grasp", False)
         self.declare_parameter("side_fixed_grasp_z_enabled", False)
         self.declare_parameter("side_fixed_grasp_z", 0.07)
         self.declare_parameter("side_project_bbox_center_to_fixed_z", True)
@@ -364,6 +365,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("camera_home_search_min_z", 0.54)
         self.declare_parameter("camera_home_search_step_z", 0.02)
         self.declare_parameter("return_to_camera_home_after_attempt", True)
+        self.declare_parameter("exit_after_first_pick", False)
         self.declare_parameter("place_x", 0.45)
         self.declare_parameter("place_y", 0.0)
         self.declare_parameter("place_z", 0.30)
@@ -432,6 +434,9 @@ class YoloCupPickNode(Node):
         )
         self.side_final_slide_enabled = parse_bool(
             self.get_parameter("side_final_slide_enabled").value
+        )
+        self.side_lift_after_grasp = parse_bool(
+            self.get_parameter("side_lift_after_grasp").value
         )
         self.side_fixed_grasp_z_enabled = parse_bool(
             self.get_parameter("side_fixed_grasp_z_enabled").value
@@ -578,6 +583,9 @@ class YoloCupPickNode(Node):
         )
         self.return_to_camera_home_after_attempt = parse_bool(
             self.get_parameter("return_to_camera_home_after_attempt").value
+        )
+        self.exit_after_first_pick = parse_bool(
+            self.get_parameter("exit_after_first_pick").value
         )
         self.place_x = float(self.get_parameter("place_x").value)
         self.place_y = float(self.get_parameter("place_y").value)
@@ -1964,6 +1972,21 @@ class YoloCupPickNode(Node):
         log.info("close gripper for guarded side grasp")
         self.gripper.move_gripper(GRIPPER_CLOSE_WIDTH, GRIPPER_FORCE)
         time.sleep(1.0)
+        if self.side_lift_after_grasp:
+            log.info(
+                "lift cup after side grasp for downstream dispenser handoff "
+                f"(z={plan.lift_z:.3f})"
+            )
+            if not self.plan_and_execute(
+                pose_goal=make_pose(
+                    plan.guarded_grasp_xy[0],
+                    plan.guarded_grasp_xy[1],
+                    plan.lift_z,
+                    plan.orientation,
+                ),
+                params=self.side_final_approach_params(),
+            ):
+                return False
         log.info("side grasp complete; holding cup for downstream rule-based task")
         return True
 
@@ -2274,6 +2297,12 @@ class YoloCupPickNode(Node):
             )
             if can_auto_pick:
                 self.start_pick_from_detection()
+                if self.exit_after_first_pick and self.has_picked_once:
+                    log.info(
+                        "exit_after_first_pick=true; leaving side-grip node "
+                        "for downstream dispenser handoff"
+                    )
+                    break
 
             key = cv2.waitKey(1) & 0xFF
             if key == 27:
