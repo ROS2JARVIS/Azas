@@ -124,23 +124,23 @@ def calculate_cup_orientation(depth_image, bbox, frame=None):
     if frame is None:
         return 0.0
 
-    # 1. Bounding Box 좌표를 정수로 변환하여 ROI(관심 영역) 자르기
+    # Bounding Box 좌표를 정수로 변환하여 ROI(관심 영역) 자르기
     x1, y1, x2, y2 = map(int, bbox)
     roi = frame[y1:y2, x1:x2]
     
     if roi.size == 0:
         return 0.0
 
-    # 2. 이미지를 흑백으로 변환하고 이진화(Threshold)하여 컵과 배경 분리
+    # 이미지를 흑백으로 변환하고 이진화(Threshold)하여 컵과 배경 분리
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-    # 3. 외곽선(Contours) 찾기
+    # 외곽선(Contours) 찾기
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return 0.0
 
-    # 4. 가장 넓은 외곽선을 컵의 본체로 간주
+    # 가장 넓은 외곽선을 컵의 본체로 간주
     c = max(contours, key=cv2.contourArea)
 
     # ── PCA: 컵 외곽선 점들의 주축 방향 ──
@@ -194,13 +194,13 @@ def is_top_pointing_towards_theta(frame, bbox, theta):
     center_x = roi.shape[1] / 2.0
     center_y = roi.shape[0] / 2.0
     
-    # 1. 컵 중심에서 스티커(무게중심)를 향하는 벡터 생성
+    # 컵 중심에서 스티커(무게중심)를 향하는 벡터 생성
     vec_sticker = np.array([cm_x - center_x, cm_y - center_y])
     
-    # 2. theta 각도가 가리키는 단위 벡터 생성
+    # theta 각도가 가리키는 단위 벡터 생성
     vec_theta = np.array([np.cos(theta), np.sin(theta)])
     
-    # 3. 두 벡터의 내적(Dot Product) 계산
+    # 두 벡터의 내적(Dot Product) 계산
 
     dot_product = np.dot(vec_sticker, vec_theta)
     

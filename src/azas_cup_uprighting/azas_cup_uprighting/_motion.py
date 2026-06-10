@@ -109,7 +109,6 @@ def get_gripper_pose_by_cup(cup_theta):
     yaw = -cup_theta
 
     # 오일러 각을 쿼터니언으로 변환
-    # (Roll=180, Pitch=0 상태에서 Yaw축만 조향)
     quat = R.from_euler('xyz', [180, 0, np.degrees(yaw)], degrees=True).as_quat()
     
     ori_dict = {
