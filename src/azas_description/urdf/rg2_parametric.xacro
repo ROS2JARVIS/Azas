@@ -127,12 +127,6 @@
         </geometry>
         <material name="${prefix}body_gray"/>
       </visual>
-      <collision>
-        <origin xyz="0 ${finger_y * 0.55} ${base_len + palm_len * 0.78}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${rail_t} ${rail_w} ${palm_len * 0.42}"/>
-        </geometry>
-      </collision>
       <xacro:azas_box_inertial mass="${mass * 0.04}" x="${rail_t}" y="${rail_w}" z="${palm_len * 0.42}"/>
     </link>
 
@@ -150,12 +144,6 @@
         </geometry>
         <material name="${prefix}body_gray"/>
       </visual>
-      <collision>
-        <origin xyz="0 ${-finger_y * 0.55} ${base_len + palm_len * 0.78}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${rail_t} ${rail_w} ${palm_len * 0.42}"/>
-        </geometry>
-      </collision>
       <xacro:azas_box_inertial mass="${mass * 0.04}" x="${rail_t}" y="${rail_w}" z="${palm_len * 0.42}"/>
     </link>
 
