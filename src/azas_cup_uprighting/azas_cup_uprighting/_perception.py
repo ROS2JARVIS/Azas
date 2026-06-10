@@ -143,17 +143,17 @@ def calculate_cup_orientation(depth_image, bbox, frame=None):
     # 4. 가장 넓은 외곽선을 컵의 본체로 간주
     c = max(contours, key=cv2.contourArea)
 
-    # 5. 외곽선을 감싸는 기울어진 사각형(RotatedRect) 생성
-    rect = cv2.minAreaRect(c)
-    (cx, cy), (w, h), angle = rect
+    # ── PCA: 컵 외곽선 점들의 주축 방향 ──
+    pts = c.reshape(-1, 2).astype(np.float64)
+    mean = pts.mean(axis=0)
+    pts_centered = pts - mean
+    cov = np.cov(pts_centered.T)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    principal = eigvecs[:, np.argmax(eigvals)]   # 가장 큰 분산 방향 = 컵 장축
 
-    # 6. OpenCV angle 보정 (긴 축이 컵의 방향이 되도록 기준 정렬)
-    if w < h:
-        angle += 90.0  
-
-    # 7. Degree를 Radian으로 변환하여 반환
-    theta = np.deg2rad(angle)
+    theta = np.arctan2(principal[1], principal[0])
     return theta
+
 
 
 def is_top_pointing_towards_theta(frame, bbox, theta):

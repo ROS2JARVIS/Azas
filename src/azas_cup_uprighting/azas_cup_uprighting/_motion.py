@@ -106,8 +106,7 @@ def get_gripper_pose_by_cup(cup_theta):
     컵의 주축 각도(theta)를 받아 그리퍼가 옆면(허리)을 수직 진입하여 
     파지할 수 있도록 쿼터니언 반환
     """
-
-    yaw = cup_theta 
+    yaw = -cup_theta
 
     # 오일러 각을 쿼터니언으로 변환
     # (Roll=180, Pitch=0 상태에서 Yaw축만 조향)

@@ -6,6 +6,7 @@
 
 import time
 import numpy as np
+import cv2  
 
 from . import _config as cfg
 from ._base_node import BaseMoveItPickNode, run_node
@@ -101,6 +102,50 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             
         return max(target_candidates, key=lambda d: d["conf"])
     
+    
+    def _draw_detections(self, frame: np.ndarray) -> np.ndarray:
+        vis = super()._draw_detections(frame)  # 기본 bbox 그리기
+
+        for det in self._detections:
+            if det["cls_name"] != "cup":
+                continue
+
+            x1, y1, x2, y2 = det["box"]
+            cx, cy = det["cx"], det["cy"]
+
+            # 1. 컵 주축 각도 계산
+            theta = calculate_cup_orientation(self.depth_image, det["box"], frame)
+
+            # 2. 입구 방향 판별
+            is_top = is_top_pointing_towards_theta(frame, det["box"], theta)
+
+            # 입구 방향이 theta 방향이면 그대로, 아니면 반전
+            top_theta = theta if is_top else theta + np.pi
+
+            # 3. 컵 주축 선 그리기 (흰색 양방향)
+            length = max(x2 - x1, y2 - y1) // 2
+            dx = int(np.cos(theta) * length)
+            dy = int(np.sin(theta) * length)
+            cv2.line(vis, (cx - dx, cy - dy), (cx + dx, cy + dy), (255, 255, 255), 2)
+
+            # 4. 입구 방향 화살표 (초록), 바닥 방향 화살표 (파랑)
+            top_dx = int(np.cos(top_theta) * length)
+            top_dy = int(np.sin(top_theta) * length)
+            bot_dx = int(np.cos(top_theta + np.pi) * length)
+            bot_dy = int(np.sin(top_theta + np.pi) * length)
+
+            cv2.arrowedLine(vis, (cx, cy), (cx + top_dx, cy + top_dy),
+                            (0, 255, 0), 3, tipLength=0.3)   # 초록 = 입구
+            cv2.arrowedLine(vis, (cx, cy), (cx + bot_dx, cy + bot_dy),
+                            (255, 100, 0), 2, tipLength=0.2)  # 파랑 = 바닥
+
+            # 5. 레이블
+            label = f"top={'YES' if is_top else 'NO'} theta={np.degrees(theta):.1f}deg"
+            cv2.putText(vis, label, (x1, y2 + 18),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+        return vis
+    
         
 
     def detect_and_pick(self, frame: np.ndarray):
@@ -131,7 +176,7 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         
         is_top = is_top_pointing_towards_theta(frame, target["box"], cup_theta)
         
-        if not is_top:
+        if  not is_top:
             log.info("[VISION] 컵이 반대로 누워있습니다. 카메라 상향 유지를 위해 파지 방향을 180도 뒤집습니다.")
             cup_theta += np.pi  # 180도 회전
         else:
@@ -162,7 +207,8 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         PICK_CLEARANCE = 0.02 
         
         pick_z = floor_z + CUP_RADIUS_M + Z_OFFSET + PICK_CLEARANCE
-        place_z = floor_z + (CUP_LENGTH_M / 2.0) 
+        z_min = cfg.SAFETY_CFG['motion']['workspace_bounds_m']['z_min']
+        place_z = max(floor_z + (CUP_LENGTH_M / 2.0), z_min)
         
         safe_z = floor_z + 0.25 + Z_OFFSET
         
@@ -243,7 +289,15 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         
         log.info("[6] Retract")
         self.plan_pose(place_x, place_y, place_z + 0.15, best_ori)
-        log.info("== 시퀀스 완료 ==")
+        
+
+        log.info("[7] 홈 위치로 복귀")
+        if self.go_home_pose():
+            log.info("=> 홈 복귀 완료")
+        else:
+            log.error("=> 홈 복귀 실패")
+
+        
 
 def main(args=None):
     run_node(YoloCupUprightingNode)
