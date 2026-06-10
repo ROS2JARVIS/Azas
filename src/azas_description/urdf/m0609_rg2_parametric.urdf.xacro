@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="m0609_rg2_parametric">
+  <xacro:arg name="rg2_parent_link" default="tool0"/>
+  <xacro:arg name="rg2_prefix" default="rg2_"/>
+
+  <!--
+    Mount and TCP origins are placeholders with neutral transforms.
+    Do not treat them as measured calibration. Override only from official CAD,
+    robot-side adapter drawings, or measured hardware evidence.
+  -->
+  <xacro:arg name="rg2_mount_xyz" default="0 0 0"/>
+  <xacro:arg name="rg2_mount_rpy" default="1.570796327 0 1.570796327"/>
+  <xacro:arg name="rg2_tcp_z_offset" default="0.213"/>
+  <xacro:arg name="gripper_tcp_link_name" default="gripper_tcp"/>
+
+  <link name="world"/>
+  <joint name="world_fixed" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+
+  <!-- Use the base Doosan geometry so local dsr_description2 RG2 edits do not double-attach a gripper. -->
+  <xacro:include filename="$(find dsr_description2)/urdf/m0609.urdf"/>
+  <xacro:include filename="$(find azas_description)/urdf/rg2_parametric.xacro"/>
+
+  <xacro:azas_rg2_parametric
+    parent_link="$(arg rg2_parent_link)"
+    prefix="$(arg rg2_prefix)"
+    mount_xyz="$(arg rg2_mount_xyz)"
+    mount_rpy="$(arg rg2_mount_rpy)"
+    tcp_link_name="$(arg gripper_tcp_link_name)"
+    tcp_z_offset="$(arg rg2_tcp_z_offset)"/>
+</robot>
