@@ -1,0 +1,239 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!--
+    Parametric OnRobot RG2 approximation for Azas.
+
+    Source-backed gross specs:
+      - total stroke: 110 mm
+      - external dimensions: 213 x 149 x 36 mm
+      - weight: 0.78 kg
+
+    This is not a certified CAD replica. Replace visual meshes and measured
+    mounting/TCP origins only with official CAD, datasheet dimensions, or
+    measured hardware evidence.
+  -->
+
+  <xacro:macro name="azas_rg2_parametric" params="
+    parent_link
+    prefix
+    mount_xyz
+    mount_rpy
+    body_length:=0.213
+    body_width:=0.149
+    body_thickness:=0.036
+    total_stroke:=0.110
+    mass:=0.78
+    finger_joints_fixed:=false
+    tcp_link_name:=gripper_tcp
+    tcp_z_offset:=0.213">
+
+    <xacro:property name="half_stroke" value="${total_stroke / 2.0}"/>
+    <xacro:property name="body_z" value="${body_length * 0.42}"/>
+    <xacro:property name="palm_z" value="${body_length * 0.70}"/>
+    <xacro:property name="finger_z" value="${body_length * 0.08}"/>
+    <xacro:property name="finger_length" value="${body_length * 0.36}"/>
+    <xacro:property name="finger_width" value="0.018"/>
+    <xacro:property name="finger_thickness" value="0.018"/>
+    <xacro:property name="closed_inner_gap" value="0.012"/>
+    <xacro:property name="finger_base_y" value="${closed_inner_gap / 2.0 + finger_width / 2.0}"/>
+
+    <material name="${prefix}silver">
+      <color rgba="0.62 0.64 0.63 1.0"/>
+    </material>
+    <material name="${prefix}dark">
+      <color rgba="0.04 0.045 0.05 1.0"/>
+    </material>
+    <material name="${prefix}blue">
+      <color rgba="0.00 0.31 0.62 1.0"/>
+    </material>
+    <material name="${prefix}collision">
+      <color rgba="0.20 0.22 0.23 0.45"/>
+    </material>
+
+    <link name="${prefix}mount">
+      <visual name="quick_changer_visual">
+        <origin xyz="0 0 0.014" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.037" length="0.028"/>
+        </geometry>
+        <material name="${prefix}dark"/>
+      </visual>
+      <collision name="quick_changer_collision">
+        <origin xyz="0 0 0.014" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.040" length="0.030"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 0.014" rpy="0 0 0"/>
+        <mass value="${mass * 0.20}"/>
+        <inertia ixx="0.00008" ixy="0" ixz="0" iyy="0.00008" iyz="0" izz="0.00008"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}mount_joint" type="fixed">
+      <origin xyz="${mount_xyz}" rpy="${mount_rpy}"/>
+      <parent link="${parent_link}"/>
+      <child link="${prefix}mount"/>
+    </joint>
+
+    <link name="${prefix}body">
+      <visual name="body_visual">
+        <origin xyz="0 0 ${body_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${body_thickness} ${body_width * 0.58} ${body_length * 0.58}"/>
+        </geometry>
+        <material name="${prefix}silver"/>
+      </visual>
+      <visual name="side_cover_visual">
+        <origin xyz="0 ${body_width * 0.28} ${body_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${body_thickness * 1.06} ${body_width * 0.12} ${body_length * 0.45}"/>
+        </geometry>
+        <material name="${prefix}blue"/>
+      </visual>
+      <visual name="opposite_cover_visual">
+        <origin xyz="0 ${-body_width * 0.28} ${body_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${body_thickness * 1.06} ${body_width * 0.12} ${body_length * 0.45}"/>
+        </geometry>
+        <material name="${prefix}blue"/>
+      </visual>
+      <collision name="body_collision">
+        <origin xyz="0 0 ${body_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${body_thickness * 1.20} ${body_width * 0.70} ${body_length * 0.62}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 ${body_z}" rpy="0 0 0"/>
+        <mass value="${mass * 0.55}"/>
+        <inertia ixx="0.00065" ixy="0" ixz="0" iyy="0.00028" iyz="0" izz="0.00055"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}body_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="${prefix}mount"/>
+      <child link="${prefix}body"/>
+    </joint>
+
+    <link name="${prefix}palm">
+      <visual name="palm_visual">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${body_thickness * 1.08} ${body_width} ${body_length * 0.15}"/>
+        </geometry>
+        <material name="${prefix}silver"/>
+      </visual>
+      <collision name="palm_collision">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${body_thickness * 1.18} ${body_width} ${body_length * 0.17}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="${mass * 0.15}"/>
+        <inertia ixx="0.00016" ixy="0" ixz="0" iyy="0.00005" iyz="0" izz="0.00016"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}palm_joint" type="fixed">
+      <origin xyz="0 0 ${palm_z}" rpy="0 0 0"/>
+      <parent link="${prefix}body"/>
+      <child link="${prefix}palm"/>
+    </joint>
+
+    <link name="${prefix}left_finger">
+      <visual name="left_finger_visual">
+        <origin xyz="0 0 ${finger_length / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${finger_thickness} ${finger_width} ${finger_length}"/>
+        </geometry>
+        <material name="${prefix}dark"/>
+      </visual>
+      <collision name="left_finger_collision">
+        <origin xyz="0 0 ${finger_length / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${finger_thickness * 1.2} ${finger_width * 1.2} ${finger_length}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 ${finger_length / 2.0}" rpy="0 0 0"/>
+        <mass value="${mass * 0.05}"/>
+        <inertia ixx="0.00004" ixy="0" ixz="0" iyy="0.00004" iyz="0" izz="0.00001"/>
+      </inertial>
+    </link>
+
+    <xacro:if value="${finger_joints_fixed}">
+      <joint name="${prefix}left_finger_joint" type="fixed">
+        <origin xyz="0 ${finger_base_y + half_stroke} ${finger_z}" rpy="0 0 0"/>
+        <parent link="${prefix}palm"/>
+        <child link="${prefix}left_finger"/>
+      </joint>
+    </xacro:if>
+    <xacro:unless value="${finger_joints_fixed}">
+      <joint name="${prefix}left_finger_joint" type="prismatic">
+        <origin xyz="0 ${finger_base_y} ${finger_z}" rpy="0 0 0"/>
+        <parent link="${prefix}palm"/>
+        <child link="${prefix}left_finger"/>
+        <axis xyz="0 1 0"/>
+        <limit lower="0.0" upper="${half_stroke}" effort="40.0" velocity="0.127"/>
+      </joint>
+    </xacro:unless>
+
+    <link name="${prefix}right_finger">
+      <visual name="right_finger_visual">
+        <origin xyz="0 0 ${finger_length / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${finger_thickness} ${finger_width} ${finger_length}"/>
+        </geometry>
+        <material name="${prefix}dark"/>
+      </visual>
+      <collision name="right_finger_collision">
+        <origin xyz="0 0 ${finger_length / 2.0}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${finger_thickness * 1.2} ${finger_width * 1.2} ${finger_length}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 ${finger_length / 2.0}" rpy="0 0 0"/>
+        <mass value="${mass * 0.05}"/>
+        <inertia ixx="0.00004" ixy="0" ixz="0" iyy="0.00004" iyz="0" izz="0.00001"/>
+      </inertial>
+    </link>
+
+    <xacro:if value="${finger_joints_fixed}">
+      <joint name="${prefix}right_finger_joint" type="fixed">
+        <origin xyz="0 ${-finger_base_y - half_stroke} ${finger_z}" rpy="0 0 0"/>
+        <parent link="${prefix}palm"/>
+        <child link="${prefix}right_finger"/>
+      </joint>
+    </xacro:if>
+    <xacro:unless value="${finger_joints_fixed}">
+      <joint name="${prefix}right_finger_joint" type="prismatic">
+        <origin xyz="0 ${-finger_base_y} ${finger_z}" rpy="0 0 0"/>
+        <parent link="${prefix}palm"/>
+        <child link="${prefix}right_finger"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0.0" upper="${half_stroke}" effort="40.0" velocity="0.127"/>
+        <mimic joint="${prefix}left_finger_joint" multiplier="1.0" offset="0.0"/>
+      </joint>
+    </xacro:unless>
+
+    <link name="${prefix}tcp"/>
+    <joint name="${prefix}tcp_joint" type="fixed">
+      <origin xyz="0 0 ${tcp_z_offset}" rpy="0 0 0"/>
+      <parent link="${prefix}mount"/>
+      <child link="${prefix}tcp"/>
+    </joint>
+
+    <link name="${tcp_link_name}"/>
+    <joint name="${tcp_link_name}_alias_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="${prefix}tcp"/>
+      <child link="${tcp_link_name}"/>
+    </joint>
+  </xacro:macro>
+</robot>
