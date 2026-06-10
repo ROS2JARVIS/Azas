@@ -47,6 +47,7 @@ DR_TOOL = 1
 MOVE_MODE_ABSOLUTE = 0
 MOVE_MODE_RELATIVE = 1
 SYNC = 0
+ASYNC = 1
 BLENDING_SPEED_TYPE_DUPLICATE = 0
 DR_FC_MOD_REL = 1
 HARDWARE_CONFIRM_PHRASE = "ENABLE_REAL_ROBOT_MOTION"
@@ -106,6 +107,18 @@ class LidGripPlannerNode(Node):
         )
         self.declare_parameter("lid_pose_yaw_offset_deg", 0.0)
         self.declare_parameter("lid_pose_yaw_equivalence_deg", 180.0)
+        self.declare_parameter("use_j6_yaw_for_pick", False)
+        self.declare_parameter(
+            "pick_j6_yaw_axis",
+            "y",
+            ParameterDescriptor(dynamic_typing=True),
+        )
+        self.declare_parameter("pick_j6_yaw_sign", -1.0)
+        self.declare_parameter("pick_j6_yaw_offset_deg", 1.2)
+        self.declare_parameter("pick_j6_yaw_equivalence_deg", 360.0)
+        self.declare_parameter("pick_j6_yaw_tolerance_deg", 1.0)
+        self.declare_parameter("pick_j6_velocity", 30.0)
+        self.declare_parameter("pick_j6_acceleration", 15.0)
         self.declare_parameter("line_velocity", 15.0)
         self.declare_parameter("line_acceleration", 30.0)
         self.declare_parameter("move_timeout_sec", 10.0)
@@ -159,6 +172,7 @@ class LidGripPlannerNode(Node):
         self.declare_parameter("lid_twist_regrip_gripper_wait_sec", 0.5)
         self.declare_parameter("lid_twist_force_settle_seconds", 0.4)
         self.declare_parameter("lid_twist_force_release_time", 0.2)
+        self.declare_parameter("lid_twist_preseat_mode", "periodic")
         self.declare_parameter("lid_twist_preseat_periodic_before_turn", False)
         self.declare_parameter("lid_twist_preseat_periodic_x_amp_mm", 0.0)
         self.declare_parameter("lid_twist_preseat_periodic_y_amp_mm", 0.0)
@@ -170,6 +184,11 @@ class LidGripPlannerNode(Node):
         self.declare_parameter("lid_twist_preseat_periodic_acc_time_sec", 0.2)
         self.declare_parameter("lid_twist_preseat_periodic_repeat", 2)
         self.declare_parameter("lid_twist_preseat_periodic_ref", "tool")
+        self.declare_parameter("lid_twist_preseat_periodic_descend_m", 0.0)
+        self.declare_parameter("lid_twist_preseat_step_m", 0.005)
+        self.declare_parameter("lid_twist_preseat_wiggle_deg", 10.0)
+        self.declare_parameter("lid_twist_preseat_wiggle_velocity", 50.0)
+        self.declare_parameter("lid_twist_preseat_down_velocity", 8.0)
         self.declare_parameter("lid_twist_compliance_x_stiffness", 3000.0)
         self.declare_parameter("lid_twist_compliance_y_stiffness", 3000.0)
         self.declare_parameter("lid_twist_compliance_z_stiffness", 300.0)
@@ -542,6 +561,41 @@ class LidGripPlannerNode(Node):
                 return
 
         use_visual_refine = bool(self.get_parameter("visual_refine_before_grasp").value)
+        use_j6_pick = self._j6_yaw_pick_enabled()
+        if use_j6_pick:
+            if gripper_targets is not None:
+                preopen_width, _grasp_width, force_n = gripper_targets
+                if not self._call_gripper_sync("preopen", preopen_width, force_n):
+                    return
+            sequence_steps = self._try_j6_yaw_motion_sequence(
+                source_msg,
+                plan,
+                gripper_targets,
+                use_visual_refine=use_visual_refine,
+            )
+            if sequence_steps is None:
+                return
+            if bool(self.get_parameter("enable_lid_twist_after_grasp").value):
+                if not self._try_lid_twist_sequence():
+                    return
+                sequence_steps.extend(
+                    [
+                        "lid_twist_transfer_high",
+                        "lid_twist_transfer",
+                        "lid_twist_press",
+                        "lid_twist_turn_clockwise_steps",
+                        "lid_twist_final_preopen",
+                        "lid_twist_home",
+                    ]
+                )
+            self._publish_status(
+                "motion_sequence_requested",
+                steps=sequence_steps,
+                real_motion=True,
+                note="Doosan MoveLine/MoveJoint requests were sent through the configured services",
+            )
+            return
+
         initial_steps = (("approach_lid", plan.approach_pose),)
         full_steps = (
             ("approach_lid", plan.approach_pose),
@@ -628,6 +682,96 @@ class LidGripPlannerNode(Node):
         time.sleep(float(self.get_parameter("hold_seconds_after_grasp").value))
         return True
 
+    def _try_j6_yaw_motion_sequence(
+        self,
+        source_msg: PoseStamped,
+        plan,
+        gripper_targets,
+        *,
+        use_visual_refine: bool,
+    ) -> list[str] | None:
+        fixed_rz = float(self.get_parameter("rz").value)
+        approach_pos = self._pose_to_dsr_pos_with_rz(plan.approach_pose, fixed_rz)
+        grasp_pos = self._pose_to_dsr_pos_with_rz(plan.grasp_pose, fixed_rz)
+        lift_pos = self._pose_to_dsr_pos_with_rz(plan.lift_pose, fixed_rz)
+
+        if not self._precheck_ikin_steps((("approach_lid", approach_pos),)):
+            return None
+        if not self._call_movel_pos(
+            "approach_lid",
+            approach_pos,
+            velocity=float(self.get_parameter("line_velocity").value),
+            acceleration=float(self.get_parameter("line_acceleration").value),
+            verify_orientation=False,
+        ):
+            return None
+
+        sequence_steps = ["approach_lid"]
+        yaw_source_pose = source_msg.pose
+        current_reference_pos = approach_pos
+        self._last_visual_refine_stats = None
+        self._last_visual_refine_pose = None
+
+        if use_visual_refine:
+            refined_steps = self._try_visual_refine_steps(source_msg, plan)
+            if refined_steps is None:
+                return None
+            refined_steps = tuple(
+                (label, self._target_to_fixed_rz_pos(target, fixed_rz))
+                for label, target in refined_steps
+            )
+            if refined_steps and refined_steps[0][0] == "visual_refine_align_lid":
+                align_label, align_pos = refined_steps[0]
+                if not self._precheck_ikin_steps(((align_label, align_pos),)):
+                    return None
+                if not self._call_movel_pos(
+                    align_label,
+                    align_pos,
+                    velocity=float(self.get_parameter("line_velocity").value),
+                    acceleration=float(self.get_parameter("line_acceleration").value),
+                    verify_orientation=False,
+                ):
+                    return None
+                sequence_steps.append(align_label)
+                current_reference_pos = align_pos
+                remaining_steps = refined_steps[1:]
+            else:
+                remaining_steps = refined_steps
+            for label, pos in remaining_steps:
+                if label == "grasp_lid":
+                    grasp_pos = pos
+                elif label == "lift_lid":
+                    lift_pos = pos
+            if self._last_visual_refine_pose is not None:
+                yaw_source_pose = self._last_visual_refine_pose
+
+        if not self._call_pick_j6_yaw_alignment(yaw_source_pose):
+            return None
+        sequence_steps.append("align_pick_j6_yaw")
+
+        if not self._call_movel_relative_pos(
+            "grasp_lid",
+            self._relative_xyz_delta(current_reference_pos, grasp_pos),
+            velocity=float(self.get_parameter("line_velocity").value),
+            acceleration=float(self.get_parameter("line_acceleration").value),
+            ref=DR_BASE,
+        ):
+            return None
+        if not self._finish_grasp_at_current_pose(gripper_targets):
+            return None
+        sequence_steps.append("grasp_lid")
+
+        if not self._call_movel_relative_pos(
+            "lift_lid",
+            self._relative_xyz_delta(grasp_pos, lift_pos),
+            velocity=float(self.get_parameter("line_velocity").value),
+            acceleration=float(self.get_parameter("line_acceleration").value),
+            ref=DR_BASE,
+        ):
+            return None
+        sequence_steps.append("lift_lid")
+        return sequence_steps
+
     def _try_visual_refine_steps(self, source_msg: PoseStamped, fallback_plan):
         sample_count = max(int(self.get_parameter("visual_refine_sample_count").value), 1)
         timeout_sec = max(float(self.get_parameter("visual_refine_timeout_sec").value), 0.1)
@@ -635,7 +779,7 @@ class LidGripPlannerNode(Node):
             float(self.get_parameter("visual_refine_min_sample_interval_sec").value),
             0.0,
         )
-        axis = self._lid_pose_yaw_axis()
+        axis = self._pick_j6_yaw_axis() if self._j6_yaw_pick_enabled() else self._lid_pose_yaw_axis()
         self._publish_status(
             "visual_refine_collecting",
             sample_count=sample_count,
@@ -706,7 +850,12 @@ class LidGripPlannerNode(Node):
                 details={"error": str(exc)},
             )
 
-        refined_rz = stats["pick_rz_deg"] if apply_yaw else self._pick_rz_deg(refined_msg.pose)
+        self._last_visual_refine_stats = stats
+        self._last_visual_refine_pose = copy.deepcopy(refined_msg.pose)
+        if self._j6_yaw_pick_enabled():
+            refined_rz = float(self.get_parameter("rz").value)
+        else:
+            refined_rz = stats["pick_rz_deg"] if apply_yaw else self._pick_rz_deg(refined_msg.pose)
         align_pos = self._pose_to_dsr_pos_with_rz(refined_plan.approach_pose, refined_rz)
         grasp_pos = self._pose_to_dsr_pos_with_rz(refined_plan.grasp_pose, refined_rz)
         lift_pos = self._pose_to_dsr_pos_with_rz(refined_plan.lift_pose, refined_rz)
@@ -812,7 +961,12 @@ class LidGripPlannerNode(Node):
         position_std_m = math.sqrt(
             sum((x - mean_x) ** 2 + (y - mean_y) ** 2 for x, y in zip(xs, ys)) / len(xs)
         )
-        period_deg = float(self.get_parameter("lid_pose_yaw_equivalence_deg").value)
+        if self._j6_yaw_pick_enabled():
+            period_deg = float(self.get_parameter("pick_j6_yaw_equivalence_deg").value)
+            offset_deg = 0.0
+        else:
+            period_deg = float(self.get_parameter("lid_pose_yaw_equivalence_deg").value)
+            offset_deg = float(self.get_parameter("lid_pose_yaw_offset_deg").value)
         mean_yaw = self._mean_equivalent_angle_deg(yaws, period_deg=period_deg)
         yaw_std = math.sqrt(
             sum(
@@ -821,7 +975,6 @@ class LidGripPlannerNode(Node):
             )
             / len(yaws)
         )
-        offset_deg = float(self.get_parameter("lid_pose_yaw_offset_deg").value)
         fixed_rz = float(self.get_parameter("rz").value)
         requested_rz = mean_yaw + offset_deg
         pick_rz = self._nearest_equivalent_angle_deg(
@@ -1104,6 +1257,113 @@ class LidGripPlannerNode(Node):
             float(rz_deg),
         ]
 
+    def _target_to_fixed_rz_pos(self, target, fixed_rz: float) -> list[float]:
+        if isinstance(target, (list, tuple)):
+            pos = [float(value) for value in target]
+            if len(pos) >= 6:
+                pos[3] = float(self.get_parameter("rx").value)
+                pos[4] = float(self.get_parameter("ry").value)
+                pos[5] = float(fixed_rz)
+            return pos
+        return self._pose_to_dsr_pos_with_rz(target, fixed_rz)
+
+    @staticmethod
+    def _relative_xyz_delta(from_pos_mm_deg: list[float], to_pos_mm_deg: list[float]) -> list[float]:
+        return [
+            float(to_pos_mm_deg[0]) - float(from_pos_mm_deg[0]),
+            float(to_pos_mm_deg[1]) - float(from_pos_mm_deg[1]),
+            float(to_pos_mm_deg[2]) - float(from_pos_mm_deg[2]),
+            0.0,
+            0.0,
+            0.0,
+        ]
+
+    def _j6_yaw_pick_enabled(self) -> bool:
+        return bool(self.get_parameter("use_j6_yaw_for_pick").value)
+
+    def _call_pick_j6_yaw_alignment(self, pose) -> bool:
+        if self._move_joint_client is None:
+            self._publish_status(
+                "failed",
+                error=f"MoveJoint client unavailable: {self._move_joint_service_name}",
+                real_motion=False,
+            )
+            return False
+        if self._current_posj_client is None:
+            self._publish_status(
+                "failed",
+                error="GetCurrentPosj client unavailable; cannot align J6 pick yaw",
+                real_motion=False,
+            )
+            return False
+        timeout_sec = max(float(self.get_parameter("move_timeout_sec").value), 0.0)
+        if not self._current_posj_client.wait_for_service(timeout_sec=timeout_sec):
+            self._publish_status(
+                "failed",
+                error=f"GetCurrentPosj service unavailable: {self._current_posj_service_name}",
+                real_motion=False,
+            )
+            return False
+        current_joints = self._current_posj(timeout_sec=2.0)
+        if current_joints is None:
+            self._publish_status(
+                "failed",
+                error="current J6 read failed before pick yaw alignment",
+                real_motion=True,
+            )
+            return False
+
+        axis = self._pick_j6_yaw_axis()
+        yaw = None
+        stats = getattr(self, "_last_visual_refine_stats", None)
+        if isinstance(stats, dict):
+            yaw = stats.get("mean_yaw_y_deg" if axis == "y" else "mean_yaw_x_deg")
+        if yaw is None:
+            yaw = self._pose_axis_yaw_deg(pose, axis)
+        if yaw is None:
+            self._publish_status(
+                "failed",
+                error=f"ArUco {axis}-axis yaw is unavailable; cannot align J6 pick yaw",
+                real_motion=True,
+            )
+            return False
+
+        sign = float(self.get_parameter("pick_j6_yaw_sign").value)
+        offset_deg = float(self.get_parameter("pick_j6_yaw_offset_deg").value)
+        period_deg = float(self.get_parameter("pick_j6_yaw_equivalence_deg").value)
+        requested_j6 = sign * float(yaw) + offset_deg
+        current_j6 = float(current_joints[5])
+        target_j6 = self._nearest_equivalent_angle_deg(
+            requested_j6,
+            reference_deg=current_j6,
+            period_deg=period_deg,
+        )
+        delta_j6 = target_j6 - current_j6
+        tolerance_deg = max(float(self.get_parameter("pick_j6_yaw_tolerance_deg").value), 0.0)
+        fields = {
+            "axis": axis,
+            "aruco_yaw_deg": round(float(yaw), 3),
+            "sign": round(sign, 3),
+            "offset_deg": round(offset_deg, 3),
+            "period_deg": round(period_deg, 3),
+            "current_j6_deg": round(current_j6, 3),
+            "requested_j6_deg": round(requested_j6, 3),
+            "target_j6_deg": round(target_j6, 3),
+            "delta_j6_deg": round(delta_j6, 3),
+            "tolerance_deg": round(tolerance_deg, 3),
+            "real_motion": True,
+        }
+        if abs(delta_j6) <= tolerance_deg:
+            self._publish_status("pick_j6_yaw_already_aligned", **fields)
+            return True
+        self._publish_status("pick_j6_yaw_alignment", **fields)
+        return self._call_movej_relative_pos(
+            "align_pick_j6_yaw",
+            [0.0, 0.0, 0.0, 0.0, 0.0, delta_j6],
+            velocity=float(self.get_parameter("pick_j6_velocity").value),
+            acceleration=float(self.get_parameter("pick_j6_acceleration").value),
+        )
+
     def _pick_rz_deg(self, pose) -> float:
         return self._pick_rz_selection(pose)[0]
 
@@ -1208,6 +1468,19 @@ class LidGripPlannerNode(Node):
 
     def _lid_pose_yaw_axis(self) -> str:
         value = self.get_parameter("lid_pose_yaw_axis").value
+        return self._parse_marker_yaw_axis(value, parameter_name="lid_pose_yaw_axis", default_axis="x")
+
+    def _pick_j6_yaw_axis(self) -> str:
+        value = self.get_parameter("pick_j6_yaw_axis").value
+        return self._parse_marker_yaw_axis(value, parameter_name="pick_j6_yaw_axis", default_axis="y")
+
+    def _parse_marker_yaw_axis(
+        self,
+        value,
+        *,
+        parameter_name: str,
+        default_axis: str,
+    ) -> str:
         if isinstance(value, bool):
             return "y" if value else "x"
         axis = str(value).strip().lower()
@@ -1216,9 +1489,9 @@ class LidGripPlannerNode(Node):
         if axis in {"x", "axis_x", "marker_x", "aruco_x"}:
             return "x"
         self.get_logger().warn(
-            f"[뚜껑픽] lid_pose_yaw_axis='{value}' 값이 유효하지 않아 x축을 사용합니다"
+            f"[뚜껑픽] {parameter_name}='{value}' 값이 유효하지 않아 {default_axis}축을 사용합니다"
         )
-        return "x"
+        return default_axis
 
     def _precheck_ikin_steps(self, steps) -> bool:
         if not bool(self.get_parameter("precheck_ikin").value):
@@ -1429,10 +1702,11 @@ class LidGripPlannerNode(Node):
         if not self._precheck_ikin_steps(ikin_steps):
             return False
         required_clients = [
-            (self._move_periodic_client, self._move_periodic_service_name),
             (self._move_joint_client, self._move_joint_service_name),
             (self._current_posj_client, self._current_posj_service_name),
         ]
+        if not self._preseat_step_wiggle_enabled():
+            required_clients.append((self._move_periodic_client, self._move_periodic_service_name))
         for client, name in required_clients:
             if client is None:
                 self._publish_status(
@@ -1441,15 +1715,16 @@ class LidGripPlannerNode(Node):
                     real_motion=False,
                 )
                 return False
-        if not self._move_periodic_client.wait_for_service(
-            timeout_sec=max(float(self.get_parameter("move_timeout_sec").value), 0.0)
-        ):
-            self._publish_status(
-                "failed",
-                error=f"MovePeriodic service unavailable: {self._move_periodic_service_name}",
-                real_motion=False,
-            )
-            return False
+        if not self._preseat_step_wiggle_enabled():
+            if not self._move_periodic_client.wait_for_service(
+                timeout_sec=max(float(self.get_parameter("move_timeout_sec").value), 0.0)
+            ):
+                self._publish_status(
+                    "failed",
+                    error=f"MovePeriodic service unavailable: {self._move_periodic_service_name}",
+                    real_motion=False,
+                )
+                return False
         if not self._move_joint_client.wait_for_service(
             timeout_sec=max(float(self.get_parameter("move_timeout_sec").value), 0.0)
         ):
@@ -1491,7 +1766,23 @@ class LidGripPlannerNode(Node):
                 real_motion=True,
             )
             time.sleep(hold_before_turn)
-        if not self._call_lid_twist_preseat_periodic():
+        if self._preseat_step_wiggle_enabled():
+            target = self._lid_twist_target_pos()
+            if target is None:
+                self._recover_lid_twist_abort(release_step, acceleration)
+                return False
+            if not self._call_lid_twist_preseat_j6_step_wiggle(target, acceleration):
+                self._recover_lid_twist_abort(release_step, acceleration)
+                return False
+        elif self._preseat_periodic_descend_m() > 0.0:
+            target = self._lid_twist_target_pos()
+            if target is None:
+                self._recover_lid_twist_abort(release_step, acceleration)
+                return False
+            if not self._call_lid_twist_preseat_periodic_descend(target, acceleration):
+                self._recover_lid_twist_abort(release_step, acceleration)
+                return False
+        elif not self._call_lid_twist_preseat_periodic():
             self._recover_lid_twist_abort(release_step, acceleration)
             return False
         for action in turn_steps:
@@ -1571,7 +1862,20 @@ class LidGripPlannerNode(Node):
                 )
                 time.sleep(hold_before_turn)
             if self._preseat_periodic_enabled():
-                if not self._call_lid_twist_preseat_periodic():
+                target = self._lid_twist_target_pos()
+                if self._preseat_step_wiggle_enabled():
+                    ok = target is not None and self._call_lid_twist_preseat_j6_step_wiggle(
+                        target,
+                        acceleration,
+                    )
+                elif self._preseat_periodic_descend_m() > 0.0:
+                    ok = target is not None and self._call_lid_twist_preseat_periodic_descend(
+                        target,
+                        acceleration,
+                    )
+                else:
+                    ok = self._call_lid_twist_preseat_periodic()
+                if not ok:
                     self._recover_lid_twist_abort(release_step, acceleration)
                     return False
             for action in turn_steps:
@@ -1688,6 +1992,11 @@ class LidGripPlannerNode(Node):
             float(self.get_parameter("lid_twist_transfer_clearance_m").value),
             0.0,
         )
+        preseat_descend_m = (
+            self._preseat_periodic_descend_m()
+            if self._preseat_periodic_enabled()
+            else 0.0
+        )
         release_lift_m = max(float(self.get_parameter("lid_twist_release_lift_m").value), 0.0)
         min_z_m = float(self.get_parameter("lid_twist_min_z_m").value)
         max_z_m = float(self.get_parameter("lid_twist_max_z_m").value)
@@ -1709,6 +2018,8 @@ class LidGripPlannerNode(Node):
 
         target_high = target.copy()
         target_high[2] += transfer_clearance_m * 1000.0
+        preseat_start = target.copy()
+        preseat_start[2] += preseat_descend_m * 1000.0
         turn_velocity = float(self.get_parameter("lid_twist_turn_velocity").value)
         hold_after_turn = max(
             float(self.get_parameter("lid_twist_hold_seconds_after_turn").value),
@@ -1740,6 +2051,8 @@ class LidGripPlannerNode(Node):
         validation_steps = []
         if transfer_clearance_m > 0.0:
             validation_steps.append(("lid_twist_transfer_high", target_high, transfer_max_z_m))
+        if preseat_descend_m > 0.0:
+            validation_steps.append(("lid_twist_preseat_start", preseat_start, transfer_max_z_m))
         validation_steps.extend([
             ("lid_twist_transfer", target, max_z_m),
             ("lid_twist_home", release, transfer_max_z_m if transfer_clearance_m > 0.0 else max_z_m),
@@ -1784,6 +2097,7 @@ class LidGripPlannerNode(Node):
             down_force_n=round(float(self.get_parameter("lid_twist_down_force_n").value), 3),
             preseat_periodic=bool(self._preseat_periodic_enabled()),
             preseat_periodic_amp=self._preseat_periodic_amp(),
+            preseat_periodic_descend_m=round(preseat_descend_m, 4),
             preseat_periodic_period_sec=round(
                 float(self.get_parameter("lid_twist_preseat_periodic_period_sec").value),
                 3,
@@ -1795,7 +2109,10 @@ class LidGripPlannerNode(Node):
         transfer_steps = []
         if transfer_clearance_m > 0.0:
             transfer_steps.append(("lid_twist_transfer_high", target_high, transfer_velocity, True, 0.0))
-        transfer_steps.append(("lid_twist_transfer", target, press_velocity, True, 0.0))
+        if preseat_descend_m > 0.0:
+            transfer_steps.append(("lid_twist_preseat_start", preseat_start, press_velocity, True, 0.0))
+        else:
+            transfer_steps.append(("lid_twist_transfer", target, press_velocity, True, 0.0))
         release_step = (
             "relative_motion",
             "lid_twist_home",
@@ -1902,7 +2219,145 @@ class LidGripPlannerNode(Node):
         )
         return True
 
-    def _call_lid_twist_preseat_periodic(self) -> bool:
+    def _call_lid_twist_preseat_periodic_descend(
+        self,
+        target_mm_deg: list[float],
+        acceleration: float,
+    ) -> bool:
+        descend_m = self._preseat_periodic_descend_m()
+        if descend_m <= 0.0:
+            return self._call_lid_twist_preseat_periodic()
+        if not self._call_lid_twist_preseat_periodic(
+            label="lid_twist_preseat_periodic_async",
+            sync_type=ASYNC,
+        ):
+            return False
+
+        period_sec = max(
+            float(self.get_parameter("lid_twist_preseat_periodic_period_sec").value),
+            0.01,
+        )
+        repeat = max(int(self.get_parameter("lid_twist_preseat_periodic_repeat").value), 1)
+        expected_periodic_sec = period_sec * repeat
+        press_velocity = float(self.get_parameter("lid_twist_press_velocity").value)
+        target = [float(value) for value in target_mm_deg]
+        self._publish_status(
+            "lid_twist_preseat_periodic_descend_start",
+            descend_m=round(descend_m, 4),
+            target_mm_deg=[round(value, 3) for value in target],
+            velocity=round(press_velocity, 3),
+            expected_periodic_sec=round(expected_periodic_sec, 3),
+            real_motion=True,
+        )
+        started_at = time.monotonic()
+        if not self._call_movel_pos(
+            "lid_twist_preseat_descend",
+            target,
+            velocity=press_velocity,
+            acceleration=acceleration,
+            verify_orientation=True,
+        ):
+            return False
+
+        remaining_sec = expected_periodic_sec - (time.monotonic() - started_at)
+        if remaining_sec > 0.0:
+            self._publish_status(
+                "lid_twist_holding",
+                step="lid_twist_preseat_periodic_finish",
+                seconds=round(remaining_sec, 3),
+                real_motion=True,
+            )
+            time.sleep(remaining_sec)
+        return True
+
+    def _call_lid_twist_preseat_j6_step_wiggle(
+        self,
+        target_mm_deg: list[float],
+        acceleration: float,
+    ) -> bool:
+        descend_m = self._preseat_periodic_descend_m()
+        if descend_m <= 0.0:
+            return True
+
+        step_m = self._preseat_step_m()
+        wiggle_deg = self._preseat_wiggle_deg()
+        down_velocity = self._preseat_down_velocity()
+        wiggle_velocity = self._preseat_wiggle_velocity()
+        total_mm = descend_m * 1000.0
+        step_mm = max(step_m * 1000.0, 0.1)
+        step_count = max(int(math.ceil(total_mm / step_mm)), 1)
+        target = [float(value) for value in target_mm_deg]
+        self._publish_status(
+            "lid_twist_preseat_step_wiggle_start",
+            descend_m=round(descend_m, 4),
+            step_m=round(step_m, 4),
+            step_count=step_count,
+            wiggle_deg=round(wiggle_deg, 3),
+            down_velocity=round(down_velocity, 3),
+            wiggle_velocity=round(wiggle_velocity, 3),
+            target_mm_deg=[round(value, 3) for value in target],
+            real_motion=True,
+        )
+
+        remaining_mm = total_mm
+        for index in range(1, step_count + 1):
+            down_mm = min(step_mm, remaining_mm)
+            remaining_mm -= down_mm
+            self._publish_status(
+                "lid_twist_preseat_step_wiggle_progress",
+                index=index,
+                total=step_count,
+                down_mm=round(down_mm, 3),
+                remaining_mm=round(max(remaining_mm, 0.0), 3),
+                wiggle_deg=round(wiggle_deg, 3),
+                real_motion=True,
+            )
+            if down_mm > 1e-6 and not self._call_movel_relative_pos(
+                f"lid_twist_preseat_step_down_{index:02d}",
+                [0.0, 0.0, -down_mm, 0.0, 0.0, 0.0],
+                velocity=down_velocity,
+                acceleration=acceleration,
+                ref=DR_BASE,
+            ):
+                return False
+            if wiggle_deg <= 1e-9:
+                continue
+            if not self._call_movej_relative_pos(
+                f"lid_twist_preseat_wiggle_plus_{index:02d}",
+                [0.0, 0.0, 0.0, 0.0, 0.0, wiggle_deg],
+                velocity=wiggle_velocity,
+                acceleration=acceleration,
+            ):
+                return False
+            if not self._call_movej_relative_pos(
+                f"lid_twist_preseat_wiggle_minus_{index:02d}",
+                [0.0, 0.0, 0.0, 0.0, 0.0, -2.0 * wiggle_deg],
+                velocity=wiggle_velocity,
+                acceleration=acceleration,
+            ):
+                return False
+            if not self._call_movej_relative_pos(
+                f"lid_twist_preseat_wiggle_return_{index:02d}",
+                [0.0, 0.0, 0.0, 0.0, 0.0, wiggle_deg],
+                velocity=wiggle_velocity,
+                acceleration=acceleration,
+            ):
+                return False
+
+        self._publish_status(
+            "lid_twist_preseat_step_wiggle_done",
+            step_count=step_count,
+            descend_m=round(descend_m, 4),
+            real_motion=True,
+        )
+        return True
+
+    def _call_lid_twist_preseat_periodic(
+        self,
+        *,
+        label: str = "lid_twist_preseat_periodic",
+        sync_type: int = SYNC,
+    ) -> bool:
         if self._move_periodic_client is None:
             self._publish_status(
                 "failed",
@@ -1938,7 +2393,7 @@ class LidGripPlannerNode(Node):
         req.acc = acc_time_sec
         req.repeat = repeat
         req.ref = self._preseat_periodic_ref()
-        req.sync_type = SYNC
+        req.sync_type = int(sync_type)
         self._publish_status(
             "lid_twist_preseat_periodic_start",
             amp=[round(value, 3) for value in amp],
@@ -1946,12 +2401,13 @@ class LidGripPlannerNode(Node):
             acc_time_sec=round(acc_time_sec, 3),
             repeat=repeat,
             ref="tool" if req.ref == DR_TOOL else "base",
+            sync="async" if req.sync_type == ASYNC else "sync",
             real_motion=True,
         )
         return self._call_bool_service(
             self._move_periodic_client,
             req,
-            "lid_twist_preseat_periodic",
+            label,
             self._move_periodic_service_name,
             float(self.get_parameter("move_timeout_sec").value),
         )
@@ -1968,6 +2424,30 @@ class LidGripPlannerNode(Node):
             float(self.get_parameter("lid_twist_preseat_periodic_ry_amp_deg").value),
             float(self.get_parameter("lid_twist_preseat_periodic_rz_amp_deg").value),
         ]
+
+    def _preseat_periodic_descend_m(self) -> float:
+        return max(float(self.get_parameter("lid_twist_preseat_periodic_descend_m").value), 0.0)
+
+    def _preseat_mode(self) -> str:
+        value = str(self.get_parameter("lid_twist_preseat_mode").value).strip().lower()
+        if value in {"j6_step_wiggle", "step_wiggle", "j6_wiggle", "step"}:
+            return "j6_step_wiggle"
+        return "periodic"
+
+    def _preseat_step_wiggle_enabled(self) -> bool:
+        return self._preseat_mode() == "j6_step_wiggle"
+
+    def _preseat_step_m(self) -> float:
+        return max(float(self.get_parameter("lid_twist_preseat_step_m").value), 0.0005)
+
+    def _preseat_wiggle_deg(self) -> float:
+        return abs(float(self.get_parameter("lid_twist_preseat_wiggle_deg").value))
+
+    def _preseat_wiggle_velocity(self) -> float:
+        return max(float(self.get_parameter("lid_twist_preseat_wiggle_velocity").value), 0.1)
+
+    def _preseat_down_velocity(self) -> float:
+        return max(float(self.get_parameter("lid_twist_preseat_down_velocity").value), 0.1)
 
     def _preseat_periodic_ref(self) -> int:
         value = str(self.get_parameter("lid_twist_preseat_periodic_ref").value).strip().lower()
@@ -2065,9 +2545,9 @@ class LidGripPlannerNode(Node):
             (self._release_compliance_client, self._release_compliance_service_name),
         ]
         rotation_mode = self._lid_twist_force_rotation_mode()
-        if self._preseat_periodic_enabled():
+        if self._preseat_periodic_enabled() and not self._preseat_step_wiggle_enabled():
             required.append((self._move_periodic_client, self._move_periodic_service_name))
-        if rotation_mode == "j6":
+        if rotation_mode == "j6" or self._preseat_step_wiggle_enabled():
             required.extend([
                 (self._move_joint_client, self._move_joint_service_name),
                 (self._current_posj_client, self._current_posj_service_name),
@@ -2640,6 +3120,23 @@ class LidGripPlannerNode(Node):
                 f"xy_std={fields.get('position_std_m')}m "
                 f"yaw_std={fields.get('yaw_std_deg')}deg"
             )
+        if status == "pick_j6_yaw_alignment":
+            return (
+                "[뚜껑픽] J6 파지 방향 정렬 시작: "
+                f"axis={fields.get('axis')} yaw={fields.get('aruco_yaw_deg')}deg "
+                f"current_j6={fields.get('current_j6_deg')}deg "
+                f"target_j6={fields.get('target_j6_deg')}deg "
+                f"delta={fields.get('delta_j6_deg')}deg "
+                f"formula=({fields.get('sign')}*yaw + {fields.get('offset_deg')})"
+            )
+        if status == "pick_j6_yaw_already_aligned":
+            return (
+                "[뚜껑픽] J6 파지 방향 정렬 생략: "
+                f"axis={fields.get('axis')} yaw={fields.get('aruco_yaw_deg')}deg "
+                f"current_j6={fields.get('current_j6_deg')}deg "
+                f"target_j6={fields.get('target_j6_deg')}deg "
+                f"delta={fields.get('delta_j6_deg')}deg"
+            )
         if status == "gripper_grasp_continue_after_failure":
             return (
                 "[뚜껑픽] 그리퍼 닫기 확인 실패, 대기 후 lift 계속 진행: "
@@ -2683,15 +3180,46 @@ class LidGripPlannerNode(Node):
             return (
                 "[뚜껑회전] pre-seat periodic 비틀림 안착 시작: "
                 f"amp={fields.get('amp')} period={fields.get('period_sec')}초 "
-                f"repeat={fields.get('repeat')} ref={fields.get('ref')}"
+                f"repeat={fields.get('repeat')} ref={fields.get('ref')} sync={fields.get('sync')}"
+            )
+        if status == "lid_twist_preseat_periodic_descend_start":
+            return (
+                "[뚜껑회전] periodic 비틀림 하강 시작: "
+                f"descend={fields.get('descend_m')} m "
+                f"target_mm={self._fmt_target_mm(fields.get('target_mm_deg', []))} "
+                f"vel={fields.get('velocity')} mm/s "
+                f"periodic_duration={fields.get('expected_periodic_sec')}초"
+            )
+        if status == "lid_twist_preseat_step_wiggle_start":
+            return (
+                "[뚜껑회전] J6 단계 흔들기 하강 시작: "
+                f"descend={fields.get('descend_m')} m "
+                f"step={fields.get('step_m')} m x {fields.get('step_count')}회 "
+                f"wiggle=±{fields.get('wiggle_deg')}deg "
+                f"down_vel={fields.get('down_velocity')} mm/s "
+                f"j6_vel={fields.get('wiggle_velocity')} deg/s"
+            )
+        if status == "lid_twist_preseat_step_wiggle_progress":
+            return (
+                "[뚜껑회전] J6 단계 흔들기 진행: "
+                f"{fields.get('index')}/{fields.get('total')} "
+                f"하강={fields.get('down_mm')} mm "
+                f"남은거리={fields.get('remaining_mm')} mm "
+                f"wiggle=±{fields.get('wiggle_deg')}deg"
+            )
+        if status == "lid_twist_preseat_step_wiggle_done":
+            return (
+                "[뚜껑회전] J6 단계 흔들기 하강 완료: "
+                f"총 {fields.get('step_count')}단계 descend={fields.get('descend_m')} m"
             )
         if status == "lid_twist_joint_relative_start":
             before = fields.get("before_joints_deg")
             before_j6 = before[5] if isinstance(before, list) and len(before) >= 6 else None
             delta = fields.get("delta_joints_deg")
             delta_j6 = delta[5] if isinstance(delta, list) and len(delta) >= 6 else None
+            prefix = "[뚜껑픽]" if str(fields.get("step", "")) == "align_pick_j6_yaw" else "[뚜껑회전]"
             return (
-                f"[뚜껑회전] J6 상대 회전 시작: {self._step_ko(str(fields.get('step', '')))} "
+                f"{prefix} J6 상대 회전 시작: {self._step_ko(str(fields.get('step', '')))} "
                 f"before_j6={before_j6}deg delta_j6={delta_j6}deg "
                 f"vel={fields.get('velocity')} acc={fields.get('acceleration')}"
             )
@@ -2700,8 +3228,9 @@ class LidGripPlannerNode(Node):
             after_j6 = after[5] if isinstance(after, list) and len(after) >= 6 else None
             delta = fields.get("delta_joints_deg")
             delta_j6 = delta[5] if isinstance(delta, list) and len(delta) >= 6 else None
+            prefix = "[뚜껑픽]" if str(fields.get("step", "")) == "align_pick_j6_yaw" else "[뚜껑회전]"
             return (
-                f"[뚜껑회전] J6 상대 회전 완료: {self._step_ko(str(fields.get('step', '')))} "
+                f"{prefix} J6 상대 회전 완료: {self._step_ko(str(fields.get('step', '')))} "
                 f"after_j6={after_j6}deg delta_j6={delta_j6}deg"
             )
         if status == "lid_twist_force_released":
@@ -2751,6 +3280,14 @@ class LidGripPlannerNode(Node):
 
     @staticmethod
     def _step_ko(label: str) -> str:
+        if label.startswith("lid_twist_preseat_step_down_"):
+            return label.replace("lid_twist_preseat_step_down_", "단계 하강 ")
+        if label.startswith("lid_twist_preseat_wiggle_plus_"):
+            return label.replace("lid_twist_preseat_wiggle_plus_", "J6 오른쪽 흔들기 ")
+        if label.startswith("lid_twist_preseat_wiggle_minus_"):
+            return label.replace("lid_twist_preseat_wiggle_minus_", "J6 왼쪽 흔들기 ")
+        if label.startswith("lid_twist_preseat_wiggle_return_"):
+            return label.replace("lid_twist_preseat_wiggle_return_", "J6 중앙 복귀 ")
         if label.startswith("lid_twist_turn_clockwise_") and "_ikin" not in label:
             return label.replace("lid_twist_turn_clockwise_", "시계방향 회전 ")
         if label.startswith("lid_twist_turn_counterclockwise_") and "_ikin" not in label:
@@ -2782,12 +3319,16 @@ class LidGripPlannerNode(Node):
             "lid_twist_release": "8단계 압력 해제 상승",
             "lid_twist_home": "8단계 그리퍼 open 후 안전 위치 이동",
             "visual_refine_align_lid": "1.5단계 ArUco 보정 위치 정렬",
+            "align_pick_j6_yaw": "1.6단계 J6 파지 방향 정렬",
             "approach_lid_ikin": "접근 위치 IK",
             "visual_refine_align_lid_ikin": "ArUco 보정 위치 IK",
             "grasp_lid_ikin": "파지 위치 IK",
             "lift_lid_ikin": "상승 위치 IK",
             "lid_twist_transfer_high_ikin": "고정 위치 위 안전 이동 IK",
             "lid_twist_transfer_ikin": "회전 위치 IK",
+            "lid_twist_preseat_start": "periodic 하강 시작 위치",
+            "lid_twist_preseat_start_ikin": "periodic 하강 시작 위치 IK",
+            "lid_twist_preseat_descend": "periodic 비틀림 하강",
             "lid_twist_press_ikin": "누르기 위치 IK",
             "lid_twist_turn_clockwise_ikin": "시계방향 회전 IK",
             "lid_twist_release_ikin": "압력 해제 위치 IK",
@@ -2797,6 +3338,8 @@ class LidGripPlannerNode(Node):
             "lid_twist_force_settle": "힘 안정화",
             "lid_twist_periodic_settle": "periodic 비틀림 전 안정화",
             "lid_twist_preseat_periodic": "pre-seat periodic 비틀림 안착",
+            "lid_twist_preseat_periodic_async": "pre-seat periodic 비동기 시작",
+            "lid_twist_preseat_periodic_finish": "pre-seat periodic 잔여 동작 대기",
             "lid_twist_turn_complete": "TCP 기준 상대 회전 완료",
             "lid_twist_release_force": "목표 힘 해제",
             "lid_twist_release_compliance": "컴플라이언스 해제",
