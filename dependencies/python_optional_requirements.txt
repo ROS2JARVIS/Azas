@@ -4,6 +4,7 @@
 
 # ── 비전 (필수) ────────────────────────────────────────────
 # YOLO 텀블러 탐지: azas_perception/yolo_tumbler_detector_node.py
+# 쓰러진 컵 직립화 preview/실험 flow: azas_cup_uprighting
 ultralytics
 
 # ── 음성 인식 (선택) ────────────────────────────────────────
@@ -14,4 +15,3 @@ PyAudio
 # 오프라인 STT 후보 (Google Web Speech 대체용, 미결정)
 # vosk
 # openai-whisper
-

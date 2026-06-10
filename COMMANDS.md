@@ -196,6 +196,20 @@ tools/run/recover_home_then_observe_on_cup_failure.py \
 복귀 helper의 종료 의미는 `0=upright/side-grab 가능`, `10=lying/세우기 flow로 전달`,
 `20=unknown 지속/operator 확인 필요`입니다.
 
+쓰러진 컵 직립화 flow는 기본적으로 preview 모드로 먼저 띄웁니다. 이 모드는
+카메라/YOLO 화면만 확인하며 MoveIt, HOME 이동, RG2 동작을 생략합니다.
+
+```bash
+tools/run/run_yolo_cup_uprighting.sh
+```
+
+실제 직립화 모션은 로봇 주변 안전 확인, 모델 링크 확인, MoveIt/RG2 연결 확인 후에만
+명시적으로 preview를 끄고 키보드 제어 창을 켭니다.
+
+```bash
+tools/run/run_yolo_cup_uprighting.sh preview_only:=false show_window:=true
+```
+
 ```bash
 ros2 launch azas_bringup yolo_perception.launch.py \
   capture_empty_table_baseline:=true \

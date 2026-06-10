@@ -5,7 +5,7 @@ package_name = 'azas_cup_uprighting'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='0.0.1',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -19,10 +19,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='deeptree',
-    maintainer_email='deeptree@todo.todo',
-    description='YOLO-based pick and place for Doosan M0609 with RealSense depth camera',
-    license='TODO: License declaration',
+    maintainer='Azas Team',
+    maintainer_email='team@example.com',
+    description='YOLO-based fallen cup uprighting flow for Azas.',
+    license='MIT',
     extras_require={
         'test': ['pytest'],
     },

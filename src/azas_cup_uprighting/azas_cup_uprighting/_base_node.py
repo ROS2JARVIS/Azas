@@ -32,8 +32,13 @@ from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
 from cv_bridge import CvBridge
 
-from moveit.core.robot_state import RobotState
-from moveit.planning import MoveItPy, PlanRequestParameters
+try:
+    from moveit.core.robot_state import RobotState
+    from moveit.planning import MoveItPy, PlanRequestParameters
+except ImportError:
+    RobotState = None
+    MoveItPy = None
+    PlanRequestParameters = None
 
 from .onrobot import RG
 from . import _config as cfg
@@ -71,25 +76,45 @@ class BaseMoveItPickNode(Node):
         self._last_pick_time = 0.0
         self._detections: list[dict] = []
         self._frozen_frame = None
+        self._preview_only = cfg.PREVIEW_ONLY
 
-        # ── Hand-Eye ──
-        self.gripper2cam, calib_file = perc.load_hand_eye()
-        log.info(f"Hand-Eye 로드: {calib_file}")
+        self.gripper2cam = None
+        self.gripper = None
+        self.robot = None
+        self.arm = None
+        self.robot_model = None
+        self.ompl_params = None
+        self.pilz_params = None
 
-        # ── 그리퍼 ──
-        self.gripper = RG(cfg.GRIPPER_NAME, cfg.TOOLCHARGER_IP, cfg.TOOLCHARGER_PORT)
+        if self._preview_only:
+            log.warn("[Preview] MoveIt/그리퍼 초기화를 생략합니다.")
+        else:
+            if MoveItPy is None or RobotState is None or PlanRequestParameters is None:
+                raise ImportError(
+                    "moveit_py is required when YOLO_PREVIEW_ONLY=false. "
+                    "Run the default preview mode without MoveIt, or source/install the MoveIt stack."
+                )
 
-        # ── MoveIt ──
-        log.info("MoveItPy 초기화 중...")
-        self.robot       = MoveItPy(node_name=self.MOVEIT_NODE_NAME)
-        self.arm         = self.robot.get_planning_component(cfg.GROUP_NAME)
-        self.robot_model = self.robot.get_robot_model()
-        log.info("MoveItPy 초기화 완료")
+            # ── Hand-Eye ──
+            self.gripper2cam, calib_file = perc.load_hand_eye()
+            log.info(f"Hand-Eye 로드: {calib_file}")
 
-        self.ompl_params = self._make_plan_params(
-            "ompl", "RRTConnect", vel=0.2, acc=0.1, time=2.0)
-        self.pilz_params = self._make_plan_params(
-            "pilz_industrial_motion_planner", "PTP", vel=0.15, acc=0.1, time=2.0)
+            # ── 그리퍼 ──
+            self.gripper = self._make_gripper()
+
+            # ── MoveIt ──
+            log.info("MoveItPy 초기화 중...")
+            self.robot       = MoveItPy(node_name=self.MOVEIT_NODE_NAME)
+            self.arm         = self.robot.get_planning_component(cfg.GROUP_NAME)
+            self.robot_model = self.robot.get_robot_model()
+            log.info("MoveItPy 초기화 완료")
+
+            self.ompl_params = self._make_plan_params(
+                "ompl", "RRTConnect",
+                vel=cfg.MAX_VEL_SCALE, acc=cfg.MAX_ACC_SCALE, time=2.0)
+            self.pilz_params = self._make_plan_params(
+                "pilz_industrial_motion_planner", "PTP",
+                vel=cfg.MAX_VEL_SCALE, acc=cfg.MAX_ACC_SCALE, time=2.0)
 
         # ── YOLO ──
         log.info(f"YOLO 모델 로드: {cfg.YOLO_MODEL_PATH}")
@@ -97,18 +122,25 @@ class BaseMoveItPickNode(Node):
         log.info("YOLO 모델 로드 완료")
 
         # ── 카메라 구독 ──
+        log.info(f"CameraInfo 구독: {cfg.TOPIC_CAM_INFO}")
+        log.info(f"Color image 구독: {cfg.TOPIC_COLOR}")
+        log.info(f"Depth image 구독: {cfg.TOPIC_DEPTH}")
         self.create_subscription(CameraInfo, cfg.TOPIC_CAM_INFO,
                                  self._cam_info_cb, 10)
         self.create_subscription(Image, cfg.TOPIC_COLOR,
                                  self._color_cb, 10)
         self.create_subscription(Image, cfg.TOPIC_DEPTH,
                                  self._depth_cb, 10)
+        self.debug_image_pub = self.create_publisher(
+            Image, cfg.TOPIC_DEBUG_IMAGE, 10)
 
     # ════════════════════════════════════════════
     #  내부 헬퍼
     # ════════════════════════════════════════════
     def _make_plan_params(self, pipeline, planner_id, *,
                           vel: float, acc: float, time: float):
+        if PlanRequestParameters is None:
+            raise ImportError("moveit_py is required to create MoveIt plan parameters")
         p = PlanRequestParameters(self.robot)
         p.planning_pipeline = pipeline
         p.planner_id = planner_id
@@ -116,6 +148,9 @@ class BaseMoveItPickNode(Node):
         p.max_acceleration_scaling_factor = acc
         p.planning_time = time
         return p
+
+    def _make_gripper(self):
+        return RG(cfg.GRIPPER_NAME, cfg.TOOLCHARGER_IP, cfg.TOOLCHARGER_PORT)
 
     # ── 콜백 ──
     def _cam_info_cb(self, msg):
@@ -145,6 +180,14 @@ class BaseMoveItPickNode(Node):
     def run_yolo(self, frame):
         return perc.run_yolo(self.yolo, frame, self.depth_image)
 
+    def publish_debug_image(self, vis: np.ndarray):
+        if self.debug_image_pub.get_subscription_count() == 0:
+            return
+        msg = self.bridge.cv2_to_imgmsg(vis, encoding="bgr8")
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = cfg.BASE_FRAME
+        self.debug_image_pub.publish(msg)
+
     # ════════════════════════════════════════════
     #  Motion 래퍼
     # ════════════════════════════════════════════
@@ -162,6 +205,8 @@ class BaseMoveItPickNode(Node):
 
     def go_home_pose(self) -> bool:
         """관절 home 자세로 이동."""
+        if RobotState is None:
+            raise ImportError("moveit_py is required to create a RobotState")
         home_state = RobotState(self.robot_model)
         home_state.joint_positions = cfg.HOME_JOINTS
         home_state.update()
@@ -243,6 +288,8 @@ class BaseMoveItPickNode(Node):
                     0.5, (180, 180, 180), 1)
 
     def _key_help_str(self) -> str:
+        if self._preview_only:
+            return "preview only ESC:quit"
         return "p:pick a:auto ESC:quit"
 
     # ════════════════════════════════════════════
@@ -306,34 +353,72 @@ class BaseMoveItPickNode(Node):
 
     def run(self):
         log = self.get_logger()
-        cv2.namedWindow(self.WINDOW_NAME)
+        show_window = cfg.SHOW_WINDOW
+        if show_window:
+            cv2.namedWindow(self.WINDOW_NAME)
+        else:
+            log.warn(
+                "[Headless] OpenCV 창을 띄우지 않습니다. "
+                f"디버그 이미지는 {cfg.TOPIC_DEBUG_IMAGE} 토픽으로 확인하세요."
+            )
 
         executor = MultiThreadedExecutor()
         executor.add_node(self)
         spin_thread = threading.Thread(target=executor.spin, daemon=True)
         spin_thread.start()
 
-        if not self.initialize_home():
-            return
-        self.on_ready()
+        if self._preview_only:
+            log.warn("[Preview] Home 이동과 pick 동작을 생략하고 화면만 표시합니다.")
+        else:
+            if not self.initialize_home():
+                return
+            self.on_ready()
         log.info(f"=== Ready === {self._key_help_str()}")
+        last_wait_log = 0.0
 
         while rclpy.ok():
-            # ── Freeze 분기 (pick / scan 진행 중) ──
+            # ── Busy 분기 (pick / scan 진행 중): 동작 입력 프레임은 고정하되 화면은 live로 갱신 ──
             if self._frozen_frame is not None:
-                vis = self._draw_detections(self._frozen_frame)
-                cv2.putText(vis, "[BUSY... CAMERA FROZEN]",
+                if self.color_image is None:
+                    vis = self._draw_detections(self._frozen_frame)
+                else:
+                    frame = self.color_image.copy()
+                    self._detections = self.run_yolo(frame)
+                    vis = self._draw_detections(frame)
+                cv2.putText(vis, "[BUSY... LIVE CAMERA]",
                             (10, 102), cv2.FONT_HERSHEY_SIMPLEX,
                             0.65, (0, 0, 255), 2)
-                cv2.imshow(self.WINDOW_NAME, vis)
-                key = cv2.waitKey(30) & 0xFF
-                if key == 27:
-                    break
+                self.publish_debug_image(vis)
+                if show_window:
+                    cv2.imshow(self.WINDOW_NAME, vis)
+                    key = cv2.waitKey(30) & 0xFF
+                    if key == 27:
+                        break
+                else:
+                    time.sleep(0.03)
                 continue
 
             # ── Live 분기 ──
             if self.color_image is None:
-                time.sleep(0.01)
+                now = time.time()
+                if now - last_wait_log > 2.0:
+                    log.warn(f"카메라 color 프레임 대기 중: {cfg.TOPIC_COLOR}")
+                    last_wait_log = now
+                vis = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(vis, "Waiting for camera color image...",
+                            (30, 220), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.8, (0, 255, 255), 2)
+                cv2.putText(vis, cfg.TOPIC_COLOR,
+                            (30, 260), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.55, (220, 220, 220), 1)
+                self.publish_debug_image(vis)
+                if show_window:
+                    cv2.imshow(self.WINDOW_NAME, vis)
+                    key = cv2.waitKey(30) & 0xFF
+                    if key == 27:
+                        break
+                else:
+                    time.sleep(0.03)
                 continue
 
             frame = self.color_image.copy()
@@ -341,6 +426,7 @@ class BaseMoveItPickNode(Node):
 
             now = time.time()
             if (self._auto_mode
+                    and not self._preview_only
                     and not self.picking
                     and self.is_auto_ready()
                     and (now - self._last_pick_time) >= cfg.AUTO_PICK_INTERVAL):
@@ -350,21 +436,31 @@ class BaseMoveItPickNode(Node):
                     continue
 
             vis = self._draw_detections(frame)
-            cv2.imshow(self.WINDOW_NAME, vis)
+            self.publish_debug_image(vis)
+            if not show_window:
+                time.sleep(0.03)
+                continue
 
             key = cv2.waitKey(1) & 0xFF
             if key == 27:
                 break
             elif key == ord("p"):
+                if self._preview_only:
+                    log.warn("[Preview] pick 동작은 비활성화되어 있습니다.")
+                    continue
                 log.info("[KEY] manual pick")
                 self._pick_in_thread(frame)
             elif key == ord("a"):
+                if self._preview_only:
+                    log.warn("[Preview] auto 모드는 비활성화되어 있습니다.")
+                    continue
                 self._auto_mode = not self._auto_mode
                 log.info(f"[KEY] auto {'ON' if self._auto_mode else 'OFF'}")
             else:
                 self._handle_key_extra(key)
 
-        cv2.destroyAllWindows()
+        if show_window:
+            cv2.destroyAllWindows()
 
 
 def run_node(node_cls):

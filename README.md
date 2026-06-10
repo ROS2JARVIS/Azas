@@ -97,6 +97,7 @@ STT/LLM 은 사용자 의도·레시피 선택만 담당합니다.
 |--------|------|
 | `azas_interfaces` | 공용 메시지, 서비스, `PickAndAlign` 액션 정의 |
 | `azas_perception` | YOLO 탐지, 깊이 투영, 컵 자세 브릿지 |
+| `azas_cup_uprighting` | 쓰러진 컵 직립화 실험 플로우 (`preview_only` 기본) |
 | `azas_calibration` | 카메라-베이스 TF, 디스펜서·컵 오프셋 캘리브레이션 |
 | `azas_motion` | MoveItPy 모션 플래닝 (현재 no_motion 기본) |
 | `azas_gripper` | RG2 서비스 경계 (플레이스홀더) |
@@ -195,6 +196,14 @@ bash tools/run/run_cup_to_dispenser_press_real.sh
 - 깊이: 중심 7×7 픽셀 중앙값
 - 깊이 스케일: `16UC1`/`mono16` → 0.001 m/mm, `32FC1` → 1.0 m
 - 거부 조건: 0, NaN, inf, 0.15 m 미만, 2.0 m 초과
+
+쓰러진 컵 직립화 실험 노드는 기본 preview 모드로 실행합니다.
+
+```bash
+tools/run/run_yolo_cup_uprighting.sh
+```
+
+실제 MoveIt/RG2 동작은 현장 안전 확인 뒤에만 `preview_only:=false show_window:=true`로 켭니다. 이 노드는 기존 `/azas/cup_detection` → `/jarvis/tumbler_dispenser/tumbler_pose` 픽앤얼라인 계약을 대체하지 않습니다.
 
 ---
 

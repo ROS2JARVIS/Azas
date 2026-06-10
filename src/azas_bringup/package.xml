@@ -13,6 +13,7 @@
   <depend>azas_kiosk</depend>
   <depend>azas_motion</depend>
   <depend>azas_perception</depend>
+  <depend>azas_cup_uprighting</depend>
   <depend>sensor_msgs</depend>
   <exec_depend>dsr_description2</exec_depend>
   <exec_depend>dsr_moveit_config_m0609</exec_depend>

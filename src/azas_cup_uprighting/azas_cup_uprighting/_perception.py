@@ -117,91 +117,191 @@ def run_yolo(yolo, frame: np.ndarray, depth_image=None) -> list[dict]:
     return detections
 
 
+def _normalize_axis_angle(theta):
+    """긴 축 각도를 [-pi/2, pi/2) 범위로 정규화합니다."""
+    return (theta + np.pi / 2.0) % np.pi - np.pi / 2.0
+
+
+def _dominant_line_theta(edges):
+    """ROI edge 이미지에서 가장 지배적인 직선 방향을 추정합니다."""
+    h, w = edges.shape[:2]
+    min_len = max(25, int(min(h, w) * 0.28))
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180.0,
+        threshold=30,
+        minLineLength=min_len,
+        maxLineGap=max(8, int(min(h, w) * 0.12)),
+    )
+    if lines is None:
+        return None
+
+    vectors = []
+    for line in lines[:, 0, :]:
+        x1, y1, x2, y2 = line
+        dx = float(x2 - x1)
+        dy = float(y2 - y1)
+        length = np.hypot(dx, dy)
+        if length < min_len:
+            continue
+        theta = _normalize_axis_angle(np.arctan2(dy, dx))
+        vectors.append((theta, length))
+
+    if not vectors:
+        return None
+
+    # theta와 theta + pi가 같은 축이므로 2*theta 공간에서 weighted mean.
+    sin2 = sum(length * np.sin(2.0 * theta) for theta, length in vectors)
+    cos2 = sum(length * np.cos(2.0 * theta) for theta, length in vectors)
+    return _normalize_axis_angle(0.5 * np.arctan2(sin2, cos2))
+
+
+def _pca_edge_theta(edges):
+    """Edge 픽셀 분포의 PCA로 긴 축 방향을 추정합니다."""
+    points = np.column_stack(np.where(edges > 0))
+    if len(points) < 20:
+        return None
+
+    xy = points[:, ::-1].astype(np.float32)
+    _, eigenvectors, eigenvalues = cv2.PCACompute2(xy, mean=None)
+    if eigenvectors is None or len(eigenvectors) == 0:
+        return None
+    if eigenvalues is not None and len(eigenvalues) > 1 and eigenvalues[1][0] > 0:
+        ratio = eigenvalues[0][0] / eigenvalues[1][0]
+        if ratio < 1.2:
+            return None
+
+    vx, vy = eigenvectors[0]
+    return _normalize_axis_angle(np.arctan2(float(vy), float(vx)))
+
+
 def calculate_cup_orientation(depth_image, bbox, frame=None):
     """
-    OpenCV를 이용해 Bounding Box 내부의 실제 컵 기울기(theta)를 정밀 추출
+    OpenCV를 이용해 Bounding Box 내부의 실제 컵 기울기(theta)를 정밀 추출합니다.
     """
     if frame is None:
         return 0.0
 
-    # 1. Bounding Box 좌표를 정수로 변환하여 ROI(관심 영역) 자르기
     x1, y1, x2, y2 = map(int, bbox)
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
     roi = frame[y1:y2, x1:x2]
-    
+
     if roi.size == 0:
         return 0.0
 
-    # 2. 이미지를 흑백으로 변환하고 이진화(Threshold)하여 컵과 배경 분리
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    edges = cv2.Canny(gray, 45, 130)
+    kernel = np.ones((3, 3), np.uint8)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-    # 3. 외곽선(Contours) 찾기
+    theta = _dominant_line_theta(edges)
+    if theta is not None:
+        return theta
+
+    theta = _pca_edge_theta(edges)
+    if theta is not None:
+        return theta
+
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return 0.0
 
-    # 4. 가장 넓은 외곽선을 컵의 본체로 간주
     c = max(contours, key=cv2.contourArea)
-
-    # 5. 외곽선을 감싸는 기울어진 사각형(RotatedRect) 생성
     rect = cv2.minAreaRect(c)
     (cx, cy), (w, h), angle = rect
 
-    # 6. OpenCV angle 보정 (긴 축이 컵의 방향이 되도록 기준 정렬)
     if w < h:
         angle += 90.0  
 
-    # 7. Degree를 Radian으로 변환하여 반환
-    theta = np.deg2rad(angle)
-    return theta
+    return _normalize_axis_angle(np.deg2rad(angle))
+
+
+def analyze_cup_mouth(frame, bbox, theta):
+    """
+    빨간 표시를 기준으로 컵 입구 방향을 분석합니다.
+
+    반환값:
+      - found: 빨간 표시 검출 여부
+      - is_top: 빨간 표시가 theta 방향에 있으면 True
+      - sticker_center: 이미지 전체 좌표계의 빨간 표시 중심 (x, y)
+      - mouth_theta: 입구 쪽을 향하도록 보정된 theta
+    """
+    mouth_theta = theta
+    result = {
+        "found": False,
+        "is_top": True,
+        "sticker_center": None,
+        "marker_theta": None,
+        "mouth_theta": mouth_theta,
+        "dot_product": 0.0,
+    }
+
+    if frame is None:
+        return result
+
+    x1, y1, x2, y2 = map(int, bbox)
+    box_w = max(1, x2 - x1)
+    box_h = max(1, y2 - y1)
+    pad_x = int(box_w * 0.08)
+    pad_y = int(box_h * 0.08)
+    x1, y1 = max(0, x1 - pad_x), max(0, y1 - pad_y)
+    x2, y2 = min(frame.shape[1], x2 + pad_x), min(frame.shape[0], y2 + pad_y)
+
+    roi = frame[y1:y2, x1:x2]
+    if roi.size == 0:
+        return result
+
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+    lower_red1 = np.array([0, 55, 55])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([160, 55, 55])
+    upper_red2 = np.array([180, 255, 255])
+
+    mask = (
+        cv2.inRange(hsv, lower_red1, upper_red1)
+        + cv2.inRange(hsv, lower_red2, upper_red2)
+    )
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    M = cv2.moments(mask)
+    if M["m00"] == 0:
+        return result
+
+    cm_x = int(M["m10"] / M["m00"])
+    cm_y = int(M["m01"] / M["m00"])
+    center_x = roi.shape[1] / 2.0
+    center_y = roi.shape[0] / 2.0
+
+    vec_sticker = np.array([cm_x - center_x, cm_y - center_y])
+    vec_theta = np.array([np.cos(theta), np.sin(theta)])
+    dot_product = float(np.dot(vec_sticker, vec_theta))
+    is_top = dot_product > 0
+    marker_theta = float(np.arctan2(vec_sticker[1], vec_sticker[0]))
+
+    if not is_top:
+        mouth_theta = theta + np.pi
+
+    result.update({
+        "found": True,
+        "is_top": is_top,
+        "sticker_center": (x1 + cm_x, y1 + cm_y),
+        "marker_theta": marker_theta,
+        "mouth_theta": mouth_theta,
+        "dot_product": dot_product,
+    })
+    return result
 
 
 def is_top_pointing_towards_theta(frame, bbox, theta):
     """
     컵의 빨간 스티커(입구 부분)가 theta 방향에 있는지, 반대 방향인지 판별
     """
-    if frame is None:
-        return True
-
-    x1, y1, x2, y2 = map(int, bbox)
-    x1, y1 = max(0, x1), max(0, y1)
-    x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
-    
-    roi = frame[y1:y2, x1:x2]
-    if roi.size == 0:
-        return True
-        
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    
-    # 빨간색 마스크 추출
-    lower_red1 = np.array([0, 100, 100])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([160, 100, 100])
-    upper_red2 = np.array([180, 255, 255])
-    
-    mask = cv2.inRange(hsv, lower_red1, upper_red1) + cv2.inRange(hsv, lower_red2, upper_red2)
-    
-    # 빨간색 픽셀들의 무게중심(Center of Mass) 계산
-    M = cv2.moments(mask)
-    if M["m00"] == 0:
-        return True 
-        
-    # ROI 내에서의 무게중심 좌표
-    cm_x = int(M["m10"] / M["m00"])
-    cm_y = int(M["m01"] / M["m00"])
-    
-    # ROI의 기하학적 중심 좌표
-    center_x = roi.shape[1] / 2.0
-    center_y = roi.shape[0] / 2.0
-    
-    # 1. 컵 중심에서 스티커(무게중심)를 향하는 벡터 생성
-    vec_sticker = np.array([cm_x - center_x, cm_y - center_y])
-    
-    # 2. theta 각도가 가리키는 단위 벡터 생성
-    vec_theta = np.array([np.cos(theta), np.sin(theta)])
-    
-    # 3. 두 벡터의 내적(Dot Product) 계산
-
-    dot_product = np.dot(vec_sticker, vec_theta)
-    
-    return dot_product > 0
+    return analyze_cup_mouth(frame, bbox, theta)["is_top"]
