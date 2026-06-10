@@ -38,3 +38,4 @@ tmp/
 
 # Local offline experiment outputs
 outputs/
+src/azas_bringup/config/*.bak-*
