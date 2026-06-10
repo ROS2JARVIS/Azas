@@ -100,17 +100,16 @@ dispenser_outlets:
     outlet_pose_quaternion_xyzw: [-0.018792, 0.647687, 0.057548, 0.759498]
     outlet_pose_rpy_rad: [0.279465, 1.403250, 0.387859]
     outlet_pose_rpy_deg: [16.012, 80.400, 22.223]
-    press_pose_xyz_m: [0.891400, -0.036832, 0.384805]
+    press_pose_xyz_m: [0.669475, -0.023767, 0.415318]
     press_pose_quaternion_xyzw: [-0.015, 0.881, -0.075, 0.468]
-    press_pose_rpy_rad: [3.094037, -1.706159, -2.671403]
-    press_pose_rpy_deg: [177.275, -97.756, -153.060]
+    press_pose_rpy_rad: [0.007526, 1.704437, -3.116764]
+    press_pose_rpy_deg: [0.431, 97.657, -178.577]
     press_joint_state:
       name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
       position_rad: [-0.08701040595769882, 0.9135012626647949, 0.13757061958312988, 1.3107753992080688, 0.032613810151815414, 1.5555728673934937]
     press_pre_joints_deg: [-4.25, 28.22, 75.41, 146.71, 10.23, -141.99]  # operator measured, 2026-06-10
-    press_contact_joints_deg: [-2.47, 26.81, 73.79, -3.80, -2.85, 0.91]  # operator measured, 2026-06-10
+    press_contact_joints_deg: [-8.05, 26.38, 71.96, 146.62, 8.13, -141.99]  # operator measured PRESS3, 2026-06-10
     clearance_m: null
-    press_contact_status: measured_confirmed  # operator measured, 2026-06-10
   "4":
     cup_pre_place_joints_deg: [5.72, 27.39, 65.56, 167.98, -4.74, -161.56]  # operator measured, 2026-06-10
     cup_place_joints_deg: [5.62, 28.54, 70.28, 167.98, -1.51, -161.56]  # operator measured, 2026-06-10
@@ -118,17 +117,16 @@ dispenser_outlets:
     outlet_pose_quaternion_xyzw: [-0.022035, 0.648114, 0.059471, 0.758898]
     outlet_pose_rpy_rad: [0.268008, 1.405233, 0.383736]
     outlet_pose_rpy_deg: [15.356, 80.514, 21.986]
-    press_pose_xyz_m: [0.888378, -0.093249, 0.383091]
+    press_pose_xyz_m: [0.660295, -0.083131, 0.405622]
     press_pose_quaternion_xyzw: [0.020, 0.883, -0.078, 0.462]
-    press_pose_rpy_rad: [3.022369, -1.752927, -2.672407]
-    press_pose_rpy_deg: [173.169, -100.435, -153.118]
+    press_pose_rpy_rad: [0.008298, 1.664692, -3.119918]
+    press_pose_rpy_deg: [0.475, 95.380, -178.758]
     press_joint_state:
       name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
       position_rad: [-0.1493324339389801, 0.9293974041938782, 0.1349058598279953, 1.3465725183486938, -0.016838623210787773, 1.4902210235595703]
     press_pre_joints_deg: [-6.60, 26.79, 73.27, -40.78, -1.97, 38.55]  # operator measured, 2026-06-10
-    press_contact_joints_deg: [-5.77, 27.00, 71.23, -15.17, 2.29, 12.34]  # operator measured, 2026-06-10
+    press_contact_joints_deg: [-6.28, 25.63, 70.11, -40.75, 0.09, 38.55]  # operator measured PRESS4, 2026-06-10
     clearance_m: null
-    press_contact_status: measured_confirmed  # operator confirmed, 2026-06-10; check failure was cable disconnect
 
 cup_holder:
   parent_frame: base_link

@@ -18,12 +18,15 @@ Stop condition:
 
 - Stop before motion if the command would use missing/ambiguous calibration, unknown TCP state, inconsistent FK, unavailable robot services, or an identified collision risk.
 
-## 2026-06-10 Invalid Calibration: PRESS1_CONTACT
+## 2026-06-10 Dispenser Press Contacts Confirmed
 
-Dispenser 1 `press_contact_joints_deg` is operator-confirmed wrong.
+Operator note at 2026-06-10T16:48:12+09:00: all dispenser `PRESS_CONTACT` values have been saved.
 
-Current status:
+Confirmed state:
 
-- `dispenser_outlets."1".press_contact_status: invalid_reteach_required`
-- Real press motion for dispenser 1 must be blocked before cup placement or press execution.
-- Do not infer, swap, or regenerate the replacement PRESS1 contact pose. Replace it only with a newly measured robot teaching value.
+- D1 press-only real-motion check completed and `press_contact_status: measured_confirmed`.
+- D2 press-only real-motion check completed and `press_contact_status: measured_confirmed`.
+- D3 press-only real-motion check completed and `press_contact_status: measured_confirmed`.
+- D4 press-only real-motion check also works normally. The earlier observed `MoveLine returned success=false` was caused by a cable disconnect, not by the saved D4 contact. D4 status is `press_contact_status: measured_confirmed`.
+
+Do not resurrect the stale `PRESS1_CONTACT invalid_reteach_required` note unless the operator newly invalidates the saved D1 contact.

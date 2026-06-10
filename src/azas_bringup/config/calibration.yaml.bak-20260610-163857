@@ -118,17 +118,16 @@ dispenser_outlets:
     outlet_pose_quaternion_xyzw: [-0.022035, 0.648114, 0.059471, 0.758898]
     outlet_pose_rpy_rad: [0.268008, 1.405233, 0.383736]
     outlet_pose_rpy_deg: [15.356, 80.514, 21.986]
-    press_pose_xyz_m: [0.888378, -0.093249, 0.383091]
+    press_pose_xyz_m: [0.660295, -0.083131, 0.405622]
     press_pose_quaternion_xyzw: [0.020, 0.883, -0.078, 0.462]
-    press_pose_rpy_rad: [3.022369, -1.752927, -2.672407]
-    press_pose_rpy_deg: [173.169, -100.435, -153.118]
+    press_pose_rpy_rad: [0.008298, 1.664692, -3.119918]
+    press_pose_rpy_deg: [0.475, 95.380, -178.758]
     press_joint_state:
       name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
       position_rad: [-0.1493324339389801, 0.9293974041938782, 0.1349058598279953, 1.3465725183486938, -0.016838623210787773, 1.4902210235595703]
     press_pre_joints_deg: [-6.60, 26.79, 73.27, -40.78, -1.97, 38.55]  # operator measured, 2026-06-10
-    press_contact_joints_deg: [-5.77, 27.00, 71.23, -15.17, 2.29, 12.34]  # operator measured, 2026-06-10
+    press_contact_joints_deg: [-6.28, 25.63, 70.11, -40.75, 0.09, 38.55]  # operator measured PRESS4, 2026-06-10
     clearance_m: null
-    press_contact_status: measured_confirmed  # operator confirmed, 2026-06-10; check failure was cable disconnect
 
 cup_holder:
   parent_frame: base_link

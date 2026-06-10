@@ -82,7 +82,7 @@ def replace_block_value(text: str, dispenser_id: str, key: str, value: str, comm
     match = header_pattern.search(text)
     if not match:
         raise RuntimeError(f'dispenser_outlets."{dispenser_id}" block not found')
-    next_match = re.search(r'^  "\d+":\n', text[match.end():], re.M)
+    next_match = re.search(r'^(?:  "\d+":|[A-Za-z_][A-Za-z0-9_]*:)\n', text[match.end():], re.M)
     block_end = match.end() + next_match.start() if next_match else len(text)
     block = text[match.end():block_end]
     line_pattern = re.compile(rf"^    {re.escape(key)}: .*$", re.M)
@@ -113,6 +113,13 @@ def update_config(config_path: Path, dispenser_id: str, kind: str, posx: list[fl
             dispenser_id,
             "press_contact_joints_deg",
             format_list(posj, 2),
+            measured_comment,
+        )
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "press_contact_status",
+            "measured_confirmed",
             measured_comment,
         )
     elif kind == "pre":
@@ -148,6 +155,10 @@ def main() -> int:
         print(f"[FAIL] config not found: {args.config}", file=sys.stderr)
         return 2
 
+    if not args.write:
+        print(f"[BLOCKED] --write --confirm {CONFIRM} is required; no dry-run recording mode is allowed.", file=sys.stderr)
+        return 2
+
     posx, posj = read_current_pose(args.service_prefix, args.timeout_sec)
     print(f"[Azas] dispenser={args.dispenser_id} kind={args.kind}")
     print(f"[Azas] current_posx_mm_deg={format_list(posx, 3)}")
@@ -158,10 +169,6 @@ def main() -> int:
         print(f"[Azas] calibration press_contact_joints_deg={format_list(posj, 2)}")
     else:
         print(f"[Azas] calibration press_pre_joints_deg={format_list(posj, 2)}")
-
-    if not args.write:
-        print(f"[DRY-RUN] no file written. Add --write --confirm {CONFIRM} to update calibration.yaml.")
-        return 0
 
     backup_path = update_config(args.config, args.dispenser_id, args.kind, posx, posj)
     print(f"[PASS] updated {args.config}")

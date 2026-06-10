@@ -1,10 +1,10 @@
 # Wiki Index
 
-> 6 pages | Last updated: 2026-06-10T15:50:45+09:00
+> 6 pages | Last updated: 2026-06-10T16:48:48+09:00
 
 ## operation-rules
 
-- [Robot Operation Rules](robot-operation-rules.md) — Real robot motion checks must not be replaced by dry-run commands.
+- [Robot Operation Rules](robot-operation-rules.md) — Real robot motion checks must not be replaced by dry-run commands; D1-D4 press contacts are saved and confirmed.
 
 ## session-log
 

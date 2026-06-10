@@ -803,6 +803,41 @@ class IntegratedRecipeMotion:
         self.wait_motion_done(label, timeout_sec=timeout_sec)
         self.wait_for_target(pos, label=label, tolerance_mm=verify_tolerance_mm)
 
+    def move_generated_press_pre(self, pos: list[float], *, label: str) -> None:
+        if self.args.press_generated_pre_use_joint:
+            print(
+                f"[Azas] {label}: using IK MoveJoint for generated PRESS_PRE approach; "
+                "CONTACT/PRESS stroke remains Z-only MoveLine"
+            )
+            self.move_posx_joint_fallback(
+                pos,
+                label=label,
+                velocity=self.args.press_contact_joint_velocity,
+                acceleration=self.args.press_contact_joint_acceleration,
+            )
+            return
+        try:
+            self.move_posx(
+                pos,
+                label=label,
+                velocity=self.args.press_travel_velocity,
+                acceleration=self.args.press_travel_acceleration,
+                timeout_sec=self.args.press_timeout_sec,
+            )
+        except RuntimeError as exc:
+            if not self.args.press_generated_pre_joint_fallback:
+                raise
+            print(
+                f"[WARN] MoveLine/verification failed for {label}: {exc}; "
+                "retrying the same generated PRESS_PRE with IK MoveJoint fallback"
+            )
+            self.move_posx_joint_fallback(
+                pos,
+                label=label,
+                velocity=self.args.press_contact_joint_velocity,
+                acceleration=self.args.press_contact_joint_acceleration,
+            )
+
     def move_posx_no_verify(
         self,
         pos: list[float],
@@ -1438,16 +1473,10 @@ class IntegratedRecipeMotion:
             label="RG2 close empty gripper for dispenser press",
         )
         if self.args.press_reset_before_press:
-            # The operator requirement is explicit: after releasing the cup and
-            # closing the empty RG2, rotate the gripper/link_6 back to 0 deg
-            # from a safe high pose.  Do not use a Cartesian orientation move
-            # for this reset, because Doosan IK may swing wrist joint 4/5.
-            safe_joints = self.current_posj()
-            reset_joints = list(safe_joints)
-            reset_joints[5] = 0.0
+            reset_joints = list(self.args.press_reset_joints_deg)
             self.movej(
                 reset_joints,
-                label="reset link_6/joint_6 to 0 at safe height",
+                label="move to press HOME joints before generated PRESS_PRE",
                 velocity=self.args.press_reset_joint_velocity,
                 acceleration=self.args.press_reset_joint_acceleration,
             )
@@ -1462,12 +1491,9 @@ class IntegratedRecipeMotion:
                 f"{rx:.1f}, {ry:.1f}, {rz:.1f}] "
                 f"generated_pre_z={pre_z:.1f} press_drop_mm={press_drop_m * 1000.0:.1f}"
             )
-            self.move_posx(
+            self.move_generated_press_pre(
                 generated_pre_posx,
                 label="generated PRESS_PRE above measured contact",
-                velocity=self.args.press_travel_velocity,
-                acceleration=self.args.press_travel_acceleration,
-                timeout_sec=self.args.press_timeout_sec,
             )
             for press_index in range(1, max(int(press_count), 1) + 1):
                 suffix = f" {press_index}/{press_count}" if press_count > 1 else ""
@@ -2181,14 +2207,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--press-hold-seconds", type=float, default=0.25)
     parser.add_argument("--press-gripper-close-width-m", type=float, default=0.0)
     parser.add_argument("--press-gripper-force-n", type=float, default=30.0)
-    parser.add_argument("--press-reset-before-press", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--press-reset-before-press",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "After cup release, safe lift, and empty-gripper close, move through a fixed HOME joint pose "
+            "before approaching generated PRESS_PRE. Default true to avoid direct cup-place -> press Cartesian transitions."
+        ),
+    )
     parser.add_argument(
         "--press-reset-joints-deg",
         default="0,0,90,0,90,0",
-        help="Joint reset pose used after safe lift and RG2 close, before moving above the press pose.",
+        help="HOME joint pose used after safe lift and RG2 close, before moving to generated PRESS_PRE.",
     )
-    parser.add_argument("--press-reset-joint-velocity", type=float, default=40.0)
-    parser.add_argument("--press-reset-joint-acceleration", type=float, default=50.0)
+    parser.add_argument("--press-reset-joint-velocity", type=float, default=18.0)
+    parser.add_argument("--press-reset-joint-acceleration", type=float, default=25.0)
     parser.add_argument("--press-pre-joint-velocity", type=float, default=18.0)
     parser.add_argument("--press-pre-joint-acceleration", type=float, default=25.0)
     parser.add_argument("--press-contact-joint-velocity", type=float, default=22.0)
@@ -2331,6 +2365,25 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--safe-lift-joint-fallback-velocity", type=float, default=30.0)
     parser.add_argument("--safe-lift-joint-fallback-acceleration", type=float, default=40.0)
+    parser.add_argument(
+        "--press-generated-pre-use-joint",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Approach the generated high PRESS_PRE pose with IK MoveJoint by default. "
+            "This avoids long Cartesian orientation interpolation from cup-place posture near the dispenser. "
+            "The actual contact/press stroke remains Z-only MoveLine."
+        ),
+    )
+    parser.add_argument(
+        "--press-generated-pre-joint-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When MoveLine to generated PRESS_PRE returns complete but target verification stalls, "
+            "retry that high approach pose with IK MoveJoint. The actual contact/press stroke remains Z-only MoveLine."
+        ),
+    )
     parser.add_argument("--gripper-service", default="/jarvis/rg2/set_width")
     parser.add_argument("--gripper-open-width-m", type=float, default=0.110)
     parser.add_argument("--gripper-open-force-n", type=float, default=12.0)

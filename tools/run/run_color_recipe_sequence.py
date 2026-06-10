@@ -241,6 +241,15 @@ def main() -> int:
     parser.add_argument("--press-contact-joint-velocity", default="22.0")
     parser.add_argument("--press-contact-joint-acceleration", default="30.0")
     parser.add_argument("--press-contact-entry-lift-m", default="0.050")
+    parser.add_argument(
+        "--press-reset-before-press",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="컵을 놓은 뒤 프레스 PRE로 가기 전에 HOME joint waypoint를 경유",
+    )
+    parser.add_argument("--press-reset-joints-deg", default="0,0,90,0,90,0")
+    parser.add_argument("--press-reset-joint-velocity", default="18.0")
+    parser.add_argument("--press-reset-joint-acceleration", default="25.0")
     parser.add_argument("--press-depth-m", default="0.040")
     parser.add_argument(
         "--press-extra-depth-m",
@@ -327,6 +336,9 @@ def main() -> int:
         "--press-contact-joint-velocity", str(args.press_contact_joint_velocity),
         "--press-contact-joint-acceleration", str(args.press_contact_joint_acceleration),
         "--press-contact-entry-lift-m", str(args.press_contact_entry_lift_m),
+        "--press-reset-joints-deg", str(args.press_reset_joints_deg),
+        "--press-reset-joint-velocity", str(args.press_reset_joint_velocity),
+        "--press-reset-joint-acceleration", str(args.press_reset_joint_acceleration),
         "--press-depth-m", str(args.press_depth_m),
         "--press-extra-depth-m", str(args.press_extra_depth_m),
         "--press-lock-contact-joints", str(args.press_lock_contact_joints),
@@ -340,6 +352,9 @@ def main() -> int:
         "--safe-lift-joint-fallback",
         "--no-integrated-regrasp-fallback-subprocess",
     ]
+    sequence_extra_args.append(
+        "--press-reset-before-press" if args.press_reset_before_press else "--no-press-reset-before-press"
+    )
     if args.allow_tcp_set_failure:
         sequence_extra_args.append("--allow-tcp-set-failure")
     if args.force_cartesian_press:

@@ -1,5 +1,13 @@
 # Wiki Log
 
+## [2026-06-10T16:48:48+09:00] update
+- **Pages:** robot-operation-rules.md
+- **Summary:** Recorded the operator confirmation that dispenser 4 press-only real-motion check also works normally.
+
+## [2026-06-10T16:48:12+09:00] update
+- **Pages:** robot-operation-rules.md
+- **Summary:** Recorded operator confirmation that D1-D4 dispenser press contacts are saved and confirmed; D4 press-check failure was cable disconnect, not calibration.
+
 ## [2026-06-10T15:50:45+09:00] add
 - **Pages:** robot-operation-rules.md
 - **Summary:** Recorded the operator directive that dry-run / plan-only / no-execute commands are banned as substitutes for real robot motion checks.
