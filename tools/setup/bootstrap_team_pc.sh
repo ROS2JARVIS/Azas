@@ -113,7 +113,6 @@ for pkg in \
   dsr_bringup2 \
   dsr_msgs2 \
   dsr_moveit_config_m0609 \
-  jarvis \
   realsense2_camera; do
   check_ros_pkg "$pkg" || missing=1
 done

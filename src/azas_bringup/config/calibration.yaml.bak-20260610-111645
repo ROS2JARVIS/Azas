@@ -1,0 +1,157 @@
+# PDF/wiki-derived MVP-1 calibration placeholders.
+# Real robot calibration is represented only by the top-level fields below.
+# Null/확인 필요 values are intentional fail-closed markers; replace them only
+# with measured robot-cell, hand-eye, MoveIt, or tool/TCP evidence.
+frames:
+  base_frame: base_link
+  camera_frame: null        # 확인 필요: 실제 depth camera frame_id
+  ee_link: link_6           # M0609 EE link (yolo_cup_pick_node.py 확인)
+  planning_group: null      # 확인 필요: M0609 MoveIt GROUP_NAME
+  gripper_tcp: gripper_tcp  # 확인 필요: 실제 TCP frame 구성 후 확정
+  cup_mouth_center: cup_mouth_center
+hand_eye:
+  parent_frame: base_link
+  child_frame: null         # 확인 필요: camera_frame
+  npy_path: src/dsr_practice/config/T_gripper2camera.npy  # measured (May 15), used by yolo_cup_pick_node
+  npy_path_alt: src/azas_perception/config/T_gripper2camera.npy  # re-calibrated (May 20)
+  xyz_m: null               # 확인 필요: fill from npy after deciding canonical file
+  rpy_rad: null             # 확인 필요: fill from npy after deciding canonical file
+
+# Saved robot pose for dispenser color scanning.
+# 2026-06-08 현재 카메라 화면에서 디스펜서 핸들이 보이고 visible-handle 색상 검출이 통과한 실측 자세.
+color_scan_pose:
+  source: operator_measured_visible_handle_verified
+  ee_link: link_6
+  joints_deg: [0.0, 10.0, 32.0, 0.0, 100.0, 90.0]
+  joints_rad: [0.0, 0.1745, 0.5585, 0.0, 1.7453, 1.5708]
+  joint_order: [joint_1, joint_2, joint_3, joint_4, joint_5, joint_6]
+  cartesian_xyz_m: null
+  cartesian_frame: base_link
+cup_offsets:
+  default:
+    tcp_to_cup_mouth_m: null  # 확인 필요: jig/dry-run으로 측정
+    status: 확인 필요
+outlet:
+  outlet_id: dispenser_outlet
+  parent_frame: base_link
+  pose_xyz_m: null          # 확인 필요: teaching/calibration으로 측정
+  pose_rpy_rad: null        # 확인 필요
+  clearance_m: null         # 확인 필요: rim/outlet 안전 간격
+
+table:
+  parent_frame: base_link
+  source: operator_confirmed_base_link_bounds
+  status: measured_confirmed
+  surface_z_m: 0.000
+  thickness_m: 0.040
+  center_xy_m: [0.450, 0.000]
+  size_xy_m: [1.200, 1.000]
+  bounds_xy_m:
+    x_min: -0.150
+    x_max: 1.050
+    y_min: -0.500
+    y_max: 0.500
+  notes: "Derived from confirmed table size/center in base_link."
+
+# Fixed dispenser-number to measured-pose mapping.
+# STT/LLM may select only these IDs. Coordinates must be filled only from
+# measured teaching/calibration data in base_link; never from STT, LLM, or VLA.
+dispenser_outlets:
+  "1":
+    cup_pre_place_joints_deg: [11.63, 45.37, 110.46, 194.52, 63.57, -100.48]  # operator measured, 2026-06-10
+    cup_place_joints_deg: [10.24, 48.98, 99.43, 194.25, 55.74, -100.48]  # operator measured, 2026-06-10
+    outlet_pose_xyz_m: [0.555, -0.100, 0.093]  # measured cup placement pose
+    outlet_pose_quaternion_xyzw: [0.019717, 0.648068, 0.033158, 0.760605]
+    outlet_pose_rpy_rad: [0.429694, 1.394728, 0.448776]
+    outlet_pose_rpy_deg: [24.620, 79.912, 25.713]
+    press_pose_xyz_m: [0.680509, 0.110427, 0.439154]
+    press_pose_quaternion_xyzw: [-0.060, 0.878, -0.024, 0.474]
+    press_pose_rpy_rad: [3.028002, -1.839618, -0.034249]
+    press_pose_rpy_deg: [173.492, -105.402, -1.962]
+    press_joint_state:
+      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
+      position_rad: [0.08982130140066147, 0.9058733582496643, 0.008466404862701893, 1.3044253587722778, 0.033748552203178406, 1.6839158535003662]
+    press_pre_joints_deg: [-4.52, 25.97, 74.19, 146.71, 10.73, -141.99]  # operator measured, 2026-06-10
+    press_contact_joints_deg: [12.13, 30.96, 61.30, -52.54, 22.26, 233.64]  # operator measured, 2026-06-10
+    clearance_m: null
+  "2":
+    cup_pre_place_joints_deg: [-11.43, 45.17, 110.50, 165.41, 64.36, -85.88]  # operator measured, 2026-06-10
+    cup_place_joints_deg: [-9.99, 48.08, 99.33, 165.41, 56.24, -85.88]  # operator measured, 2026-06-10
+    outlet_pose_xyz_m: [0.549, -0.150, 0.097]
+    outlet_pose_quaternion_xyzw: [-0.021772, 0.650220, 0.060986, 0.756981]
+    outlet_pose_rpy_rad: [0.293265, 1.409774, 0.410750]
+    outlet_pose_rpy_deg: [16.803, 80.774, 23.534]
+    press_pose_xyz_m: [0.706, 0.043, 0.510]
+    press_pose_quaternion_xyzw: [-0.043, 0.878, -0.058, 0.473]
+    press_pose_rpy_rad: [-2.886216, 0.971433, -2.908521]
+    press_pose_rpy_deg: [-165.368, 55.659, -166.646]
+    press_joint_state:
+      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
+      position_rad: [-0.000876683508977294, 0.9131112098693848, 0.0780220702290535, 1.3043646812438965, 0.032502077519893646, 1.621778964996338]
+    press_pre_joints_deg: [5.72, 27.39, 65.56, 167.98, -4.74, -161.56]  # operator measured, 2026-06-10
+    press_contact_joints_deg: [1.79, 27.06, 72.09, 167.98, -0.28, -161.56]  # operator measured, 2026-06-10
+    clearance_m: null
+  "3":
+    cup_pre_place_joints_deg: [-3.09, 44.18, 111.56, 176.17, 62.61, -89.23]  # operator measured, 2026-06-10
+    cup_place_joints_deg: [1.45, 47.74, 101.87, 177.95, 57.30, -93.60]  # operator measured, 2026-06-10
+    outlet_pose_xyz_m: [0.527, -0.204, 0.107]
+    outlet_pose_quaternion_xyzw: [-0.018792, 0.647687, 0.057548, 0.759498]
+    outlet_pose_rpy_rad: [0.279465, 1.403250, 0.387859]
+    outlet_pose_rpy_deg: [16.012, 80.400, 22.223]
+    press_pose_xyz_m: [0.705, -0.002, 0.513]
+    press_pose_quaternion_xyzw: [-0.015, 0.881, -0.075, 0.468]
+    press_pose_rpy_rad: [-2.884226, 0.964050, -2.972819]
+    press_pose_rpy_deg: [-165.254, 55.236, -170.330]
+    press_joint_state:
+      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
+      position_rad: [-0.08701040595769882, 0.9135012626647949, 0.13757061958312988, 1.3107753992080688, 0.032613810151815414, 1.5555728673934937]
+    press_pre_joints_deg: [-4.25, 28.22, 75.41, 146.71, 10.23, -141.99]  # operator measured, 2026-06-10
+    press_contact_joints_deg: [-8.05, 26.38, 71.96, 146.62, 8.13, -141.99]  # operator measured, 2026-06-10
+    clearance_m: null
+  "4":
+    cup_pre_place_joints_deg: [5.72, 27.39, 65.56, 167.98, -4.74, -161.56]  # operator measured, 2026-06-10
+    cup_place_joints_deg: [5.62, 28.54, 70.28, 167.98, -1.51, -161.56]  # operator measured, 2026-06-10
+    outlet_pose_xyz_m: [0.517, -0.235, 0.109]
+    outlet_pose_quaternion_xyzw: [-0.022035, 0.648114, 0.059471, 0.758898]
+    outlet_pose_rpy_rad: [0.268008, 1.405233, 0.383736]
+    outlet_pose_rpy_deg: [15.356, 80.514, 21.986]
+    press_pose_xyz_m: [0.705, -0.050, 0.513]
+    press_pose_quaternion_xyzw: [0.020, 0.883, -0.078, 0.462]
+    press_pose_rpy_rad: [-2.931106, 0.959652, -3.076684]
+    press_pose_rpy_deg: [-167.940, 54.984, -176.281]
+    press_joint_state:
+      name: [joint_1, joint_2, joint_4, joint_5, joint_3, joint_6]
+      position_rad: [-0.1493324339389801, 0.9293974041938782, 0.1349058598279953, 1.3465725183486938, -0.016838623210787773, 1.4902210235595703]
+    press_pre_joints_deg: [-6.60, 26.79, 73.27, -40.78, -1.97, 38.55]  # operator measured, 2026-06-10
+    press_contact_joints_deg: [-6.28, 25.63, 70.11, -40.75, 0.09, 38.55]  # operator measured, 2026-06-10
+    clearance_m: null
+
+cup_holder:
+  parent_frame: base_link
+  # Measured with the active Doosan TCP placed in the holder hole.
+  bottom_insert_center_pose_xyz_m: [0.429831, 0.220885, 0.017898]
+  bottom_insert_center_pose_rpy_rad: [2.513735, -3.122200, 3.038293]
+  top_center_estimated_xyz_m: [0.429831, 0.220885, 0.079500]
+  radius_m: 0.045
+  height_m: 0.062
+  side_grip_place:
+    pre_place_pose_xyz_m: [0.425545, 0.251832, 0.217371]
+    pre_place_pose_rpy_rad: [1.600936, 1.622299, 2.132633]
+    place_final_pose_xyz_m: [0.425545, 0.251832, 0.117371]
+    place_final_pose_rpy_rad: [1.600936, 1.622299, 2.132633]
+    retreat_pose_xyz_m: [0.415096, 0.189680, 0.113925]
+    retreat_pose_rpy_rad: [1.608926, 1.585807, 2.146282]
+    approach_lift_m: 0.100
+    solution_space: 2.0
+    status: measured_draft
+
+# Dry-run-only example values.
+# These values document the shape of a temporary static TF for simulation or
+# TF debugging. They are not calibration data and must not be copied into the
+# real hand_eye/outlet fields or used on the real robot.
+example_static_tf_do_not_use_on_real_robot:
+  parent_frame: base_link
+  child_frame: camera_color_optical_frame
+  xyz_m: [0.35, 0.0, 0.65]
+  rpy_rad: [0.0, 0.0, 0.0]
+  example_command: "ros2 run tf2_ros static_transform_publisher --x 0.35 --y 0.0 --z 0.65 --roll 0.0 --pitch 0.0 --yaw 0.0 --frame-id base_link --child-frame-id camera_color_optical_frame"

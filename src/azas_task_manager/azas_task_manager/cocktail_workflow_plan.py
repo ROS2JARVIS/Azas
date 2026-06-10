@@ -36,12 +36,12 @@ def detection_class(status: str) -> str | None:
     return tail.split(maxsplit=1)[0].split(":", maxsplit=1)[0].strip().lower() or None
 
 
-def build_cocktail_steps(dispenser_ids: list[str]) -> list[TaskStep]:
+def build_cocktail_steps(dispenser_ids: list[str], include_human_handover: bool = True) -> list[TaskStep]:
     steps = [
         TaskStep(
             "VERIFY_RECIPE",
             "accept symbolic recipe and ordered dispenser color targets",
-            required_inputs=("/azas/voice/recipe_decision",),
+            required_inputs=("/azas/voice/confirmed_recipe_decision",),
             produces=("ordered_dispenser_colors",),
         ),
         TaskStep(
@@ -159,4 +159,57 @@ def build_cocktail_steps(dispenser_ids: list[str]) -> list[TaskStep]:
             ),
         ]
     )
+
+    if include_human_handover:
+        steps.extend(
+            [
+                TaskStep(
+                    "VERIFY_HUMAN_HAND_TRACKING",
+                    "track an open human hand after shaking/serving and require stable hand perception before any handover plan",
+                    required_inputs=("cocktail_served", "/azas/human_hand_detection", "handover_safety.yaml"),
+                    produces=("stable_human_hand_target",),
+                    command="none",
+                    hardware_gate="no_motion_hri_perception_only",
+                    parameters={
+                        "min_stable_frames": 10,
+                        "max_target_age_s": 1.0,
+                        "required_state": "open_hand",
+                    },
+                ),
+                TaskStep(
+                    "COMPUTE_HANDOVER_POSE",
+                    "convert stable hand target to a conservative handover pose candidate with approach offset and retreat path",
+                    required_inputs=("stable_human_hand_target", "base_link<-camera_frame TF", "handover_safety.yaml"),
+                    produces=("handover_pose_candidate",),
+                    command="none",
+                    hardware_gate="tf_required_no_motion",
+                    parameters={
+                        "approach_offset_m": 0.12,
+                        "min_hand_distance_m": 0.10,
+                        "max_handover_speed_mps": 0.05,
+                    },
+                ),
+                TaskStep(
+                    "WAIT_FOR_HANDOVER_APPROVAL",
+                    "wait for explicit operator confirmation and a still-open hand before enabling any live handover executor",
+                    required_inputs=("handover_pose_candidate", "operator_confirmation", "stable_human_hand_target"),
+                    produces=("handover_approved",),
+                    command="none",
+                    hardware_gate="operator_approval_required",
+                ),
+                TaskStep(
+                    "HANDOVER_CUP_TO_HUMAN_DISABLED",
+                    "placeholder final handover step; live motion is intentionally disabled until HRI safety review and force/speed limits are validated",
+                    required_inputs=("handover_approved", "cup_or_served_drink_held"),
+                    produces=("handover_ready_for_separate_live_executor",),
+                    command="disabled_handover_motion_placeholder",
+                    hardware_gate="disabled_until_hri_safety_review",
+                    parameters={
+                        "requires_force_limit": True,
+                        "requires_emergency_stop_observer": True,
+                        "requires_person_distance_monitor": True,
+                    },
+                ),
+            ]
+        )
     return steps

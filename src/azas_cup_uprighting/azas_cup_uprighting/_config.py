@@ -2,7 +2,7 @@
 import math
 import os
 import yaml
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
 
 PKG_SHARE = get_package_share_directory('azas_cup_uprighting')
@@ -57,7 +57,41 @@ TOOLCHARGER_IP   = "192.168.1.1"
 TOOLCHARGER_PORT = 502
 
 # ── YOLO ────────────────────────────────────────────
-YOLO_MODEL_PATH = os.path.join(PKG_SHARE, 'config', 'best.pt')
+def _default_yolo_model_path() -> str:
+    """Return a real model path without copying weights into install/.
+
+    Historical cup-uprighting code looked for config/best.pt inside this
+    package.  The current trained model is owned by azas_perception, so prefer
+    an explicit operator/env override and then the perception package asset.
+    """
+    for env_name in ("AZAS_CUP_UPRIGHTING_MODEL_PATH", "AZAS_YOLO_MODEL_PATH", "MODEL_PATH"):
+        env_path = os.environ.get(env_name)
+        if env_path and os.path.isfile(os.path.expanduser(env_path)):
+            return os.path.expanduser(env_path)
+
+    candidates = [
+        os.path.join(PKG_SHARE, 'config', 'best.pt'),
+    ]
+    try:
+        perception_share = get_package_share_directory('azas_perception')
+        candidates.append(
+            os.path.join(perception_share, 'config', 'yolo_cup_uprighting_best.pt')
+        )
+    except PackageNotFoundError:
+        pass
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    candidates.extend([
+        os.path.join(repo_root, 'src', 'azas_perception', 'config', 'yolo_cup_uprighting_best.pt'),
+        os.path.join(repo_root, 'local_models', 'best.pt'),
+    ])
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return candidates[0]
+
+
+YOLO_MODEL_PATH = _default_yolo_model_path()
 YOLO_CONF_THRESH   = 0.5
 AUTO_PICK_INTERVAL = 3.0    # 자동 모드 픽 간격 [s]
 

@@ -34,6 +34,8 @@ setup(
             "gear_assembly_legacy = azas_motion.gear_assembly_legacy:main",
             "lid_grip_planner_node = azas_motion.lid_grip_planner_node:main",
             "m0609_shake_joint_state_node = azas_motion.m0609_shake_joint_state_node:main",
+            "link6_gripper_collision_node = azas_motion.link6_gripper_collision_node:main",
+            "dispenser_press_cycle_moveit_node = azas_motion.dispenser_press_cycle_moveit_node:main",
             "measured_dispenser_collision_scene_node = azas_motion.measured_dispenser_collision_scene_node:main",
             "mp_basic_legacy = azas_motion.mp_basic_legacy:main",
             "mp_waypoint_legacy = azas_motion.mp_waypoint_legacy:main",

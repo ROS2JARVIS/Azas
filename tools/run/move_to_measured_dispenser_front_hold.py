@@ -260,6 +260,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tcp-wait-service-sec", type=float, default=5.0)
     parser.add_argument("--tcp-timeout-sec", type=float, default=8.0)
+    parser.add_argument("--direct-x-min", type=float, default=0.10)
+    parser.add_argument("--direct-x-max", type=float, default=0.70)
+    parser.add_argument("--direct-y-min", type=float, default=-0.45)
+    parser.add_argument("--direct-y-max", type=float, default=0.45)
+    parser.add_argument("--direct-z-min", type=float, default=0.05)
+    parser.add_argument("--direct-z-max", type=float, default=0.80)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
         "--confirm",
@@ -709,6 +715,18 @@ def main() -> int:
         f"{args.target_tolerance_mm:.6f}",
         "--verify-timeout-sec",
         f"{args.verify_timeout_sec:.6f}",
+        "--x-min",
+        f"{args.direct_x_min:.6f}",
+        "--x-max",
+        f"{args.direct_x_max:.6f}",
+        "--y-min",
+        f"{args.direct_y_min:.6f}",
+        "--y-max",
+        f"{args.direct_y_max:.6f}",
+        "--z-min",
+        f"{args.direct_z_min:.6f}",
+        "--z-max",
+        f"{args.direct_z_max:.6f}",
     ]
     if args.precheck_ikin:
         cmd.append("--precheck-ikin")

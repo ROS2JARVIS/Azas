@@ -70,7 +70,12 @@ def generate_launch_description():
             DeclareLaunchArgument("llm_api_key_env", default_value="OPENAI_API_KEY"),
             DeclareLaunchArgument("stt_topic", default_value="/stt_result"),
             DeclareLaunchArgument("run_yolo", default_value="true"),
-            DeclareLaunchArgument("model_path", default_value="/home/ssu/Downloads/best.pt"),
+            DeclareLaunchArgument(
+                "model_path",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("azas_perception"), "config", "yolo_cup_uprighting_best.pt"]
+                ),
+            ),
             DeclareLaunchArgument("color_topic", default_value="/camera/camera/color/image_raw"),
             DeclareLaunchArgument("depth_topic", default_value="/camera/camera/aligned_depth_to_color/image_raw"),
             DeclareLaunchArgument("camera_info_topic", default_value="/camera/camera/color/camera_info"),

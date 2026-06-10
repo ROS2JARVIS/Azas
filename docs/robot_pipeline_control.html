@@ -21,7 +21,7 @@
       --yellow: #a16207;
       --purple: #7c3aed;
       --shadow: 0 14px 34px rgba(15, 23, 42, 0.10);
-      --log-width: 430px;
+      --sidebar-width: 420px;
     }
     * { box-sizing: border-box; }
     html { min-height: 100%; }
@@ -34,10 +34,10 @@
     }
     button, input, summary { font: inherit; }
     button {
-      min-height: 38px;
+      min-height: 34px;
       border: 0;
-      border-radius: 10px;
-      padding: 0 13px;
+      border-radius: 8px;
+      padding: 0 11px;
       font-weight: 850;
       cursor: pointer;
       color: #111827;
@@ -100,31 +100,40 @@
     .pill.kind { color: #475569; background: #f8fafc; border-color: #d7dee9; }
 
     .page {
-      width: min(1680px, calc(100vw - 28px));
-      margin: 14px auto 34px;
+      width: min(1760px, calc(100vw - 24px));
+      margin: 12px auto 24px;
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      min-height: calc(100vh - 88px);
+      height: auto;
+      overflow: visible;
     }
 
     .control-panel {
-      position: sticky;
-      top: 56px;
+      position: static;
       z-index: 30;
+      grid-column: 1;
+      grid-row: 1;
       display: grid;
       gap: 10px;
-      padding: 12px;
+      padding: 11px;
       background: rgba(255, 255, 255, 0.96);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 12px;
       box-shadow: var(--shadow);
       backdrop-filter: blur(8px);
     }
     .run-row {
       display: grid;
-      grid-template-columns: minmax(210px, 1fr) auto auto auto auto;
-      gap: 9px;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
       align-items: center;
     }
-    .search-wrap { min-width: 220px; }
-    .main-run { background: var(--blue); color: #fff; min-width: 138px; min-height: 44px; font-size: 15px; }
+    .search-wrap { grid-column: 1 / -1; min-width: 0; }
+    .main-run { background: var(--blue); color: #fff; min-height: 40px; font-size: 14px; }
     .danger { background: var(--red); color: #fff; }
     .dark-btn { background: #334155; color: #fff; }
     .plain-btn { background: #f1f5f9; border: 1px solid var(--line); color: #334155; }
@@ -132,7 +141,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      min-height: 44px;
+      min-height: 38px;
       padding: 0 12px;
       border: 1px solid #fecdd3;
       border-radius: 11px;
@@ -140,29 +149,75 @@
       color: var(--red);
       font-weight: 900;
       white-space: nowrap;
+      grid-column: 1 / -1;
     }
     .arm input { width: 19px; height: 19px; }
-
     .quick-row {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 7px;
       align-items: center;
     }
     .quick-row button {
-      min-height: 32px;
+      min-height: 34px;
       padding: 0 11px;
       border: 1px solid var(--line);
       background: #fff;
       color: #475569;
       font-size: 13px;
+      min-width: 0;
+      white-space: normal;
+      line-height: 1.18;
     }
-    .quick-row .recipe-preset {
-      background: #ecfdf5;
-      border-color: #a7f3d0;
-      color: #047857;
+    .quick-note {
+      grid-column: 1 / -1;
+      padding: 8px 10px;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      background: #f0fdf4;
+      color: #14532d;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.35;
     }
-    .danger-light { color: var(--red) !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
+    .quick-start-btn {
+      background: #1e40af !important;
+      border-color: #1e40af !important;
+      color: #fff !important;
+      font-weight: 850 !important;
+      letter-spacing: 0.02em;
+    }
+    .direct-dispenser-field {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 0 9px;
+      border: 1px solid #99f6e4;
+      border-radius: 8px;
+      background: #f0fdfa;
+      color: #115e59;
+      font-size: 12px;
+      font-weight: 900;
+      grid-column: 1 / -1;
+    }
+    .direct-dispenser-field input {
+      width: 180px;
+      flex: 1;
+      height: 26px;
+      border: 1px solid #5eead4;
+      border-radius: 6px;
+      padding: 0 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      background: #fff;
+    }
+    .danger-light {
+      color: var(--red) !important;
+      background: #fff1f2 !important;
+      border-color: #fecdd3 !important;
+    }
 
     details.settings {
       border-top: 1px dashed var(--line);
@@ -193,23 +248,18 @@
       letter-spacing: 0.02em;
     }
 
-	    .content-grid {
-	      display: grid;
-	      grid-template-columns: minmax(680px, 1fr) var(--log-width);
-	      gap: 14px;
-	      align-items: start;
-	      margin-top: 14px;
-	    }
-	    .flow-panel {
-	      position: sticky;
-	      top: 178px;
+    .content-grid { display: contents; }
+    .flow-panel {
+	      position: static;
 	      z-index: 20;
-	      margin-top: 14px;
+	      margin-top: 0;
 	      border: 1px solid var(--line);
-	      border-radius: 16px;
+	      border-radius: 12px;
 	      background: #fff;
 	      box-shadow: var(--shadow);
 	      overflow: hidden;
+        grid-column: 2;
+        grid-row: 1;
 	    }
 	    .flow-panel.flash {
 	      animation: flowFlash 900ms ease-out;
@@ -230,15 +280,16 @@
 	    .flow-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
 	    .flow-help { margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.4; }
 	    .flow-strip {
-	      display: flex;
-	      gap: 0;
-	      padding: 16px;
-	      overflow-x: auto;
-	      background: linear-gradient(90deg, rgba(37,99,235,0.07), transparent 36%), #ffffff;
+	      display: grid;
+	      grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+	      gap: 10px;
+	      padding: 14px;
+	      overflow: visible;
+	      background: #ffffff;
 	    }
     .flow-empty {
       width: 100%;
-      min-height: 84px;
+	      min-height: 66px;
       display: grid;
       place-items: center;
 	      color: var(--muted);
@@ -253,6 +304,7 @@
       color: var(--blue-dark);
     }
     .reference-panel {
+      display: none;
       margin-top: 14px;
       border: 1px solid #bfdbfe;
       border-radius: 16px;
@@ -292,12 +344,15 @@
       white-space: pre-wrap;
     }
     .camera-panel {
-      margin-top: 14px;
+      margin-top: 12px;
       border: 1px solid #bfdbfe;
-      border-radius: 16px;
+      border-radius: 12px;
       background: #fff;
       box-shadow: var(--shadow);
       overflow: hidden;
+      grid-column: 1 / -1;
+      grid-row: auto;
+      max-height: none;
     }
     .camera-head {
       display: flex;
@@ -313,57 +368,49 @@
     .camera-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
     .camera-status { color: var(--muted); font-size: 13px; font-weight: 850; }
     .camera-frame {
-      min-height: 280px;
+      min-height: 420px;
       display: grid;
       place-items: center;
       background: #020617;
     }
     .camera-frame img {
       width: 100%;
-      max-height: 520px;
+      max-height: 620px;
       object-fit: contain;
       display: block;
       color: #dbeafe;
       font-size: 13px;
       text-align: center;
     }
+    .camera-result {
+      max-height: 260px;
+      overflow: auto;
+      margin: 0;
+      padding: 10px 12px;
+      border-top: 1px solid var(--line);
+      background: #0b1120;
+      color: #dbeafe;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
 	    .flow-item {
-	      flex: 0 0 220px;
 	      display: grid;
 	      grid-template-columns: 34px minmax(0, 1fr) 28px;
 	      gap: 10px;
 	      align-items: start;
-	      min-height: 104px;
-	      padding: 12px;
+	      min-height: 92px;
+	      padding: 10px;
 	      border: 1px solid var(--line);
-	      border-radius: 14px;
+	      border-radius: 10px;
 	      background: #fff;
 	      position: relative;
 	      cursor: grab;
 	    }
 	    .flow-item.dragging { opacity: 0.55; cursor: grabbing; }
-	    .flow-item.drop-before { box-shadow: -5px 0 0 var(--blue), 0 8px 20px rgba(15, 23, 42, 0.08); }
-	    .flow-item.drop-after { box-shadow: 5px 0 0 var(--blue), 0 8px 20px rgba(15, 23, 42, 0.08); }
-	    .flow-item + .flow-item { margin-left: 42px; }
-	    .flow-item + .flow-item::before {
-	      content: "";
-	      position: absolute;
-	      left: -42px;
-	      top: 50%;
-	      width: 42px;
-	      border-top: 2px solid #94a3b8;
-	    }
-	    .flow-item + .flow-item::after {
-	      content: "";
-	      position: absolute;
-	      left: -10px;
-	      top: calc(50% - 5px);
-	      width: 10px;
-	      height: 10px;
-	      border-top: 2px solid #94a3b8;
-	      border-right: 2px solid #94a3b8;
-	      transform: rotate(45deg);
-	    }
+	    .flow-item.drop-before { box-shadow: inset 5px 0 0 var(--blue), 0 8px 20px rgba(15, 23, 42, 0.08); }
+	    .flow-item.drop-after { box-shadow: inset -5px 0 0 var(--blue), 0 8px 20px rgba(15, 23, 42, 0.08); }
 	    .flow-index {
 	      width: 32px;
 	      height: 32px;
@@ -375,7 +422,7 @@
 	      font-size: 13px;
 	      font-weight: 950;
 	    }
-	    .flow-title { font-size: 14px; line-height: 1.28; font-weight: 950; }
+	    .flow-title { font-size: 13px; line-height: 1.28; font-weight: 950; }
 	    .flow-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 	    .flow-remove {
 	      width: 28px;
@@ -393,67 +440,134 @@
 	    .flow-item.status-failed,
 	    .flow-item.status-timeout { border-color: #fca5a5; background: #fff1f2; }
 	    .flow-item.status-blocked { border-color: #fcd34d; background: #fffbeb; }
-	    .stage {
+    .stage {
       min-width: 0;
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 12px;
       box-shadow: var(--shadow);
       overflow: hidden;
+      grid-column: 1;
+      grid-row: 2 / span 2;
+      position: static;
+      height: 100%;
+      min-height: 0;
+      max-height: none;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      margin-top: 12px;
     }
     .stage-head {
       display: flex;
       justify-content: space-between;
       gap: 12px;
       align-items: flex-start;
-      padding: 16px 18px;
+      padding: 12px 14px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(180deg, #ffffff, #f8fafc);
     }
-    .stage-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
-    .stage-help { margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .stage-head h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; }
+    .stage-help { display: none; }
     .board {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
-      gap: 12px;
-      padding: 14px;
+      grid-template-columns: 1fr;
+      gap: 0;
+      padding: 8px;
       align-items: start;
+      overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+      overscroll-behavior: contain;
     }
     .group-title {
       grid-column: 1 / -1;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 2;
       margin: 8px 0 0;
-      padding: 10px 12px;
-      border-radius: 12px;
+      padding: 6px 8px;
+      border-radius: 6px 6px 0 0;
       background: #eef2ff;
       color: #1e3a8a;
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 950;
       letter-spacing: -0.01em;
     }
-	    .step {
+    .group-title:first-child { margin-top: 0; }
+    .step {
       display: grid;
-      grid-template-columns: 34px minmax(0, 1fr);
-      gap: 12px;
-      min-height: 136px;
-      border: 1px solid var(--line);
-      border-left: 6px solid #cbd5e1;
-      border-radius: 15px;
-      padding: 13px;
+      grid-template-columns: 20px minmax(0, 1fr) 46px;
+      gap: 6px;
+      min-height: 34px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-left: 3px solid #cbd5e1;
+      border-radius: 0;
+      padding: 5px 7px;
       background: #fff;
 	      cursor: pointer;
 	    }
 	    .step[draggable="true"] { cursor: grab; }
 	    .step.dragging { opacity: 0.55; }
-    .step:hover { border-color: var(--line-strong); box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06); }
-    .step input { width: 22px; height: 22px; margin-top: 2px; }
-    .step-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-    .step-title { font-size: 16px; font-weight: 950; line-height: 1.28; letter-spacing: -0.015em; }
-    .step-note { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.45; }
-	    .step-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-	    .step-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .step:hover { background: #f8fafc; box-shadow: none; }
+    .step input { width: 15px; height: 15px; margin-top: 1px; }
+    .step-top { display: block; }
+    .step-top .pill.kind { display: none; }
+    .step-title {
+      font-size: 12px;
+      font-weight: 950;
+      line-height: 1.25;
+      letter-spacing: 0;
+      padding-right: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .step-note {
+      display: none;
+      margin-top: 2px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.35;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+	    .step-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+      .step-meta { display: none; }
+      .step.status-running .step-meta,
+      .step.status-starting .step-meta,
+      .step.status-started .step-meta,
+      .step.status-restarted .step-meta,
+      .step.status-passed .step-meta,
+      .step.status-failed .step-meta,
+      .step.status-timeout .step-meta,
+      .step.status-blocked .step-meta {
+        display: flex;
+        margin-top: 4px;
+      }
+      .step-meta .pill.kind,
+      .step-meta .pill.ok:not(.result-badge),
+      .step-meta .pill.blocked:not(.result-badge) {
+        display: none;
+      }
+    .step-actions { display: none; }
+    .step-command-toggle {
+      min-height: 24px;
+      width: 42px;
+      align-self: start;
+      padding: 0 6px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
 	    .step-add {
 	      min-height: 32px;
 	      padding: 0 10px;
@@ -473,17 +587,83 @@
 	      font-size: 13px;
 	      font-weight: 850;
 	    }
-    details.command { margin-top: 10px; }
-    details.command summary {
-      cursor: pointer;
-      color: var(--blue-dark);
-      font-size: 13px;
-      font-weight: 900;
-      list-style: none;
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.55);
     }
-    details.command summary::-webkit-details-marker { display: none; }
-    details.command summary::before { content: "▸ "; }
-    details.command[open] summary::before { content: "▾ "; }
+    .modal-backdrop.open { display: flex; }
+    .command-modal {
+      width: min(980px, calc(100vw - 48px));
+      max-height: calc(100vh - 80px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+      overflow: hidden;
+    }
+    .command-modal-head,
+    .command-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+    .command-tools {
+      border-top: 1px solid var(--line);
+      border-bottom: 0;
+      justify-content: flex-end;
+      margin-top: 0;
+    }
+    .command-modal-title {
+      min-width: 0;
+      font-size: 15px;
+      font-weight: 950;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #commandModalEditor {
+      width: 100%;
+      min-height: 420px;
+      height: 58vh;
+      padding: 14px;
+      border: 0;
+      outline: none;
+      resize: none;
+      background: #0b1120;
+      color: #dbeafe;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .command-tools button {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 850;
+    }
+    .command-save {
+      border: 1px solid #bfdbfe;
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .command-reset {
+      border: 1px solid #fed7aa;
+      background: #ffedd5;
+      color: #9a3412;
+    }
     .step code {
       display: block;
       margin-top: 7px;
@@ -495,7 +675,7 @@
       line-height: 1.45;
       white-space: pre-wrap;
       word-break: break-word;
-      max-height: 220px;
+      max-height: 620px;
       overflow: auto;
     }
     .step.kind-background { border-left-color: var(--purple); }
@@ -523,17 +703,19 @@
     }
 
     .log-panel {
-      position: sticky;
-      top: 178px;
-      height: calc(100vh - 196px);
-      min-height: 520px;
+      position: static;
+      height: min(78vh, 860px);
+      min-height: 620px;
       display: grid;
       grid-template-rows: 48px 1fr;
       border: 1px solid #1e293b;
-      border-radius: 16px;
+      border-radius: 12px;
       overflow: hidden;
       box-shadow: var(--shadow);
       background: #0b1120;
+      grid-column: 2;
+      grid-row: 2;
+      margin-top: 0;
     }
     .log-head {
       display: flex;
@@ -554,21 +736,21 @@
       background: #0b1120;
       color: #dbeafe;
       padding: 13px;
-      font-size: 12px;
-      line-height: 1.5;
+      font-size: 14px;
+      line-height: 1.55;
       white-space: pre-wrap;
       word-break: break-word;
     }
 
     @media (max-width: 1100px) {
-      .run-row { grid-template-columns: 1fr 1fr; }
-      .search-wrap { grid-column: 1 / -1; }
+      .page { grid-template-columns: 1fr; height: auto; overflow: visible; }
       .arm { justify-content: center; }
 	      .field-grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
-	      .content-grid { grid-template-columns: 1fr; }
+	      .content-grid { display: contents; }
 	      .board { grid-template-columns: 1fr; }
 	      .stage-head { display: block; }
-	      .flow-panel { position: static; }
+	      .control-panel, .stage, .flow-panel, .camera-panel, .log-panel { grid-column: 1; grid-row: auto; position: static; }
+	      .stage { max-height: none; height: auto; }
 	      .flow-head { display: block; }
 	      .log-panel { position: static; height: 420px; min-height: 420px; }
 	    }
@@ -579,18 +761,64 @@
       .run-row { grid-template-columns: 1fr; }
 	      .field-grid { grid-template-columns: 1fr; }
 	      .board { padding: 10px; }
-	      .step { grid-template-columns: 30px 1fr; min-height: auto; }
+	      .step { grid-template-columns: 30px 1fr 46px; min-height: auto; }
 	      .flow-strip { padding: 10px; }
 	      .flow-item { flex-basis: 190px; }
 	      .log-panel { height: 340px; min-height: 340px; }
 	    }
+
+    /* Operator-first layout: no floating overlay, no covered content. */
+    .quick-row.operator-actions {
+      grid-template-columns: 1fr;
+      gap: 10px;
+      padding: 10px;
+      border: 2px solid #bfdbfe;
+      border-radius: 12px;
+      background: #eff6ff;
+    }
+    .quick-row.operator-actions .quick-note {
+      background: #fff;
+      border-color: #bfdbfe;
+      color: #1e3a8a;
+      font-size: 13px;
+    }
+    .operator-button-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 9px;
+    }
+    .operator-button-grid.module-grid { grid-template-columns: 1fr 1fr; }
+    .operator-button-grid button {
+      min-height: 48px;
+      font-size: 15px;
+      font-weight: 950;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #334155;
+    }
+    .operator-button-grid small { font-size: 11px; font-weight: 800; opacity: 0.92; }
+    #startPrepBtn { background: #1d4ed8 !important; border-color: #1d4ed8 !important; color: #fff !important; }
+    #cupUprightingBtn { background: #0f766e !important; border-color: #0f766e !important; color: #fff !important; }
+    #sideGripBtn { background: #ea580c !important; border-color: #ea580c !important; color: #fff !important; }
+    #pickLidBtn { background: #be123c !important; border-color: #be123c !important; color: #fff !important; }
+    #lidGripCloseBtn { background: #9f1239 !important; border-color: #9f1239 !important; color: #fff !important; }
+    #colorScanJsonBtn { background: #7c3aed !important; border-color: #7c3aed !important; color: #fff !important; }
+    #recipeCycleBtn { background: #b91c1c !important; border-color: #b91c1c !important; color: #fff !important; }
+    #fullCocktailRealBtn { background: #047857 !important; border-color: #047857 !important; color: #fff !important; }
+    .secondary-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .secondary-actions button { min-height: 36px; }
   </style>
 </head>
 <body>
   <header class="topbar">
     <div class="title-wrap">
       <h1>Azas Robot Pipeline Control</h1>
-      <div class="subtitle">넓은 단계판 · 통합 디스펜서 루프 · 오른쪽 상시 로그</div>
+      <div class="subtitle">실제 쉐이킹은 컵홀더 컵을 다시 side-grip으로 잡은 뒤 실행합니다 · RViz preview는 현장 실행 후보에서 숨김</div>
     </div>
     <div class="header-meta">
       <span class="pill dark" id="loadedCount">단계 로드 전</span>
@@ -606,24 +834,39 @@
           <input id="search" type="search" placeholder="검색: 연결, 디스펜서, 프레스, 쉐이킹...">
         </div>
         <label class="arm"><input id="armed" type="checkbox"> 실제 로봇 모션 허용</label>
-        <button id="run" class="main-run">선택 실행</button>
+        <button id="run" class="main-run">선택 순서 실행</button>
         <button id="cleanup" class="danger">프로세스 정리</button>
         <button id="stop" class="dark-btn">실행 중지</button>
+        <button id="refresh" class="plain-btn" style="display:none">단계 새로고침</button>
       </div>
 
-      <div class="quick-row" aria-label="quick selection">
-        <button class="recipe-preset" data-recipe-preset="1">칵테일 1</button>
-        <button class="recipe-preset" data-recipe-preset="2">칵테일 2</button>
-        <button class="recipe-preset" data-recipe-preset="3">칵테일 3</button>
-        <button class="recipe-preset" data-recipe-preset="4">칵테일 4</button>
-        <button data-select="core">연결/상태 선택</button>
-        <button data-select="move">컵 이동 선택</button>
-        <button data-select="press">프레스 선택</button>
-        <button data-select="shake">쉐이킹 선택</button>
-        <button data-select="visible">현재 보이는 것 선택</button>
-        <button data-select="clear" class="danger-light">선택 해제</button>
-        <button id="refresh" class="plain-btn">단계 새로고침</button>
-        <button id="focusLog" class="plain-btn">로그로 이동</button>
+      <div class="quick-row operator-actions" aria-label="quick real cocktail controls">
+        <div class="quick-note">실험 순서: <b>연결 준비</b> → <b>1 창현 side-grip</b> → 성공 확인 후 <b>2 소명 누운 컵</b> → 성공 확인 후 <b>3 강개발자 뚜껑</b>. 로직 버튼은 한 번에 묶지 말고 단독 실행합니다.</div>
+        <label class="direct-dispenser-field">DIRECT / 레시피 override
+          <input id="recipeDispenserIds" type="text" value="" placeholder="비우면 latest_recipe.json + 색상맵 사용 / 색상 예: red1,blue3 / 진단용 번호 예: 1x2,3x2">
+        </label>
+        <div class="operator-button-grid module-grid">
+          <button id="startPrepBtn" class="quick-start-btn" title="검증된 tmux 방식으로 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작">1. tmux 연결 준비<br><small>로봇·그리퍼·카메라</small></button>
+          <button id="connectRobotBtn" type="button" title="검증된 tmux 연결 스택을 시작">tmux 준비<br><small>로봇 포함</small></button>
+          <button id="connectGripperBtn" type="button" title="검증된 tmux 연결 스택을 시작">tmux 준비<br><small>그리퍼 포함</small></button>
+          <button id="connectCameraBtn" type="button" title="검증된 tmux 연결 스택을 시작. RealSense는 640x480x30 저부하 프로파일로 시작">tmux 준비<br><small>카메라 포함</small></button>
+          <button id="cameraViewBtn" type="button" title="rqt_image_view로 /camera/camera/color/image_raw 화면 창을 띄움">카메라 화면</button>
+          <button id="yoloDetectBtn" type="button" title="YOLO 인식 토픽 시작. 화면 창은 띄우지 않음">YOLO 인식</button>
+          <button id="sideGripBtn" class="quick-start-btn" title="1단계: PR #20 / dsr_practice yolo_cup_pick_node. tmux 창에서 RealSense 컵 화면 확인 후 p 키로 side-grip 실행">1. 창현 side-grip<br><small>카메라 확인→p로 집기</small></button>
+          <button id="cupUprightingBtn" class="quick-start-btn" title="2단계: 소명씨 azas_cup_uprighting. OpenCV 창에서 누운 컵 확인 후 p 키로 직립화 실행, Esc/q로 종료">2. 소명 누운 컵<br><small>창 확인→p 실행</small></button>
+          <button id="pickLidBtn" class="quick-start-btn" title="develop 뚜껑 grip pose 계획: 빨간 스티커/YOLO/depth 기반 pose 후보 발행. 실제 모션 아님">뚜껑 grip pose 계획<br><small>빨간스티커→pose 후보</small></button>
+          <button id="lidGripCloseBtn" class="quick-start-btn" title="3단계: 강개발자 lid_grip_close. 뚜껑 보기 자세 이동 → ArUco DICT_6X6_250 id0 뚜껑 pose 인식 → RG2 파지 → 컵 위치 이동 → J6 twist로 뚜껑 닫기">3. 뚜껑 잡고 닫기<br><small>강개발자 · ArUco→grip→J6</small></button>
+          <button id="colorScanJsonBtn" class="quick-start-btn" title="이미 tmux 연결/RealSense가 켜진 상태에서 color_scan_pose로 이동한 뒤 visible color handle을 바로 검출하고 JSON/debug 이미지를 저장">2. 빠른 색상구분<br><small>포즈이동→핸들검출→JSON</small></button>
+          <button id="colorJsonCheckBtn" type="button" title="outputs/dispenser_color_map.json 또는 failed 상태 확인">JSON 확인</button>
+          <button id="manualColorJsonBtn" type="button" title="색상 맵을 직접 확정해 outputs/dispenser_color_map.json 저장">JSON 수동저장</button>
+          <button id="recipeCycleBtn" class="quick-start-btn" title="latest_recipe.json과 dispenser_color_map.json을 읽어 컵놓기→프레스→다시잡기 사이클을 레시피대로 반복">3. 레시피 디스펜서 사이클<br><small>컵놓기→프레스→다시잡기 반복</small></button>
+          <button id="cupHolderBtn" type="button" title="MoveItPy로 cup_holder.side_grip_place pre_place→place_final→retreat 경로를 계획/실행">4. 컵홀더에 컵 옮기기<br><small>MoveIt 경로계획</small></button>
+          <button id="fullCocktailRealBtn" class="quick-start-btn" title="준비, 색상 JSON, 레시피 디스펜서 사이클, 컵홀더 배치를 한 번에 큐에 추가">전체 묶기<br><small>준비→색상JSON→레시피사이클→컵홀더</small></button>
+        </div>
+        <div class="secondary-actions">
+          <button id="oneClickReadyBtn" class="plain-btn" title="현재 real/virtual 세션과 Doosan/RG2 서비스 상태를 확인">준비확인 추가</button>
+          <button id="oneClickResultBtn" class="plain-btn" title="최근 one-click 실제 실행 로그에서 컵놓기→프레스→다시잡기 성공 증거를 판정">결과확인 추가</button>
+        </div>
       </div>
 
       <details class="settings">
@@ -647,9 +890,6 @@
           <label class="field">DISPENSER_TCP_NAME
             <input id="dispenserTcpName" type="text" value="GripperDA_v1_jarvis" placeholder="Doosan controller TCP 이름">
           </label>
-          <label class="field">RECIPE_DISPENSER_IDS
-            <input id="recipeDispenserIds" type="text" value="1,2,3,4" placeholder="예: 1,2,3 또는 4,2,1">
-          </label>
           <label class="field">CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M
             <input id="cupHolderPlaceFinalZOffsetM" type="text" value="-0.020" placeholder="예: -0.020 (홀더에 놓을 때 최종 Z 20mm 낮춤)">
           </label>
@@ -661,134 +901,132 @@
 	    </section>
 
       <details class="reference-panel">
-        <summary>PR #20 side-grip 참고 명령어</summary>
+        <summary>강개발자 뚜껑 잡고 닫기 참고 명령어</summary>
         <div class="reference-body">
           <div>
-            패널의 <b>PR #20 RealSense 컵 인식 후 side grip</b> 단계는 아래 dsr_practice side-grip 튜닝 명령으로 실행됩니다.
-            실행 때마다 colcon build를 반복하지 않도록 기본 실행에서는 build를 건너뜁니다. 코드 변경 후에만 아래 build 줄을 수동 실행하거나 <code>AZAS_SIDE_GRIP_BUILD=1</code>로 실행하세요.
-            카메라 창에서 컵이 보이면 <b>p</b> 키로 집고, <b>Esc</b>로 종료합니다.
+            <b>뚜껑 잡고 닫기</b> 버튼은 강개발자 로직인 <code>lid_grip_close</code> 단계입니다.
+            이 로직은 IsaacSim ArUcoMarker 가이드와 같은 <code>DICT_6X6_250</code> marker ID <code>0</code>으로 뚜껑 pose를 잡고, RG2로 뚜껑을 파지한 뒤 컵/컵홀더 위치로 이동해서 J6 twist로 뚜껑을 닫습니다.
+            <code>aruco_marker_length_m</code>은 검은 마커 본체 한 변의 실측값입니다. IsaacSim에서 10cm plane에 600px 마커와 60px quiet zone을 쓴 경우에는 <code>0.083333</code>이지만, 실제 인쇄 스티커는 반드시 실측값으로 맞춰야 합니다.
+            디스펜서 프레스나 컵홀더 배치가 아니라 <b>뚜껑 파지→이동→닫기</b> 전용 실제모션입니다.
+            실행 전 <code>로봇 연결</code>, <code>연결 확인</code>, <code>그리퍼 연결</code>, <code>카메라 연결</code>이 필요합니다.
           </div>
           <pre><code>cd /home/ssu/Azas
 source /opt/ros/humble/setup.bash
 source /home/ssu/ws_moveit/install/setup.bash
 source /home/ssu/ros2_ws/install/setup.bash
-# 코드 변경 후에만 필요: colcon build --symlink-install --packages-select dsr_practice
 source /home/ssu/Azas/install/setup.bash
-export PYTHONPATH=/home/ssu/Azas/tools/run/python_compat:${PYTHONPATH:-}
 
-ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
-  model_path:=/home/ssu/Azas/best.pt \
-  conf:=0.35 \
-  imgsz:=640 \
-  device:=cpu \
-  target_class:=cup \
-  auto_pick:=false \
-  auto_pick_interval:=3.0 \
-  pick_depth_ratio:=0.55 \
-  depth_patch_radius:=7 \
-  min_depth_valid_ratio:=0.03 \
-  min_depth_m:=0.15 \
-  max_depth_m:=1.20 \
-  redetect_on_approach:=false \
-  redetect_settle_sec:=0.5 \
-  grasp_mode:=side \
-  side_grasp_axis:=y_axis \
-  side_grasp_direction:=1.0 \
-  side_auto_direction_by_cup_y:=true \
-  side_far_stage_enabled:=false \
-  side_staging_offset:=0.30 \
-  side_approach_offset:=0.18 \
-  side_short_stage_backoff_m:=0.08 \
-  side_stage_y_min:=-0.35 \
-  side_stage_y_max:=0.35 \
-  side_grasp_offset:=0.025 \
-  side_grasp_z_offset:=0.05 \
-  side_grasp_stop_backoff_m:=0.04 \
-  side_close_underreach_m:=0.05 \
-  side_low_retry_lift_m:=0.03 \
-  side_low_retry_attempts:=5 \
-  side_linear_approach_enabled:=false \
-  side_final_slide_enabled:=false \
-  side_fixed_grasp_z_enabled:=true \
-  side_fixed_grasp_z:=0.07 \
-  side_project_bbox_center_to_fixed_z:=true \
-  side_orientation_mode:=approach \
-  side_tool_roll_deg:=0.0 \
-  side_roll_deg:=0.0 \
-  side_pitch_deg:=90.0 \
-  side_yaw_deg:=0.0 \
-  table_collision_enabled:=true \
-  table_surface_z:=0.0 \
-  table_thickness:=0.04 \
-  table_size_x:=1.20 \
-  table_size_y:=1.00 \
-  table_center_x:=0.45 \
-  table_center_y:=0.0 \
-  dispenser_collision_enabled:=true \
-  dispenser_collision_config_path:=/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml \
-  dispenser_collision_publish_period_sec:=1.0 \
-  dispenser_collision_publish_objects:=true \
-  dispenser_collision_publish_markers:=true \
-  center_check_enabled:=false \
-  center_check_settle_sec:=0.6 \
-  center_check_x:=0.45 \
-  center_check_y:=0.0 \
-  center_check_z:=0.64 \
-  side_prepose_enabled:=false \
-  side_prepose_split_z:=0.18 \
-  side_move_to_initial_center_before_close:=false \
-  pre_pick_joint1_clearance_deg:=0.0 \
-  verify_motion:=true \
-  motion_verify_tolerance:=0.03 \
-  joint_goal_tolerance_rad:=0.02 \
-  move_to_camera_home:=true \
-  move_joint_home_before_camera_home:=false \
-  camera_home_mode:=joint \
-  camera_home_joint_1_deg:=3.0 \
-  camera_home_joint_2_deg:=-12.7 \
-  camera_home_joint_3_deg:=44.0 \
-  camera_home_joint_4_deg:=-9.0 \
-  camera_home_joint_5_deg:=133.0 \
-  camera_home_joint_6_deg:=90.0 \
-  camera_home_x:=0.45 \
-  camera_home_y:=0.0 \
-  camera_home_z:=0.64 \
-  camera_home_search_max_z:=0.64 \
-  camera_home_search_min_z:=0.54 \
-  camera_home_search_step_z:=0.02 \
-  min_motion_z:=0.07 \
-  workspace_xy_clamp_enabled:=false \
-  return_home_after_task:=false \
-  return_to_camera_home_after_attempt:=true \
-  place_x:=0.45 \
-  place_y:=0.0 \
-  place_z:=0.30 \
-  moveit_controller_name:=/dsr01/dsr_moveit_controller \
-  start_joint_state_relay:=true</code></pre>
+ros2 launch azas_bringup lid_sticker_grip_planning.launch.py \
+  marker_type:=aruco \
+  require_lid_detection:=false \
+  allow_aruco_only_after_grip_request:=false \
+  aruco_only_after_grip_request_sec:=20.0 \
+	  aruco_dictionary:=DICT_6X6_250 \
+	  aruco_marker_id:=0 \
+  aruco_marker_length_m:=0.03 \
+  use_aruco_axis_for_orientation:=true \
+  use_lid_pose_yaw_for_pick:=true \
+  visual_refine_before_grasp:=true \
+  visual_refine_sample_count:=5 \
+  visual_refine_timeout_sec:=3.0 \
+  enable_hardware:=true \
+  hardware_confirm:=ENABLE_REAL_ROBOT_MOTION \
+  allow_service_control_without_moveit:=true \
+  service_prefix:=/dsr01 \
+  enable_gripper_service_calls:=true \
+  gripper_set_service:=/jarvis/rg2/set_width \
+  gripper_preopen_width_m:=0.110 \
+  gripper_grasp_width_m:=0.020 \
+  gripper_force_n:=12.0 \
+  enable_lid_twist_after_grasp:=true \
+  lid_twist_target_x_m:=0.422959106 \
+  lid_twist_target_y_m:=0.223224869 \
+  lid_twist_target_z_m:=0.166827988 \
+  lid_twist_transfer_clearance_m:=0.12 \
+  lid_twist_force_rotation_mode:=j6 \
+  lid_twist_preseat_periodic_before_turn:=true \
+  lid_twist_rz_delta_deg:=300.0 \
+  lid_twist_turn_step_deg:=50.0 \
+  lid_twist_min_z_m:=0.140 \
+  lid_twist_max_z_m:=0.220</code></pre>
         </div>
       </details>
 
-      <section class="camera-panel" aria-label="camera preview">
-        <div class="camera-head">
+      <details class="reference-panel">
+        <summary>컵홀더 배치 MoveIt 참고 명령어</summary>
+        <div class="reference-body">
           <div>
-            <h2>RealSense 카메라 화면</h2>
-            <div class="camera-help">패널 안에서 <code>/camera/camera/color/image_raw</code>를 직접 확인합니다. 카메라 시작 후 자동 갱신됩니다.</div>
+            패널의 <b>4. 컵홀더에 컵 옮기기</b>는 이제 Doosan 직선 MoveLine이 아니라 <b>MoveItPy 경로계획</b>으로 실행됩니다.
+            관절 한계로 직선 이동이 멈추는 경우를 피하기 위해 <code>--motion-backend moveit</code>을 사용합니다.
+            좌표는 새로 만들지 않고 <code>calibration.yaml</code>의 <code>cup_holder.side_grip_place</code> 실측 pose만 사용합니다.
           </div>
-          <div class="camera-tools">
-            <span id="cameraStatus" class="camera-status">대기</span>
-            <button id="refreshCamera" type="button">카메라 새로고침</button>
+          <pre><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/ws_moveit/install/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
+
+python3 tools/run/place_side_grip_cup_in_holder.py \
+  --service-prefix dsr01 \
+  --config /home/ssu/Azas/install/azas_bringup/share/azas_bringup/config/calibration.yaml \
+  --motion-backend moveit \
+  --moveit-planning-pipeline ompl \
+  --moveit-planner-id RRTConnectkConfigDefault \
+  --moveit-planning-time-sec 8.0 \
+  --moveit-planning-attempts 5 \
+  --moveit-velocity-scaling 0.08 \
+  --moveit-acceleration-scaling 0.06 \
+  --place-final-z-offset-m -0.020 \
+  --execute --confirm ENABLE_CUP_HOLDER_PLACE</code></pre>
+        </div>
+      </details>
+
+      <details class="reference-panel">
+        <summary>소명 누운 컵 세우기 참고 명령어</summary>
+        <div class="reference-body">
+          <div>
+            <b>소명 누운 컵 세우기</b> 버튼은 <code>azas_cup_uprighting</code> 단계입니다.
+            이 단계의 YOLO 모델은 <code>azas_cup_uprighting/config/best.pt</code>가 아니라
+            <code>/home/ssu/Azas/src/azas_perception/config/yolo_cup_uprighting_best.pt</code>를 사용합니다.
+            실행 전 <code>로봇 연결</code>, <code>연결 확인</code>, <code>카메라 연결</code>이 필요합니다.
           </div>
+          <pre><code>cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source /home/ssu/ws_moveit/install/setup.bash
+source /home/ssu/ros2_ws/install/setup.bash
+source /home/ssu/Azas/install/setup.bash
+export AZAS_CUP_UPRIGHTING_MODEL_PATH=/home/ssu/Azas/src/azas_perception/config/yolo_cup_uprighting_best.pt
+
+ros2 launch /home/ssu/Azas/src/azas_cup_uprighting/launch/yolo_cup_uprighting.launch.py \
+  model_path:=/home/ssu/Azas/src/azas_perception/config/yolo_cup_uprighting_best.pt \
+  service_prefix:=dsr01 \
+  enable_hardware:=true \
+  hardware_confirm:=ENABLE_REAL_ROBOT_MOTION \
+  run_yolo:=true \
+  publish_hand_eye_tf:=true</code></pre>
         </div>
-        <div class="camera-frame">
-          <img id="cameraPreview" alt="RealSense color preview" src="/api/camera_snapshot.jpg?init=1">
+      </details>
+
+      <details class="reference-panel">
+        <summary>PR #20 side-grip 참고 명령어</summary>
+        <div class="reference-body">
+          <div>
+            패널의 <b>PR #20 RealSense 컵 인식 후 side grip</b> 단계는 아래 dsr_practice side-grip 튜닝 명령으로 실행됩니다.
+            실행 때마다 colcon build를 반복하지 않도록 기본 실행에서는 build를 건너뜁니다. 코드 변경 후에만 아래 build 줄을 수동 실행하거나 <code>AZAS_SIDE_GRIP_BUILD=1</code>로 실행하세요.
+            패널은 이 로직을 별도 tmux 창으로 분리 실행합니다. 카메라 창에서 컵이 보이면 <b>p</b> 키로 집고, <b>Esc</b>로 종료합니다.
+            방금 실기 성공한 조건처럼 디스펜서 충돌은 켠 상태로 유지하고, 진입 전 J1 clearance <code>12.0deg</code>를 적용합니다.
+          </div>
+          <pre><code>cd /home/ssu/Azas
+SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} \
+  bash tools/run/run_changhyun_side_grip_direct.sh</code></pre>
         </div>
-      </section>
-	
+      </details>
+
 	    <section class="flow-panel" aria-label="selected execution order">
 	      <div class="flow-head">
 	        <div>
 	          <h2>선택 실행 순서</h2>
-	          <div class="flow-help">큐 순서대로 실행됩니다. 레시피 디스펜서 단계는 컵 놓기/프레스/다시 잡기를 통합 루프로 실행합니다.</div>
+	          <div class="flow-help">큐 순서대로 실행됩니다. 필요한 충돌 장면 단계는 실행 전에 자동으로 보강됩니다.</div>
 	        </div>
 	        <span class="pill info" id="flowMode">대기</span>
 	      </div>
@@ -799,8 +1037,8 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
     <section class="stage">
       <div class="stage-head">
         <div>
-          <h2>파이프라인 단계</h2>
-          <div class="stage-help">긴 명령어는 카드 안의 “명령 보기”에 숨겼습니다. 평소에는 단계 이름/상태만 보고 누르면 됩니다.</div>
+          <h2>디버그 단계</h2>
+          <div class="stage-help">평소에는 쓰지 마세요. 실제 칵테일은 왼쪽 빨간 “로봇연결→칵테일이동” 버튼 하나로 실행합니다.</div>
         </div>
       </div>
       <div id="steps" class="board"></div>
@@ -810,6 +1048,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
     <div class="log-head">
       <div class="log-title">실행 로그</div>
       <div class="log-tools">
+        <button id="liveLogBtn" title="현재 패널이 띄운 ROS/터미널 프로세스 stdout/stderr tail을 계속 표시">실시간 로그</button>
         <button id="copyLog">복사</button>
         <button id="clearLog">지우기</button>
       </div>
@@ -817,17 +1056,76 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
     <pre id="log">서버 연결 대기...</pre>
     </aside>
     </div>
+
+      <section class="camera-panel" aria-label="camera preview">
+        <div class="camera-head">
+          <div>
+            <h2>RealSense 카메라 화면</h2>
+            <div class="camera-help"><code>/camera/camera/color/image_raw</code> 미리보기</div>
+          </div>
+          <div class="camera-tools">
+            <span id="cameraStatus" class="camera-status">대기</span>
+            <button id="queueYoloFromCamera" type="button">YOLO 큐</button>
+            <button id="manualColorJsonFromCamera" type="button">JSON 저장</button>
+            <button id="refreshColorScanResult" type="button">색상결과</button>
+            <button id="refreshCamera" type="button">새로고침</button>
+          </div>
+        </div>
+        <div class="camera-frame">
+          <img id="cameraPreview" alt="RealSense color preview" src="/api/camera_snapshot.jpg?init=1">
+        </div>
+        <pre id="colorScanResult" class="camera-result">색상 스캔 결과 대기</pre>
+      </section>
   </main>
 
+
+  <div id="commandModalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="commandModalTitle">
+    <div class="command-modal">
+      <div class="command-modal-head">
+        <div id="commandModalTitle" class="command-modal-title">명령 편집</div>
+        <button id="commandModalClose" type="button" class="plain-btn">닫기</button>
+      </div>
+      <textarea id="commandModalEditor" spellcheck="false"></textarea>
+      <div class="command-tools">
+        <button id="commandModalReset" type="button" class="command-reset">기본 명령 복원</button>
+        <button id="commandModalSave" type="button" class="command-save">편집 명령 저장</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const core = new Set(["connect_robot", "status_check", "start_collision_scene"]);
-    const hiddenStepKeys = new Set([]);
+    const core = new Set(["connect_robot", "status_check", "start_collision_scene", "stop_azas_all"]);
+    const hiddenStepKeys = new Set([
+      "rviz_color_scan_pose_preview",
+      "shake_rviz_preview",
+      "stop_cocktail_motion_preview",
+      "check_one_click_cocktail_ready",
+      "check_one_click_cocktail_result",
+      "run_cocktail_now_real",
+      "start_camera_view",
+      "detect_cup_lid",
+      "voice_input",
+      "listen_stt_recipe",
+      "run_one_click_cocktail_real",
+      "move_to_dispenser_1",
+      "move_to_dispenser_2",
+      "move_to_dispenser_3",
+      "move_to_dispenser_4",
+      "press_dispenser_1",
+      "press_dispenser_2",
+      "press_dispenser_3",
+      "press_dispenser_4",
+      "pick_from_dispenser_1",
+      "pick_from_dispenser_2",
+      "pick_from_dispenser_3",
+      "pick_from_dispenser_4",
+    ]);
     const groupOrder = ["core", "grip", "move", "press", "shake", "blocked", "etc"];
     const groupLabels = {
       core: "연결/준비",
       grip: "그리퍼",
       move: "컵 이동/배치",
-      press: "디스펜서 프레스",
+      press: "통합 디스펜서 (컵놓기→프레스→다시잡기)",
       shake: "쉐이킹",
       blocked: "미구현/보류",
       etc: "기타"
@@ -851,12 +1149,20 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	    const loadedCountEl = document.getElementById("loadedCount");
 	    const cameraPreviewEl = document.getElementById("cameraPreview");
 	    const cameraStatusEl = document.getElementById("cameraStatus");
+	    const colorScanResultEl = document.getElementById("colorScanResult");
+	    const commandModalBackdrop = document.getElementById("commandModalBackdrop");
+	    const commandModalTitle = document.getElementById("commandModalTitle");
+	    const commandModalEditor = document.getElementById("commandModalEditor");
+	    let commandModalStepKey = "";
+	    let allRawSteps = [];
 	    let allSteps = [];
 	    let selectedQueue = [];
 	    let resultStatuses = new Map();
 	    let itemStatuses = new Map();
 	    let isRunning = false;
 	    let nextQueueId = 1;
+      let runningLogTimer = null;
+      let activeLogKeys = new Set();
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -870,13 +1176,12 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
     function stepGroup(step) {
       const key = step.key || "";
       if (core.has(key)) return "core";
-      if (key === "start_camera" || key === "detect_cup_lid") return "camera";
+      if (key === "start_camera" || key === "detect_cup_lid" || key.includes("color_scan")) return "camera";
       if (key.includes("gripper")) return "grip";
       if (key.startsWith("teach_front_hold_")) return "teach";
-      if (key === "run_dispenser_recipe_sequence") return "press";
       if (key === "start_collision_scene") return "core";
       if (key.startsWith("move_to_dispenser") || key.includes("cup") || key.includes("holder") || key.includes("side_grip") || key.includes("home") || key.includes("lift")) return "move";
-      if (key.startsWith("press_dispenser")) return "press";
+      if (key === "run_color_recipe_sequence" || key.startsWith("press_dispenser")) return "press";
       if (key.includes("shake")) return "shake";
       if (!step.implemented || step.kind === "blocked") return "blocked";
       return "etc";
@@ -907,7 +1212,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
         rt_host: document.getElementById("rtHost").value.trim(),
         rg2_ip: document.getElementById("rg2Ip").value.trim(),
         dispenser_tcp_name: document.getElementById("dispenserTcpName").value.trim(),
-        recipe_dispenser_ids: document.getElementById("recipeDispenserIds").value.trim(),
+        recipe_dispenser_ids: document.getElementById("recipeDispenserIds")?.value.trim() || "",
         cup_holder_place_final_z_offset_m: document.getElementById("cupHolderPlaceFinalZOffsetM").value.trim(),
         cup_holder_pick_z_offset_m: document.getElementById("cupHolderPickZOffsetM").value.trim(),
         armed: document.getElementById("armed").checked,
@@ -928,27 +1233,107 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
       if (cameraStatusEl) cameraStatusEl.textContent = "화면 없음: RealSense 시작 필요";
     });
 
+    async function refreshColorScanResult() {
+      if (!colorScanResultEl) return;
+      colorScanResultEl.textContent = "색상 스캔 결과 확인 중...";
+      try {
+        const res = await fetch("/api/dispenser_color_map");
+        const data = await res.json();
+        colorScanResultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        colorScanResultEl.textContent = String(err);
+      }
+    }
+
+    async function saveManualColorMap() {
+      const current = colorScanResultEl?.textContent || "";
+      const example = "1=red,2=blue,3=green,4=yellow";
+      const raw = window.prompt("디스펜서 색상 JSON 저장\n예: " + example, example);
+      if (raw === null) return;
+      const map = {};
+      for (const token of raw.split(",")) {
+        const item = token.trim();
+        if (!item) continue;
+        const parts = item.includes("=") ? item.split("=") : item.split(":");
+        if (parts.length !== 2) {
+          colorScanResultEl.textContent = `형식 오류: ${item}\n예: ${example}\n\n이전 결과:\n${current}`;
+          return;
+        }
+        const id = parts[0].trim();
+        const color = parts[1].trim().toLowerCase();
+        if (!["1", "2", "3", "4"].includes(id) || !color) {
+          colorScanResultEl.textContent = `값 오류: ${item}\n디스펜서 번호는 1~4, 색상은 비어 있으면 안 됩니다.\n\n이전 결과:\n${current}`;
+          return;
+        }
+        map[id] = color;
+      }
+      const missing = ["1", "2", "3", "4"].filter((id) => !map[id]);
+      if (missing.length) {
+        colorScanResultEl.textContent = `누락된 디스펜서: ${missing.join(", ")}\n예: ${example}\n\n이전 결과:\n${current}`;
+        return;
+      }
+      colorScanResultEl.textContent = "색상 JSON 저장 중...";
+      try {
+        const res = await fetch("/api/dispenser_color_map", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({map})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        colorScanResultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        colorScanResultEl.textContent = String(err);
+      }
+    }
+
     function needsCollisionScene(key) {
-      return key === "run_dispenser_recipe_sequence"
-        || key === "shake_closed_cup"
+      return [
+          "home_robot",
+          "lift_robot",
+          "side_grip_camera_home",
+          "lid_view_pose",
+          "move_to_color_scan_pose",
+          "place_cup_holder",
+          "shake_closed_cup",
+          "run_color_recipe_sequence",
+        ].includes(key)
         || key.startsWith("move_to_dispenser_")
+        || key.startsWith("press_dispenser_")
         || key.startsWith("pick_from_dispenser_");
     }
 
     function withCollisionScenePrereq(queue) {
       const items = queue.map((item) => ({...item}));
-      const sideIndex = items.findIndex((item) => item.key === "side_grip");
-      if (sideIndex >= 0) {
-        const prereqs = ["lift_robot", "start_camera"];
-        for (const prereq of [...prereqs].reverse()) {
-          if (!items.some((item) => item.key === prereq)) {
-            items.splice(sideIndex, 0, {id: `q${nextQueueId++}`, key: prereq, injected: true});
+      function ensureBefore(targetKey, prereqKeys) {
+        let targetIndex = items.findIndex((item) => item.key === targetKey);
+        if (targetIndex < 0) return;
+        for (const prereq of prereqKeys) {
+          const existingIndex = items.findIndex((item) => item.key === prereq);
+          if (existingIndex >= 0) {
+            if (existingIndex < targetIndex) continue;
+            items.splice(existingIndex, 1);
+            if (existingIndex < targetIndex) targetIndex -= 1;
           }
         }
+        targetIndex = items.findIndex((item) => item.key === targetKey);
+        const missing = prereqKeys.filter((prereq) => !items.slice(0, targetIndex).some((item) => item.key === prereq));
+        missing.forEach((prereq, offset) => {
+          items.splice(targetIndex + offset, 0, {id: `q${nextQueueId++}`, key: prereq, injected: true});
+        });
       }
-      if (!items.some((item) => needsCollisionScene(item.key))) return items;
+      // 창현/소명/강개발자 단독 테스트는 이미 열린 tmux/ROS 세션을 재사용한다.
+      // 전체 준비 묶음은 각 통합 플로우 버튼에서 명시적으로 넣는다.
+      ensureBefore("color_scan", ["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera"]);
+      const firstCollisionIndex = items.findIndex((item) => needsCollisionScene(item.key));
+      if (firstCollisionIndex < 0) return items;
+      const existingSceneIndex = items.findIndex((item) => item.key === "start_collision_scene");
+      if (existingSceneIndex >= 0 && existingSceneIndex <= firstCollisionIndex) return items;
       const withoutScene = items.filter((item) => item.key !== "start_collision_scene");
-      return [{id: `q${nextQueueId++}`, key: "start_collision_scene", injected: true}, ...withoutScene];
+      const insertIndex = withoutScene.findIndex((item) => needsCollisionScene(item.key));
+      if (insertIndex < 0) return withoutScene;
+      withoutScene.splice(insertIndex, 0, {id: `q${nextQueueId++}`, key: "start_collision_scene", injected: true});
+      return withoutScene;
     }
 
 	    function renderSummary() {
@@ -956,8 +1341,8 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	      loadedCountEl.textContent = `단계 ${total}`;
 	    }
 
-	    function stepByKey(key) {
-	      return allSteps.find((step) => step.key === key);
+    function stepByKey(key) {
+	      return allRawSteps.find((step) => step.key === key) || allSteps.find((step) => step.key === key);
 	    }
 
 	    function queuedKeysSet() {
@@ -998,14 +1383,17 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	    }
 
 	    function compactSelectionQueue() {
-	      const known = new Set(allSteps.map((step) => step.key));
-	      selectedQueue = selectedQueue.filter((item) => known.has(item.key));
-	      for (const [id] of itemStatuses) {
-	        if (!selectedQueue.some((item) => item.id === id)) itemStatuses.delete(id);
-	      }
-	    }
+      // Hidden/internal workflow steps are intentionally absent from the debug list,
+      // but they must stay in the execution queue.
+      const source = allRawSteps.length ? allRawSteps : allSteps;
+      const known = new Set(source.map((step) => step.key));
+      selectedQueue = selectedQueue.filter((item) => known.has(item.key));
+      for (const [id] of itemStatuses) {
+        if (!selectedQueue.some((item) => item.id === id)) itemStatuses.delete(id);
+      }
+    }
 
-	    function clearDropMarkers() {
+        function clearDropMarkers() {
 	      for (const item of document.querySelectorAll(".flow-item.drop-before, .flow-item.drop-after")) {
 	        item.classList.remove("drop-before", "drop-after");
 	      }
@@ -1038,6 +1426,15 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
       return "info";
     }
 
+    function shouldHaltAfterResult(result) {
+      const status = result?.status || "";
+      if (["failed", "blocked", "timeout", "starting"].includes(status)) return true;
+      // Manual OpenCV-node steps: `started` means the window/node is waiting for
+      // operator input, not that motion has completed.
+      if (["start_tmux_stack", "cup_uprighting", "side_grip", "lid_grip_close"].includes(result?.key) && status === "started") return true;
+      return false;
+    }
+
     function orderedVisibleGroups() {
       const byGroup = new Map(groupOrder.map((group) => [group, []]));
       for (const step of visibleSteps()) {
@@ -1061,6 +1458,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
         parts.push(`<div class="group-title"><span>${escapeHtml(groupLabels[group] || group)}</span><span>${steps.length}개</span></div>`);
 	        for (const step of steps) {
 	          const cmd = step.resolved_command || step.command || "실행 명령 없음";
+	          const savedBadge = step.command_saved ? `<span class="pill info">저장 명령</span>` : "";
 	          const status = resultStatuses.get(step.key);
 	          const statusClass = status ? `status-${status}` : "";
 	          const isQueued = queuedKeysSet().has(step.key);
@@ -1077,19 +1475,17 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
                 </div>
                 <div class="step-note">${escapeHtml(step.note)}</div>
                 <div class="step-meta">
-                  <span class="pill ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
+	                  <span class="pill ${step.implemented ? "ok" : "blocked"}">${step.implemented ? "명령 후보" : "미구현"}</span>
 	                  ${step.real_motion ? `<span class="pill real">실제모션</span>` : ""}
+	                  ${savedBadge}
 	                  ${result}
 	                </div>
 	                <div class="step-actions">
 	                  <button class="step-add" type="button" data-add-step="${escapeHtml(step.key)}">순서에 추가</button>
 	                  ${step.key === "side_grip" ? `<button class="step-run-now" type="button" data-run-step="${escapeHtml(step.key)}">PR #20 바로 실행</button>` : ""}
 	                </div>
-	                <details class="command">
-                  <summary>명령 보기</summary>
-                  <code>${escapeHtml(cmd)}</code>
-                </details>
               </div>
+              <button class="step-command-toggle" type="button" data-open-command="${escapeHtml(step.key)}">명령</button>
             </label>
           `);
         }
@@ -1162,16 +1558,22 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	    }
 
 	    async function runSingleStepNow(key) {
+	      if (isRunning) {
+	        log.textContent = "이미 실행 중입니다. 현재 실행이 끝나거나 정리/중지 후 다시 누르세요.";
+	        focusLog();
+	        return;
+	      }
 	      const step = stepByKey(key);
 	      const itemId = `direct-${key}-${Date.now()}`;
 	      resetResultBadges();
 	      isRunning = true;
 	      setStepStatus(key, "running", itemId);
 	      log.textContent = `바로 실행 중: ${step?.label || key}`;
+        startRunningLogPolling([key]);
 	      focusLog();
 	      try {
 	        const body = payload();
-	        body.selected = key === "side_grip" ? ["lift_robot", "start_camera", key] : [key];
+	        body.selected = [key];
 	        const res = await fetch("/api/run", {
 	          method: "POST",
 	          headers: {"Content-Type": "application/json"},
@@ -1188,12 +1590,14 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	        for (const returned of results) {
 	          setStepStatus(returned.key || key, returned.status, returned.key === key ? itemId : "");
 	        }
-	        log.textContent = JSON.stringify({execution_order: body.selected, results}, null, 2);
+	        log.textContent = JSON.stringify({execution_order: data.execution_order || body.selected, results}, null, 2);
 	      } catch (err) {
 	        setStepStatus(key, "failed", itemId);
 	        log.textContent = String(err);
 	      } finally {
 	        isRunning = false;
+        activeLogKeys = new Set();
+        refreshRunningLogs(true);
 	        updateSelectedCount();
 	      }
 	    }
@@ -1229,8 +1633,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 
 	    function addRecipePreset(dispenserId) {
 	      const keys = [
-	        "start_collision_scene",
-	        `move_to_dispenser_${dispenserId}`,
+	  	        `move_to_dispenser_${dispenserId}`,
 	        `press_dispenser_${dispenserId}`,
 	        `pick_from_dispenser_${dispenserId}`,
 	      ];
@@ -1245,18 +1648,91 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	        : `칵테일 ${dispenserId} 블록 추가가 일부 실패했습니다: ${added}/${keys.length}`;
 	    }
 
+    function formatRunningLogs(items) {
+      const active = items.filter((item) => !activeLogKeys.size || activeLogKeys.has(item.key));
+      if (!active.length) return "";
+      return active.map((item) => {
+        const status = item.status || "running";
+        const code = item.returncode === null || item.returncode === undefined ? "" : ` rc=${item.returncode}`;
+        const path = item.log_path ? `\n--- log: ${item.log_path}` : "";
+        const tail = item.tail || "(아직 로그 출력 없음)";
+        return `### ${item.key} pid=${item.pid} ${status}${code}${path}\n${tail}`;
+      }).join("\n\n");
+    }
+
+    async function refreshRunningLogs(force = false) {
+      if (!isRunning && !force && !runningLogTimer) return;
+      try {
+        const res = await fetch(`/api/running_logs?t=${Date.now()}`);
+        const data = await res.json();
+        const items = Array.isArray(data.logs) ? data.logs : [];
+        const body = formatRunningLogs(items);
+        if (body) {
+          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\nstdout/stderr tail을 그대로 표시합니다.\n\n${body}`;
+        } else if (force) {
+          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\n현재 패널이 추적 중인 실행 프로세스 로그가 없습니다.`;
+        }
+      } catch (err) {
+        if (force) log.textContent = String(err);
+      }
+    }
+
+    function startRunningLogPolling(keys = []) {
+      for (const key of keys) activeLogKeys.add(key);
+      if (runningLogTimer) return;
+      runningLogTimer = window.setInterval(() => refreshRunningLogs(false), 1000);
+      refreshRunningLogs(false);
+    }
+
+    function stopRunningLogPolling() {
+      if (runningLogTimer) {
+        window.clearInterval(runningLogTimer);
+        runningLogTimer = null;
+      }
+      activeLogKeys = new Set();
+    }
+
     function focusLog() {
       logPanel.scrollIntoView({behavior: "smooth", block: "nearest"});
+    }
+
+    function openCommandModal(key) {
+      const step = stepByKey(key);
+      if (!step) return;
+      commandModalStepKey = key;
+      commandModalTitle.textContent = `${step.label} · 명령 편집`;
+      commandModalEditor.value = step.resolved_command || step.command || "";
+      commandModalBackdrop.classList.add("open");
+      commandModalEditor.focus();
+    }
+
+    function closeCommandModal() {
+      commandModalBackdrop.classList.remove("open");
+      commandModalStepKey = "";
     }
 
     async function loadSteps() {
       log.textContent = "단계 목록 로드 중...";
 	      const res = await fetch("/api/steps");
-	      allSteps = (await res.json()).filter((step) => !hiddenStepKeys.has(step.key));
+	      allRawSteps = await res.json();
+	      allSteps = allRawSteps.filter((step) => !hiddenStepKeys.has(step.key));
 	      const knownKeys = new Set(allSteps.map((step) => step.key));
-	      selectedQueue = selectedQueue.filter((item) => knownKeys.has(item.key));
+	      const knownRawKeys = new Set(allRawSteps.map((step) => step.key));
+	      selectedQueue = selectedQueue.filter((item) => knownRawKeys.has(item.key));
 	      renderSteps();
 	      log.textContent = "단계 목록 로드 완료. 상단 검색/필터 또는 빠른 선택을 사용하세요.";
+	    }
+
+	    async function saveCommandOverride(key, command) {
+	      const res = await fetch("/api/command_override", {
+	        method: "POST",
+	        headers: {"Content-Type": "application/json"},
+	        body: JSON.stringify({key, command})
+	      });
+	      const data = await res.json();
+	      if (!res.ok) throw new Error(data.error || "명령 저장 실패");
+	      await loadSteps();
+	      return data;
 	    }
 
 	    document.addEventListener("change", (event) => {
@@ -1269,14 +1745,22 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	      updateSelectedCount();
 	    });
 	    document.addEventListener("click", (event) => {
-	      const runKey = event.target?.dataset?.runStep;
+	      const targetElement = event.target instanceof Element ? event.target : null;
+	      const runKey = targetElement?.dataset?.runStep;
 	      if (runKey) {
 	        event.preventDefault();
 	        event.stopPropagation();
 	        runSingleStepNow(runKey);
 	        return;
 	      }
-	      const addKey = event.target?.dataset?.addStep;
+	      const openCommandKey = targetElement?.dataset?.openCommand;
+	      if (openCommandKey) {
+	        event.preventDefault();
+	        event.stopPropagation();
+	        openCommandModal(openCommandKey);
+	        return;
+	      }
+	      const addKey = targetElement?.dataset?.addStep;
 	      if (addKey) {
 	        event.preventDefault();
 	        event.stopPropagation();
@@ -1284,7 +1768,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	        updateSelectedCount();
 	        return;
 	      }
-	      const removeId = event.target?.dataset?.removeFlow;
+	      const removeId = targetElement?.dataset?.removeFlow;
 	      if (removeId) {
 	        removeQueueItem(removeId);
 	        updateSelectedCount();
@@ -1345,21 +1829,184 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
     document.getElementById("search").addEventListener("input", renderSteps);
     document.getElementById("refresh").addEventListener("click", loadSteps);
     document.getElementById("refreshCamera").addEventListener("click", refreshCameraPreview);
-	    document.querySelector(".quick-row").addEventListener("click", (event) => {
-	      const preset = event.target?.dataset?.recipePreset;
-	      if (preset) {
-	        addRecipePreset(preset);
-	        return;
-	      }
-	      const mode = event.target?.dataset?.select;
-	      if (mode) selectByMode(mode);
-	    });
-    document.getElementById("focusLog").addEventListener("click", focusLog);
+    document.getElementById("refreshColorScanResult").addEventListener("click", refreshColorScanResult);
+    document.getElementById("manualColorJsonFromCamera")?.addEventListener("click", saveManualColorMap);
+    document.getElementById("queueYoloFromCamera")?.addEventListener("click", () => {
+      queueOnly(["detect_cup_lid"], "YOLO 컵/뚜껑 인식 토픽 시작을 큐에 추가했습니다. 화면은 카메라 화면/rqt로 확인하세요.");
+    });
+    document.getElementById("focusLog")?.addEventListener("click", focusLog);
+    document.querySelector(".quick-row")?.addEventListener("click", (event) => {
+      const mode = event.target?.dataset?.select;
+      if (mode) selectByMode(mode);
+    });
+    const mainDirectInput = document.getElementById("recipeDispenserIds");
+
+    async function requireColorMapForRecipeCycle() {
+      const input = document.getElementById("recipeDispenserIds");
+      const directOrder = input?.value.trim() || "";
+      if (directOrder) return {order: directOrder, source: /[A-Za-z가-힣]/.test(directOrder) ? "direct colors" : "direct dispenser ids", fallback: false, fallbackReason: ""};
+      const res = await fetch("/api/dispenser_color_map");
+      const data = await res.json();
+      if (data.fallback || !data.map) {
+        throw new Error(`색상맵이 없습니다. 먼저 색상 스캔을 성공시키거나, 진단용 물리 디스펜서 번호(예: 1x1,2x1)를 직접 입력하세요.\n${data.fallback_reason || ""}`);
+      }
+      const order = String(data.sequence_compact || data.sequence_csv || "1x1,2x1,3x1,4x1").trim();
+      input.value = order;
+      return {
+        order,
+        source: data.source || "/home/ssu/Azas/outputs/dispenser_color_map.json",
+        fallback: Boolean(data.fallback),
+        fallbackReason: data.fallback_reason || "",
+      };
+    }
+
+    function queueOnly(keys, message, {clear = false} = {}) {
+      if (clear) selectedQueue = [];
+      const before = selectedQueue.length;
+      const missing = keys.filter((key) => !stepByKey(key));
+      const added = addQueueItems(keys);
+      itemStatuses = new Map();
+      updateSelectedCount();
+      renderSteps();
+      flowEl.closest(".flow-panel")?.scrollIntoView({behavior: "smooth", block: "start"});
+      const after = selectedQueue.length;
+      const queuePreview = selectedQueue.map((item, index) => {
+        const step = stepByKey(item.key);
+        return `${index + 1}. ${step?.label || item.key}`;
+      }).join("\n");
+      const missingText = missing.length ? `\n누락된 key: ${missing.join(", ")}` : "";
+      log.textContent = `${message}\n추가됨: ${added}/${keys.length}. 큐 ${before} → ${after}.${missingText}\n\n현재 큐:\n${queuePreview}\n\n이제 '선택 순서 실행'을 누르세요.`;
+      focusLog();
+    }
+
+    async function runExpandedKeysNow(keys, message) {
+      if (isRunning) {
+        log.textContent = "이미 실행 중입니다. 현재 실행이 끝나거나 정리/중지 후 다시 누르세요.";
+        focusLog();
+        return;
+      }
+      selectedQueue = [];
+      const missing = keys.filter((key) => !stepByKey(key));
+      const added = addQueueItems(keys);
+      itemStatuses = new Map();
+      resetResultBadges();
+      updateSelectedCount();
+      renderSteps();
+      isRunning = Boolean(added);
+      activeLogKeys = new Set(keys);
+      if (isRunning) startRunningLogPolling(keys);
+      renderFlow(selectedQueue[0]?.id || "");
+      log.textContent = `${message}\n실행 시작: ${added}/${keys.length}${missing.length ? `\n누락된 key: ${missing.join(", ")}` : ""}`;
+      focusLog();
+      if (!isRunning) return;
+      try {
+        const body = payload();
+        body.selected = keys;
+        body.selected_already_expanded = true;
+        const res = await fetch("/api/run", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        const results = Array.isArray(data.results) && data.results.length
+          ? data.results
+          : [{
+              key: "pipeline",
+              status: "failed",
+              output: data.error ? `서버 오류: ${data.error}` : `결과 없음: ${JSON.stringify(data)}`
+            }];
+        for (const returned of results) {
+          const queuedItem = selectedQueue.find((item) => item.key === returned.key);
+          setStepStatus(returned.key || "pipeline", returned.status, queuedItem?.id || "");
+        }
+        log.textContent = JSON.stringify({execution_order: data.execution_order || keys, results}, null, 2);
+        if (results.some((item) => item.key === "color_scan" && item.status === "passed")) {
+          await refreshColorScanResult();
+        }
+      } catch (err) {
+        log.textContent = String(err);
+      } finally {
+        isRunning = false;
+        stopRunningLogPolling();
+        refreshRunningLogs(true);
+        updateSelectedCount();
+      }
+    }
+
+    document.getElementById("oneClickReadyBtn")?.addEventListener("click", () => {
+      queueOnly(["check_one_click_cocktail_ready"], "준비확인을 큐에 추가했습니다.");
+    });
+    const PREP_STEPS = ["start_tmux_stack"];
+    function queuePrepBundle(message) {
+      queueOnly(PREP_STEPS, message || "검증된 tmux 연결 스택 시작을 큐에 추가했습니다. status_check/개별 연결 큐를 반복하지 않습니다.");
+    }
+    document.getElementById("startPrepBtn")?.addEventListener("click", () => {
+      queuePrepBundle();
+    });
+    document.getElementById("connectRobotBtn")?.addEventListener("click", () => {
+      queuePrepBundle("tmux 연결 스택 시작을 큐에 추가했습니다. 로봇/그리퍼/카메라를 azas-logic 세션에 분리 실행합니다.");
+    });
+    document.getElementById("connectGripperBtn")?.addEventListener("click", () => {
+      queuePrepBundle("tmux 연결 스택 시작을 큐에 추가했습니다. 그리퍼도 같은 azas-logic 세션에서 시작합니다.");
+    });
+    document.getElementById("connectCameraBtn")?.addEventListener("click", () => {
+      queuePrepBundle("tmux 연결 스택 시작을 큐에 추가했습니다. RealSense는 검증된 640x480x30 설정으로 시작합니다.");
+    });
+    document.getElementById("cameraViewBtn")?.addEventListener("click", () => {
+      queueOnly(["start_camera_view"], "rqt_image_view 카메라 화면 보기를 큐에 추가했습니다.");
+    });
+    document.getElementById("yoloDetectBtn")?.addEventListener("click", () => {
+      queueOnly(["detect_cup_lid"], "YOLO 컵/뚜껑 인식 토픽 시작을 큐에 추가했습니다. 이 스텝은 화면 창을 띄우지 않습니다.");
+    });
+    document.getElementById("cupUprightingBtn")?.addEventListener("click", () => {
+      queueOnly(["cup_uprighting"], "2단계 소명/누운 컵 직립화 로직만 단독으로 큐에 추가했습니다. 1단계 성공 확인 후 실행하세요. OpenCV 창에서 컵을 확인한 뒤 p 키로 실행합니다.");
+    });
+    document.getElementById("sideGripBtn")?.addEventListener("click", () => {
+      queueOnly(["side_grip"], "1단계 창현/PR #20 RealSense side-grip만 단독으로 큐에 추가했습니다. 카메라 화면에서 컵을 확인한 뒤 p 키로 직접 잡습니다. 실패하거나 로봇이 안 움직이면 이 단계만 다시 실행하세요.");
+    });
+    document.getElementById("pickLidBtn")?.addEventListener("click", () => {
+      queueOnly(["start_camera", "pick_lid"], "뚜껑 grip pose 계획 로직을 큐에 추가했습니다. 실제 로봇 모션은 실행하지 않습니다.");
+    });
+    document.getElementById("lidGripCloseBtn")?.addEventListener("click", () => {
+      queueOnly(["lid_grip_close"], "3단계 강개발자 lid_grip_close만 단독으로 큐에 추가했습니다. 1/2단계 성공 확인 후 실행하세요. ArUco 확인 후 p 키 흐름으로 실행합니다.");
+    });
+
+    document.getElementById("colorScanJsonBtn")?.addEventListener("click", () => {
+      runExpandedKeysNow(
+        ["move_to_color_scan_pose", "color_scan"],
+        "빠른 색상구분: 검증된 색상 스캔 자세 이동 → 색상 핸들 검출 → JSON/debug 이미지 저장을 바로 실행합니다. 연결/카메라는 상단 준비 버튼으로 이미 켜져 있어야 합니다."
+      );
+    });
+    document.getElementById("colorJsonCheckBtn")?.addEventListener("click", refreshColorScanResult);
+    document.getElementById("manualColorJsonBtn")?.addEventListener("click", saveManualColorMap);
+    document.getElementById("recipeCycleBtn")?.addEventListener("click", async () => {
+      try { await requireColorMapForRecipeCycle(); }
+      catch (err) { log.textContent = String(err); focusLog(); return; }
+      queueOnly(["run_color_recipe_sequence"], "레시피 기반 디스펜서 사이클을 큐에 추가했습니다.");
+    });
+    document.getElementById("cupHolderBtn")?.addEventListener("click", () => {
+      queueOnly(["place_cup_holder"], "컵홀더 배치를 큐에 추가했습니다. 이 단계는 MoveItPy 경로계획으로 pre_place→place_final→RG2 open→retreat를 실행합니다.");
+    });
+    document.getElementById("fullCocktailRealBtn")?.addEventListener("click", async () => {
+      queueOnly([...PREP_STEPS, "side_grip_camera_home", "side_grip", "move_to_color_scan_pose", "color_scan", "run_color_recipe_sequence", "place_cup_holder"], "전체 플로우를 큐에 추가했습니다. (tmux 연결 준비 → 카메라 홈→컵 side-grip → 검증자세 색상 핸들 JSON → 레시피 사이클 → MoveIt 컵홀더 배치)", {clear: true});
+    });
+    document.getElementById("oneClickResultBtn")?.addEventListener("click", () => {
+      queueOnly(["check_one_click_cocktail_result"], "결과확인을 큐에 추가했습니다.");
+    });
 
 	    document.getElementById("run").addEventListener("click", async () => {
+	      if (isRunning) {
+	        log.textContent = "이미 실행 중입니다. 준비 중인 로봇/그리퍼/카메라 단계가 끝날 때까지 다음 실행을 막습니다.";
+	        focusLog();
+	        return;
+	      }
 	      const selected = withCollisionScenePrereq(selectedQueue);
+	      selectedQueue = selected;
 	      resetResultBadges();
 	      isRunning = Boolean(selected.length);
+      activeLogKeys = new Set(selected.map((item) => item.key));
+      if (isRunning) startRunningLogPolling();
 	      renderFlow(selected[0]?.id || "");
 	      log.textContent = selected.length ? `실행 중... (${selected.length}개 단계, 큐 순서대로 실행)` : "선택된 단계가 없습니다.";
 	      focusLog();
@@ -1369,9 +2016,11 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	        for (const [index, item] of selected.entries()) {
 	          setStepStatus(item.key, "running", item.id);
 	          renderFlow(item.id);
-	          log.textContent = `실행 중 ${index + 1}/${selected.length}: ${stepByKey(item.key)?.label || item.key}`;
+	          log.textContent = `실행 중 ${index + 1}/${selected.length}: ${stepByKey(item.key)?.label || item.key}\n로그를 불러오는 중...`;
+          refreshRunningLogs(false);
 	          const body = payload();
 	          body.selected = [item.key];
+	          body.selected_already_expanded = true;
 	          const res = await fetch("/api/run", {
 	            method: "POST",
 	            headers: {"Content-Type": "application/json"},
@@ -1394,24 +2043,27 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
 	            results.push(returned);
 	            const statusItemId = returned.key === item.key ? item.id : "";
 	            setStepStatus(returned.key || item.key, returned.status, statusItemId);
-	            if (returned.status === "failed" || returned.status === "blocked" || returned.status === "timeout") {
+	            if (shouldHaltAfterResult(returned)) {
 	              shouldStop = true;
 	              break;
 	            }
 	          }
 	          if (shouldStop) break;
 	        }
-	        log.textContent = JSON.stringify({execution_order: selected.map((item) => item.key), results}, null, 2);
+	        log.textContent = JSON.stringify({execution_order: results.map((item) => item.key), results}, null, 2);
 	      } catch (err) {
 	        log.textContent = String(err);
 	      } finally {
 	        isRunning = false;
+        activeLogKeys = new Set();
+        refreshRunningLogs(true);
 	        updateSelectedCount();
 	      }
 	    });
 
     document.getElementById("stop").addEventListener("click", async () => {
       focusLog();
+      stopRunningLogPolling();
       const res = await fetch("/api/stop", {method: "POST"});
       log.textContent = JSON.stringify(await res.json(), null, 2);
     });
@@ -1421,7 +2073,48 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
       const res = await fetch("/api/cleanup", {method: "POST"});
       log.textContent = JSON.stringify(await res.json(), null, 2);
     });
+    document.getElementById("liveLogBtn")?.addEventListener("click", () => {
+      activeLogKeys = new Set();
+      startRunningLogPolling();
+      refreshRunningLogs(true);
+      focusLog();
+    });
     document.getElementById("clearLog").addEventListener("click", () => { log.textContent = ""; });
+    document.getElementById("commandModalClose").addEventListener("click", closeCommandModal);
+    commandModalBackdrop.addEventListener("click", (event) => {
+      if (event.target === commandModalBackdrop) closeCommandModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && commandModalBackdrop.classList.contains("open")) closeCommandModal();
+    });
+    document.getElementById("commandModalSave").addEventListener("click", () => {
+      if (!commandModalStepKey) return;
+      const savedKey = commandModalStepKey;
+      saveCommandOverride(savedKey, commandModalEditor.value)
+        .then(() => {
+          log.textContent = `저장됨: ${savedKey} 편집 명령`;
+          closeCommandModal();
+          focusLog();
+        })
+        .catch((err) => {
+          log.textContent = String(err);
+          focusLog();
+        });
+    });
+    document.getElementById("commandModalReset").addEventListener("click", () => {
+      if (!commandModalStepKey) return;
+      const resetKey = commandModalStepKey;
+      saveCommandOverride(resetKey, "")
+        .then(() => {
+          log.textContent = `복원됨: ${resetKey} 기본 명령`;
+          closeCommandModal();
+          focusLog();
+        })
+        .catch((err) => {
+          log.textContent = String(err);
+          focusLog();
+        });
+    });
     document.getElementById("copyLog").addEventListener("click", async () => {
       const text = log.textContent || "";
       if (navigator.clipboard?.writeText) {
@@ -1437,6 +2130,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
     });
 
     refreshCameraPreview();
+    refreshColorScanResult();
     setInterval(refreshCameraPreview, 2000);
     loadSteps().catch((err) => { log.textContent = String(err); focusLog(); });
   </script>

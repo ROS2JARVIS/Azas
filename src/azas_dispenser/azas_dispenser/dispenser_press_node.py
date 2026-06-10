@@ -154,6 +154,19 @@ class DispenserPressNode:
         self.approach_pause_seconds = float(
             get_param(self.node, "approach_pause_seconds", 0.5)
         )
+        self.press_count = max(int(get_param(self.node, "press_count", 1)), 1)
+        self.post_press_retreat_after_sequence = bool(
+            get_param(self.node, "post_press_retreat_after_sequence", True)
+        )
+        self.post_press_retreat_dx_mm = float(
+            get_param(self.node, "post_press_retreat_dx_mm", -120.0)
+        )
+        self.post_press_retreat_dy_mm = float(
+            get_param(self.node, "post_press_retreat_dy_mm", 0.0)
+        )
+        self.post_press_retreat_wait_seconds = float(
+            get_param(self.node, "post_press_retreat_wait_seconds", 1.0)
+        )
 
         self.rx = float(get_param(self.node, "rx", 180.0))
         self.ry = float(get_param(self.node, "ry", 0.0))
@@ -293,23 +306,42 @@ class DispenserPressNode:
         return True
 
     def call_service(self, client, request, label):
-        future = client.call_async(request)
-        rclpy.spin_until_future_complete(self.node, future)
-        if future.result() is None:
-            self.logger.error(f"{label} 호출 실패: {future.exception()}")
+        result = self.service_result(client, request, label)
+        if result is None:
             return False
-        if not future.result().success:
+        if not result.success:
             self.logger.error(f"{label} 가 success=false를 반환했습니다")
             return False
         return True
 
-    def current_tcp_name(self):
-        get_req = GetCurrentTcp.Request()
-        future = self.get_current_tcp.call_async(get_req)
-        rclpy.spin_until_future_complete(self.node, future)
+    def service_result(self, client, request, label):
+        future = client.call_async(request)
+        try:
+            rclpy.spin_until_future_complete(
+                self.node,
+                future,
+                timeout_sec=self.service_wait_timeout_sec,
+            )
+        except Exception as exc:
+            self.logger.error(f"{label} 응답 대기 중 예외 발생: {exc}")
+            return None
+        if not future.done():
+            self.logger.error(
+                f"{label} 호출이 {self.service_wait_timeout_sec:.1f}초 안에 응답하지 않았습니다. "
+                "Doosan 컨트롤러 연결/상태를 확인하세요."
+            )
+            future.cancel()
+            return None
         result = future.result()
         if result is None:
-            self.logger.error(f"tcp/get_current_tcp 호출 실패: {future.exception()}")
+            self.logger.error(f"{label} 호출 실패: {future.exception()}")
+            return None
+        return result
+
+    def current_tcp_name(self):
+        get_req = GetCurrentTcp.Request()
+        result = self.service_result(self.get_current_tcp, get_req, "tcp/get_current_tcp")
+        if result is None:
             return None
         if not result.success:
             self.logger.error("tcp/get_current_tcp 가 success=false를 반환했습니다")
@@ -324,11 +356,12 @@ class DispenserPressNode:
 
     def current_joints_deg(self, label):
         req = GetCurrentPosj.Request()
-        future = self.get_current_posj.call_async(req)
-        rclpy.spin_until_future_complete(self.node, future)
-        result = future.result()
+        result = self.service_result(
+            self.get_current_posj,
+            req,
+            f"{label}: aux_control/get_current_posj",
+        )
         if result is None:
-            self.logger.error(f"{label}: aux_control/get_current_posj 호출 실패: {future.exception()}")
             return None
         if not result.success or len(result.pos) < 6:
             self.logger.error(
@@ -433,11 +466,12 @@ class DispenserPressNode:
         req.width_m = self.gripper_close_width_m
         req.force_n = self.gripper_close_force_n
 
-        future = self.gripper_client.call_async(req)
-        rclpy.spin_until_future_complete(self.node, future)
-        result = future.result()
+        result = self.service_result(
+            self.gripper_client,
+            req,
+            "그리퍼 close",
+        )
         if result is None:
-            self.logger.error(f"그리퍼 close 호출 실패: {future.exception()}")
             return False
         if not result.success:
             self.logger.error(f"그리퍼 close 실패: {result.message}")
@@ -561,12 +595,13 @@ class DispenserPressNode:
         req = GetCurrentPosx.Request()
         req.ref = DR_BASE
 
-        future = self.get_current_posx.call_async(req)
-        rclpy.spin_until_future_complete(self.node, future)
-        result = future.result()
+        result = self.service_result(
+            self.get_current_posx,
+            req,
+            "aux_control/get_current_posx",
+        )
 
         if result is None:
-            self.logger.error(f"get_current_posx 호출 실패: {future.exception()}")
             return None
         if not result.success:
             self.logger.error("get_current_posx가 success=false를 반환했습니다")
@@ -806,32 +841,108 @@ class DispenserPressNode:
                 f"top_z={top_z:.1f} mm, pressed_z={pressed_z:.1f} mm"
             )
         else:
+            current_pose = self.read_current_posx()
+            if current_pose is None:
+                return None
             if self.keep_home_orientation:
-                current_pose = self.read_current_posx()
-                if current_pose is None:
-                    return None
                 home_x, home_y, home_z = current_pose[:3]
                 self.rx = current_pose[3]
                 self.ry = current_pose[4]
                 self.rz = current_pose[5]
-                home_lift_step = (
-                    home_x,
-                    home_y,
-                    home_z + self.home_lift_height_mm,
-                    "lift above HOME",
-                )
 
             x_mm = self.dispenser_x_mm
             y_mm = self.dispenser_y_mm + self.dispenser_y_offset_mm
             top_z = self.dispenser_top_z_mm
             approach_z = top_z + self.approach_height_mm
             pressed_z = top_z - self.press_depth_mm
+            transit_z = max(current_pose[2], approach_z) + self.transit_height_mm
+            retreat_z = approach_z
+            if self.post_press_retreat_after_sequence:
+                retreat_x = x_mm + self.post_press_retreat_dx_mm
+                retreat_y = y_mm + self.post_press_retreat_dy_mm
 
             self.logger.info(
-                "고정된 디스펜서 위치를 HOME TCP 방향과 함께 사용합니다. "
+                "측정된 디스펜서 프레스 위치를 사용합니다. "
                 f"target=({x_mm:.1f}, {y_mm:.1f}), "
+                f"press_z={pressed_z:.1f}, approach_z={approach_z:.1f}, "
+                f"transit_z={transit_z:.1f}, "
                 f"rpy=({self.rx:.1f}, {self.ry:.1f}, {self.rz:.1f})"
             )
+
+            steps = [
+                (
+                    current_pose[0],
+                    current_pose[1],
+                    transit_z,
+                    current_pose[3],
+                    current_pose[4],
+                    current_pose[5],
+                    "lift from previous position",
+                ),
+                (x_mm, y_mm, transit_z, self.rx, self.ry, self.rz, "align above measured press pose"),
+                (x_mm, y_mm, approach_z, self.rx, self.ry, self.rz, "approach above dispenser"),
+            ]
+            for press_index in range(1, self.press_count + 1):
+                suffix = f" {press_index}/{self.press_count}" if self.press_count > 1 else ""
+                if self.press_depth_mm == 0.0:
+                    steps.append(
+                        (
+                            x_mm,
+                            y_mm,
+                            top_z,
+                            self.rx,
+                            self.ry,
+                            self.rz,
+                            f"press dispenser pump{suffix}",
+                        )
+                    )
+                else:
+                    steps.extend(
+                        [
+                            (
+                                x_mm,
+                                y_mm,
+                                top_z,
+                                self.rx,
+                                self.ry,
+                                self.rz,
+                                f"move to measured press pose{suffix}",
+                            ),
+                            (
+                                x_mm,
+                                y_mm,
+                                pressed_z,
+                                self.rx,
+                                self.ry,
+                                self.rz,
+                                f"press dispenser pump{suffix}",
+                            ),
+                        ]
+                    )
+                steps.append(
+                    (
+                        x_mm,
+                        y_mm,
+                        approach_z,
+                        self.rx,
+                        self.ry,
+                        self.rz,
+                        f"retreat above dispenser{suffix}",
+                    )
+                )
+            if self.post_press_retreat_after_sequence:
+                steps.append(
+                    (
+                        retreat_x,
+                        retreat_y,
+                        retreat_z,
+                        self.rx,
+                        self.ry,
+                        self.rz,
+                        "retreat away from dispenser and wait",
+                    )
+                )
+            return steps
 
         steps = [
             (x_mm, y_mm, approach_z, self.rx, self.ry, self.rz, "approach above dispenser"),
@@ -840,18 +951,17 @@ class DispenserPressNode:
             (x_mm, y_mm, approach_z, self.rx, self.ry, self.rz, "retreat above dispenser"),
         ]
 
-        if home_lift_step is not None:
-            home_x, home_y, home_z, home_label = home_lift_step
-            return [
-                (home_x, home_y, home_z, self.rx, self.ry, self.rz, home_label)
-            ] + steps
-
         return steps
 
     def run(self):
-        if self.press_depth_mm <= 0.0:
-            self.logger.error("press_depth must be greater than 0.0 m.")
+        if self.press_depth_mm < 0.0:
+            self.logger.error("press_depth must be greater than or equal to 0.0 m.")
             return False
+        if self.press_depth_mm == 0.0:
+            self.logger.warning(
+                "press_depth=0.0: measured press pose is treated as the final pressed target; "
+                "the press step will hold at that measured pose instead of deriving a lower legacy Z."
+            )
 
         if not self.wait_for_services():
             return False
@@ -886,7 +996,7 @@ class DispenserPressNode:
                 rx, ry, rz = self.rx, self.ry, self.rz
             else:
                 x_mm, y_mm, z_mm, rx, ry, rz, label = step
-            is_press_down = label == "press dispenser pump"
+            is_press_down = label.startswith("press dispenser pump")
             line_velocity = self.line_velocity if is_press_down else self.travel_line_velocity
             line_acceleration = (
                 self.line_acceleration if is_press_down else self.travel_line_acceleration
@@ -915,9 +1025,17 @@ class DispenserPressNode:
                     f"접근 위치에서 {self.approach_pause_seconds:.2f}초간 대기합니다"
                 )
                 time.sleep(self.approach_pause_seconds)
-            if label == "press dispenser pump" and self.hold_seconds > 0.0:
+            if label.startswith("press dispenser pump") and self.hold_seconds > 0.0:
                 self.logger.info(f"누르는 동작을 {self.hold_seconds:.2f}초간 유지합니다")
                 time.sleep(self.hold_seconds)
+            if (
+                label == "retreat away from dispenser and wait"
+                and self.post_press_retreat_wait_seconds > 0.0
+            ):
+                self.logger.info(
+                    f"프레스 후 후퇴 위치에서 {self.post_press_retreat_wait_seconds:.2f}초간 대기합니다"
+                )
+                time.sleep(self.post_press_retreat_wait_seconds)
 
         if self.return_home:
             self.logger.info(

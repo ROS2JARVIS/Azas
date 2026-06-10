@@ -15,6 +15,7 @@
   <depend>moveit_py</depend>
   <depend>moveit_configs_utils</depend>
   <exec_depend>dsr_moveit_config_m0609</exec_depend>
+  <exec_depend>azas_perception</exec_depend>
 
   <exec_depend>python3-pymodbus</exec_depend>
   <exec_depend>python3-opencv</exec_depend>

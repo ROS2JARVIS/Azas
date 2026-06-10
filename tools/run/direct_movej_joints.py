@@ -11,7 +11,7 @@ import argparse
 from dataclasses import dataclass
 
 import rclpy
-from dsr_msgs2.srv import MoveJoint
+from dsr_msgs2.srv import CheckMotion, MoveJoint, MoveWait
 
 
 MOVE_MODE_ABSOLUTE = 0
@@ -66,6 +66,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-sec", type=float, default=20.0, help="service response timeout")
     parser.add_argument("--wait-service-sec", type=float, default=5.0, help="service availability timeout")
     parser.add_argument(
+        "--motion-timeout-sec",
+        type=float,
+        default=90.0,
+        help="time to wait until the robot reports motion complete after MoveJoint is accepted",
+    )
+    parser.add_argument(
+        "--no-wait-motion",
+        action="store_true",
+        help="return after MoveJoint is accepted; unsafe for sequenced panel steps",
+    )
+    parser.add_argument(
         "--execute",
         action="store_true",
         help="actually call MoveJoint; without this, only prints the request",
@@ -76,6 +87,54 @@ def parse_args() -> argparse.Namespace:
         help=f"must equal {CONFIRM_PHRASE} when --execute is used",
     )
     return parser.parse_args()
+
+
+def namespaced_service(prefix: str, suffix: str) -> str:
+    clean = prefix.strip("/")
+    return f"/{clean}/{suffix}" if clean else f"/{suffix}"
+
+
+def wait_until_motion_done(node, prefix: str, timeout_sec: float) -> tuple[bool, str]:
+    """Wait until the Doosan controller finishes the accepted command.
+
+    Prefer the controller's MoveWait service because it blocks until motion
+    completion.  If MoveWait is not exposed by a particular stack, fall back to
+    CheckMotion and require status=0.
+    """
+    timeout_sec = max(timeout_sec, 0.1)
+    move_wait_name = namespaced_service(prefix, "motion/move_wait")
+    move_wait_client = node.create_client(MoveWait, move_wait_name)
+    if move_wait_client.wait_for_service(timeout_sec=1.0):
+        future = move_wait_client.call_async(MoveWait.Request())
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_sec)
+        if not future.done():
+            return False, f"MoveWait timeout after {timeout_sec:.1f}s"
+        if future.exception() is not None:
+            return False, f"MoveWait exception: {future.exception()}"
+        response = future.result()
+        if response is None:
+            return False, "MoveWait returned no response"
+        if not bool(getattr(response, "success", True)):
+            return False, f"MoveWait returned success=false: {response}"
+        return True, "MoveWait completed"
+
+    check_name = namespaced_service(prefix, "motion/check_motion")
+    check_client = node.create_client(CheckMotion, check_name)
+    if not check_client.wait_for_service(timeout_sec=1.0):
+        return False, f"neither MoveWait nor CheckMotion is available: {move_wait_name}, {check_name}"
+
+    future = check_client.call_async(CheckMotion.Request())
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_sec)
+    if not future.done():
+        return False, f"CheckMotion timeout after {timeout_sec:.1f}s"
+    if future.exception() is not None:
+        return False, f"CheckMotion exception: {future.exception()}"
+    response = future.result()
+    status = int(getattr(response, "status", -1))
+    success = bool(getattr(response, "success", True))
+    if success and status == 0:
+        return True, "CheckMotion status=0"
+    return False, f"CheckMotion not complete: status={status} success={success}"
 
 
 def main() -> int:
@@ -136,6 +195,15 @@ def main() -> int:
             print("[FAIL] MoveJoint returned success=false")
             return 1
         print("[PASS] MoveJoint accepted by service")
+        if not args.no_wait_motion:
+            done, wait_output = wait_until_motion_done(
+                node,
+                args.service_prefix,
+                timeout_sec=float(args.motion_timeout_sec),
+            )
+            print(f"[Azas] motion completion wait: {wait_output}")
+            if not done:
+                return 1
         return 0
     finally:
         node.destroy_node()

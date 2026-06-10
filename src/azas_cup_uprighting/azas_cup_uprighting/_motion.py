@@ -1,7 +1,11 @@
 """MoveIt 모션 유틸 (순수 함수)."""
 
 import numpy as np
+import rclpy
+import time
+from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import PoseStamped
+from rclpy.action import ActionClient
 from scipy.spatial.transform import Rotation as R
 from . import _config as cfg
 
@@ -70,8 +74,64 @@ def get_ee_matrix(moveit_robot) -> np.ndarray:
     return np.asarray(T, dtype=float)
 
 
+def _wait_future(future, label: str, timeout_sec: float, logger) -> bool:
+    deadline = time.monotonic() + timeout_sec
+    while rclpy.ok() and not future.done():
+        if time.monotonic() >= deadline:
+            logger.error(f"{label} timeout after {timeout_sec:.1f}s")
+            return False
+        time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+    return future.done()
+
+
+def _execute_with_controller_action(node, trajectory, logger, *,
+                                    action_name: str,
+                                    wait_sec: float) -> bool:
+    trajectory_msg = trajectory
+    if hasattr(trajectory_msg, "get_robot_trajectory_msg"):
+        trajectory_msg = trajectory_msg.get_robot_trajectory_msg()
+    joint_trajectory = trajectory_msg.joint_trajectory
+    if not joint_trajectory.points:
+        logger.error("Controller action execution rejected empty trajectory")
+        return False
+
+    client = ActionClient(node, FollowJointTrajectory, action_name)
+    if not client.wait_for_server(timeout_sec=wait_sec):
+        logger.error(f"Controller action server not ready after {wait_sec:.1f}s: {action_name}")
+        client.destroy()
+        return False
+
+    goal = FollowJointTrajectory.Goal()
+    goal.trajectory = joint_trajectory
+    goal_future = client.send_goal_async(goal)
+    if not _wait_future(goal_future, "send controller goal", wait_sec, logger):
+        client.destroy()
+        return False
+    goal_handle = goal_future.result()
+    if not goal_handle.accepted:
+        logger.error("Controller rejected trajectory")
+        client.destroy()
+        return False
+
+    result_future = goal_handle.get_result_async()
+    if not _wait_future(result_future, "execute controller trajectory", wait_sec, logger):
+        client.destroy()
+        return False
+    result = result_future.result().result
+    client.destroy()
+    if result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
+        logger.error(
+            f"Controller execution failed: code={result.error_code} {result.error_string}"
+        )
+        return False
+    logger.info(f"Controller trajectory reached via {action_name}")
+    return True
+
+
 def plan_and_execute(robot, arm, logger,
-                     pose_goal=None, state_goal=None, params=None) -> bool:
+                     pose_goal=None, state_goal=None, params=None,
+                     node=None, controller_action_name=None,
+                     controller_action_wait_sec: float = 30.0) -> bool:
     """Pose 또는 RobotState 목표로 plan + execute. 실패 시 False."""
     arm.set_start_state_to_current_state()
 
@@ -95,9 +155,18 @@ def plan_and_execute(robot, arm, logger,
         logger.error("Planning 실패")
         return False
 
+    if node is not None and controller_action_name:
+        return _execute_with_controller_action(
+            node,
+            plan_result.trajectory,
+            logger,
+            action_name=str(controller_action_name),
+            wait_sec=float(controller_action_wait_sec),
+        )
+
     result = robot.execute(group_name=cfg.GROUP_NAME,
-                  robot_trajectory=plan_result.trajectory,
-                  blocking=True)
+                           robot_trajectory=plan_result.trajectory,
+                           blocking=True)
     return bool(result)
 
 

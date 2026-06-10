@@ -11,14 +11,13 @@ import numpy as np
 import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from cv_bridge import CvBridge
 from geometry_msgs.msg import Pose, PoseStamped
 from rcl_interfaces.msg import ParameterDescriptor
 from moveit.core.robot_state import RobotState
 from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit_msgs.msg import CollisionObject
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from shape_msgs.msg import SolidPrimitive
@@ -209,7 +208,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("target_class", "cup")
         self.declare_parameter("auto_pick", False)
         self.declare_parameter("auto_pick_interval", 3.0)
-        self.declare_parameter("pick_depth_ratio", 0.55)
+        self.declare_parameter("exit_after_pick", False)
         self.declare_parameter("depth_patch_radius", 7)
         self.declare_parameter("min_depth_valid_ratio", 0.03)
         self.declare_parameter("min_depth_m", 0.15)
@@ -348,6 +347,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("motion_verify_tolerance", 0.01)
         self.declare_parameter("joint_goal_tolerance_rad", 0.02)
         self.declare_parameter("min_motion_delta_m", 0.005)
+        self.declare_parameter("skip_initial_home_move", False)
         self.declare_parameter("move_to_camera_home", True)
         self.declare_parameter("move_joint_home_before_camera_home", False)
         self.declare_parameter("camera_home_mode", "joint")
@@ -375,7 +375,7 @@ class YoloCupPickNode(Node):
         self.target_class = self.get_parameter("target_class").value
         self.auto_pick = parse_bool(self.get_parameter("auto_pick").value)
         self.auto_pick_interval = float(self.get_parameter("auto_pick_interval").value)
-        self.pick_depth_ratio = float(self.get_parameter("pick_depth_ratio").value)
+        self.exit_after_pick = parse_bool(self.get_parameter("exit_after_pick").value)
         self.depth_patch_radius = int(self.get_parameter("depth_patch_radius").value)
         self.min_depth_valid_ratio = float(
             self.get_parameter("min_depth_valid_ratio").value
@@ -553,6 +553,9 @@ class YoloCupPickNode(Node):
         self.min_motion_delta_m = max(
             0.0, float(self.get_parameter("min_motion_delta_m").value)
         )
+        self.skip_initial_home_move = parse_bool(
+            self.get_parameter("skip_initial_home_move").value
+        )
         self.move_to_camera_home = parse_bool(
             self.get_parameter("move_to_camera_home").value
         )
@@ -643,7 +646,6 @@ class YoloCupPickNode(Node):
                 "and will not avoid robot-link/table collisions."
             )
 
-        self.bridge = CvBridge()
         self.color_image = None
         self.depth_image = None
         self.intrinsics = None
@@ -662,13 +664,51 @@ class YoloCupPickNode(Node):
         self.gripper2cam[:3, 3] /= 1000.0
         self.get_logger().info(f"Loaded hand-eye calibration: {calib_file}")
 
-        self.gripper = RG(GRIPPER_NAME, TOOLCHARGER_IP, TOOLCHARGER_PORT)
+        self.gripper = None
+        self.robot = None
+        self.arm = None
+        self.robot_model = None
+        self.ompl_params = None
+        self.pilz_params = None
+        self.pilz_lin_params = None
+        self.collision_object_pub = None
+        self._motion_stack_ready = False
 
-        self.get_logger().info("Initializing MoveItPy...")
+        self.home_ori = DOWN_ORI
+
+        self.create_subscription(
+            CameraInfo,
+            "/camera/camera/color/camera_info",
+            self._camera_info_callback,
+            10,
+        )
+        self.create_subscription(
+            Image,
+            "/camera/camera/color/image_raw",
+            self._color_callback,
+            qos_profile_sensor_data,
+        )
+        self.create_subscription(
+            Image,
+            "/camera/camera/aligned_depth_to_color/image_raw",
+            self._depth_callback,
+            qos_profile_sensor_data,
+        )
+
+    def ensure_motion_stack_ready(self):
+        if self._motion_stack_ready:
+            return True
+        log = self.get_logger()
+
+        log.info("Initializing RG2 gripper client...")
+        self.gripper = RG(GRIPPER_NAME, TOOLCHARGER_IP, TOOLCHARGER_PORT)
+        log.info("RG2 gripper client initialized")
+
+        log.info("Initializing MoveItPy...")
         self.robot = MoveItPy(node_name="yolo_cup_pick_moveit_py")
         self.arm = self.robot.get_planning_component(GROUP_NAME)
         self.robot_model = self.robot.get_robot_model()
-        self.get_logger().info("MoveItPy initialized")
+        log.info("MoveItPy initialized")
 
         self.collision_object_pub = self.create_publisher(
             CollisionObject,
@@ -704,26 +744,8 @@ class YoloCupPickNode(Node):
         self.pilz_lin_params.max_acceleration_scaling_factor = 0.05
         self.pilz_lin_params.planning_time = 3.0
 
-        self.home_ori = DOWN_ORI
-
-        self.create_subscription(
-            CameraInfo,
-            "/camera/camera/color/camera_info",
-            self._camera_info_callback,
-            10,
-        )
-        self.create_subscription(
-            Image,
-            "/camera/camera/color/image_raw",
-            self._color_callback,
-            10,
-        )
-        self.create_subscription(
-            Image,
-            "/camera/camera/aligned_depth_to_color/image_raw",
-            self._depth_callback,
-            10,
-        )
+        self._motion_stack_ready = True
+        return True
 
     def load_safety_workspace_bounds(self):
         log = self.get_logger()
@@ -1058,12 +1080,34 @@ class YoloCupPickNode(Node):
         }
 
     def _color_callback(self, msg):
-        self.color_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        self.color_image = self.image_msg_to_bgr(msg)
 
     def _depth_callback(self, msg):
-        self.depth_image = self.bridge.imgmsg_to_cv2(
-            msg, desired_encoding="passthrough"
-        )
+        self.depth_image = self.depth_msg_to_array(msg)
+
+    def image_msg_to_bgr(self, msg):
+        enc = (msg.encoding or "").lower()
+        data = np.frombuffer(msg.data, dtype=np.uint8)
+        if enc in {"rgb8", "bgr8"}:
+            image = data.reshape((msg.height, msg.width, 3))
+            return cv2.cvtColor(image, cv2.COLOR_RGB2BGR) if enc == "rgb8" else image
+        if enc in {"rgba8", "bgra8"}:
+            image = data.reshape((msg.height, msg.width, 4))
+            if enc == "rgba8":
+                return cv2.cvtColor(image, cv2.COLOR_RGBA2BGR)
+            return cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+        if enc == "mono8":
+            image = data.reshape((msg.height, msg.width))
+            return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        raise RuntimeError(f"unsupported color image encoding: {msg.encoding}")
+
+    def depth_msg_to_array(self, msg):
+        enc = (msg.encoding or "").lower()
+        if enc in {"16uc1", "mono16"}:
+            return np.frombuffer(msg.data, dtype=np.uint16).reshape((msg.height, msg.width))
+        if enc == "32fc1":
+            return np.frombuffer(msg.data, dtype=np.float32).reshape((msg.height, msg.width))
+        raise RuntimeError(f"unsupported depth image encoding: {msg.encoding}")
 
     def plan_and_execute(
         self,
@@ -1438,6 +1482,9 @@ class YoloCupPickNode(Node):
         return False
 
     def wait_until_gripper_idle(self, timeout_sec=GRIPPER_OPEN_TIMEOUT_SEC):
+        if self.gripper is None:
+            self.get_logger().error("Gripper client is not initialized")
+            return False
         log = self.get_logger()
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
@@ -1456,6 +1503,8 @@ class YoloCupPickNode(Node):
         return False
 
     def open_gripper_max(self, wait=False):
+        if not self.wait_until_gripper_idle():
+            return False
         self.get_logger().info(
             f"Open gripper to max width={GRIPPER_OPEN_WIDTH} "
             f"({GRIPPER_OPEN_WIDTH / 10.0:.1f} mm)"
@@ -1904,6 +1953,15 @@ class YoloCupPickNode(Node):
         ):
             return False
 
+        log.info("open gripper at outside high side-staging pose")
+        if not self.open_gripper_max(wait=True):
+            return False
+        if self.gripper_open_settle_sec > 0.0:
+            log.info(
+                f"wait {self.gripper_open_settle_sec:.2f}s for RG2 full-open before low approach"
+            )
+            time.sleep(self.gripper_open_settle_sec)
+
         active_pre_z = None
         for attempt in range(self.side_low_retry_attempts + 1):
             try_pre_z = plan.pre_z + attempt * self.side_low_retry_lift_m
@@ -1986,12 +2044,6 @@ class YoloCupPickNode(Node):
                 f"close=({candidate.guarded_grasp_xy[0]:.3f}, {candidate.guarded_grasp_xy[1]:.3f}, {candidate.pre_z:.3f})"
             )
 
-        self.open_gripper_max(wait=False)
-        if self.gripper_open_settle_sec > 0.0:
-            log.info(
-                f"wait {self.gripper_open_settle_sec:.2f}s for RG2 full-open before low approach"
-            )
-            time.sleep(self.gripper_open_settle_sec)
         if not self.move_to_side_prepose_if_configured(cup_base):
             return False
         if not self.move_joint1_clearance_before_side_grip():
@@ -2121,6 +2173,11 @@ class YoloCupPickNode(Node):
             self.last_status = f"no {self.target_class} detection"
             return
 
+        self.last_status = "initializing robot motion"
+        if not self.ensure_motion_stack_ready():
+            self.last_status = "motion init failed"
+            return
+
         self.last_status = f"pick requested: {self.target_class}"
         base_xyz = self.base_from_detection(self.last_detection, "[initial]")
         if base_xyz is None:
@@ -2233,7 +2290,12 @@ class YoloCupPickNode(Node):
 
     def run(self):
         log = self.get_logger()
-        if self.move_to_camera_home:
+        if self.skip_initial_home_move:
+            log.info("Skip initial home move; opening preview before motion stack initialization")
+        elif self.move_to_camera_home:
+            if not self.ensure_motion_stack_ready():
+                log.error("Motion stack initialization failed")
+                return
             if self.move_joint_home_before_camera_home:
                 log.info("Move JOINT HOME before high camera home")
                 if not self.move_joint_home():
@@ -2244,18 +2306,25 @@ class YoloCupPickNode(Node):
                 log.error("High camera home move failed")
                 return
         else:
+            if not self.ensure_motion_stack_ready():
+                log.error("Motion stack initialization failed")
+                return
             log.info("Move JOINT HOME")
             if not self.move_joint_home():
                 log.error("Joint home move failed")
                 return
 
-        self.open_gripper_max(wait=True)
+        if self._motion_stack_ready:
+            self.open_gripper_max(wait=True)
 
         window = "YOLO Cup Pick - p pick, a auto, r reset, esc quit"
         cv2.namedWindow(window)
 
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.01)
+            if self.exit_after_pick and self.has_picked_once and not self.picking:
+                log.info("exit_after_pick=true and one pick completed; closing side_grip node")
+                break
             if self.color_image is None:
                 continue
 
@@ -2296,7 +2365,8 @@ class YoloCupPickNode(Node):
 
     def destroy_node(self):
         try:
-            self.gripper.close_connection()
+            if self.gripper is not None:
+                self.gripper.close_connection()
         finally:
             super().destroy_node()
 

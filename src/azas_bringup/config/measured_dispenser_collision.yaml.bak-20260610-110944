@@ -1,0 +1,157 @@
+metadata:
+  frame_id: base_link
+  measured_target_frame: link_6
+  source: operator_teaching_tf2_echo
+  status: measured_draft_merged_horizontal_spout_block_not_enabled
+  body_bottom_z_m: 0.0
+  body_bottom_reason: dispenser bottles start on same floor plane as robot base
+  margin_m:
+    x: 0.02
+    y: 0.02
+    z: 0.02
+  nozzle_merge_policy: single horizontal spout cuboid uses the same X/Y footprint
+    dimensions and orientation as dispenser_combined_body_box
+front_hold_poses:
+  dispenser_1:
+    position_xyz_m: [0.603855, 0.083532, 0.079630]
+    quaternion_xyzw: [0.476935, 0.550359, 0.474620, 0.494343]
+    rpy_deg: [93.496, 5.244, 93.242]
+    - 0.087
+    quaternion_xyzw:
+    - 0.489
+    - 0.517
+    - 0.517
+    - 0.475
+    rpy_deg:
+    - 90.798
+    - -0.845
+    - 93.984
+  dispenser_2:
+    position_xyz_m:
+    - 0.617
+    - 0.028
+    - 0.082
+    quaternion_xyzw:
+    - 0.504
+    - 0.504
+    - 0.5
+    - 0.491
+    rpy_deg:
+    - 90.946
+    - -0.512
+    - 90.501
+  dispenser_3:
+    position_xyz_m:
+    - 0.616
+    - -0.026
+    - 0.079
+    quaternion_xyzw:
+    - 0.504
+    - 0.504
+    - 0.498
+    - 0.494
+    rpy_deg:
+    - 90.926
+    - -0.278
+    - 90.234
+  dispenser_4:
+    position_xyz_m:
+    - 0.607
+    - -0.083
+    - 0.075
+    quaternion_xyzw:
+    - 0.511
+    - 0.498
+    - 0.492
+    - 0.499
+    rpy_deg:
+    - 91.042
+    - -0.28
+    - 88.871
+raw_probe_poses:
+  left_front_bottom_probe:
+    position_xyz_m:
+    - 0.767
+    - 0.072
+    - 0.219
+    quaternion_xyzw:
+    - 0.642
+    - 0.732
+    - 0.215
+    - 0.079
+    rpy_deg:
+    - 155.003
+    - -9.233
+    - 99.561
+  right_back_top_probe:
+    position_xyz_m:
+    - 0.763
+    - -0.103
+    - 0.412
+    quaternion_xyzw:
+    - 0.658
+    - 0.654
+    - 0.2
+    - 0.313
+    rpy_deg:
+    - 137.024
+    - 8.372
+    - 86.35
+estimated_collision_objects:
+  dispenser_combined_body_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m:
+    - 0.765
+    - -0.0155
+    - 0.216
+    size_xyz_m:
+    - 0.044
+    - 0.215
+    - 0.432
+    bounds_xyz_m:
+      min:
+      - 0.743
+      - -0.123
+      - 0.0
+      max:
+      - 0.787
+      - 0.092
+      - 0.432
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+  dispenser_head_nozzle_merged_horizontal_spout_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m:
+    - 0.721
+    - -0.0155
+    - 0.432
+    size_xyz_m:
+    - 0.044
+    - 0.215
+    - 0.04
+    bounds_xyz_m:
+      min:
+      - 0.699
+      - -0.123
+      - 0.412
+      max:
+      - 0.743
+      - 0.092
+      - 0.452
+    orientation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+    '# note': Merged horizontal nozzle block has the same X/Y footprint dimensions
+      and orientation as dispenser_combined_body_box, with its max X face touching
+      the body min X face.

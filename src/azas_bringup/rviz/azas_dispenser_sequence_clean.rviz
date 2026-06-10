@@ -28,38 +28,45 @@ Visualization Manager:
       Value: true
       Visual Enabled: true
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: false
+      Enabled: true
       Marker Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /azas/dispenser_sequence/markers
-      Name: Azas Sequence Markers
-      Value: false
-    - Class: rviz_default_plugins/Path
-      Buffer Length: 1
-      Color: 204; 26; 255
-      Enabled: false
-      Line Style: Lines
-      Line Width: 0.03
-      Name: Azas Sequence Path
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.03
-      Shaft Length: 0.1
-      Shaft Radius: 0.01
-      Topic:
         Depth: 5
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /azas/dispenser_sequence/plan
-      Value: false
+        Value: /azas/workspace_collision/markers
+      Name: Workspace Safety Walls/Floor
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /azas/measured_dispenser_collision/markers
+      Name: Measured Dispenser Collision
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /azas/collision_scene/markers
+      Name: Full Collision Scene
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization_marker_array
+      Name: Collision Scene Default Topic
+      Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: false
       Marker Topic:

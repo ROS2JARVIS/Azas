@@ -122,7 +122,12 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("selected_dispenser_id", default_value="1"),
-        DeclareLaunchArgument("model_path", default_value="/home/ssu/Downloads/best.pt"),
+        DeclareLaunchArgument(
+            "model_path",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("azas_perception"), "config", "yolo_cup_uprighting_best.pt"]
+            ),
+        ),
         DeclareLaunchArgument("color_topic", default_value="/camera/camera/color/image_raw"),
         DeclareLaunchArgument("depth_topic", default_value="/camera/camera/aligned_depth_to_color/image_raw"),
         DeclareLaunchArgument("camera_info_topic", default_value="/camera/camera/color/camera_info"),

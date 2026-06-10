@@ -31,6 +31,8 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
 
     def __init__(self):
         super().__init__()
+
+    def on_moveit_ready(self):
         self.setup_safety_environment()
 
     def setup_safety_environment(self):
@@ -140,7 +142,7 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
 
         self.picking = True
         try:
-            self._pick_and_straighten(bx, by, bz, cup_theta)
+            return self._pick_and_straighten(bx, by, bz, cup_theta)
         finally:
             self.picking = False
 
@@ -167,6 +169,10 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         safe_z = floor_z + 0.25 + Z_OFFSET
         
         log.info(f"== 컵 구출 시퀀스 준비 (각도: {np.degrees(cup_theta):.1f}도) ==")
+        log.info(
+            "Target base=(%.3f, %.3f, %.3f), safe_z=%.3f, pick_z=%.3f, place_z=%.3f"
+            % (bx, by, bz, safe_z, pick_z, place_z)
+        )
           
 
 
@@ -187,22 +193,30 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         }
         
         # 추출한 현재 방향(current_ori)을 유지하면서 Z축만 상공으로 이동
-        self.plan_pose(bx, by, safe_z, current_ori)
+        if not self.plan_pose(bx, by, safe_z, current_ori):
+            log.error("[ABORT] [1-1] 상공 진입 실패: 그리퍼를 닫지 않고 중단합니다.")
+            return False
         time.sleep(1.0)
 
 
         log.info("[1-2] 상공에서 컵 방향으로 정렬")
-        self.plan_pose(bx, by, safe_z, target_ori)
+        if not self.plan_pose(bx, by, safe_z, target_ori):
+            log.error("[ABORT] [1-2] 컵 방향 정렬 실패: 그리퍼를 닫지 않고 중단합니다.")
+            return False
         time.sleep(1.0)
 
         log.info("[2] 컵 집기 시작")
-        self.plan_pose(bx, by, pick_z, target_ori)
+        if not self.plan_pose(bx, by, pick_z, target_ori):
+            log.error("[ABORT] [2] 집기 위치 진입 실패: 그리퍼를 닫지 않고 중단합니다.")
+            return False
         self.gripper.close_gripper()
         log.info("[2] 컵 집기 완료")
         time.sleep(1.0)
 
         log.info("[3] Lift Up (다시 바닥 기준 25cm 상공으로 리프트업)")
-        self.plan_pose(bx, by, safe_z, target_ori)
+        if not self.plan_pose(bx, by, safe_z, target_ori):
+            log.error("[ABORT] [3] 리프트업 실패: 컵을 잡은 상태로 후속 직립/릴리즈를 중단합니다.")
+            return False
         time.sleep(1.0)
 
         # 직립화 실행 (항상 카메라가 위를 향하는 Roll=90 고정)
@@ -228,22 +242,29 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             best_ori = ori_target
         else:
             log.error("=> 치명적 오류: 관절 한계로 인해 직립화 궤적 생성에 실패했습니다.")
-            return 
+            return False
 
         log.info("[4-1] 공중에서 컵 수직 정렬 완료")
         
         log.info(f"[4-2] Z-Height Adjustment (Z: {place_z:.3f})")
-        self.plan_pose(place_x, place_y, place_z + 0.02, best_ori)
+        if not self.plan_pose(place_x, place_y, place_z + 0.02, best_ori):
+            log.error("[ABORT] [4-2] 놓기 높이 접근 실패: 그리퍼를 열지 않고 중단합니다.")
+            return False
 
         
         log.info("[5] Place & Release")
-        self.plan_pose(place_x, place_y, place_z, best_ori)
+        if not self.plan_pose(place_x, place_y, place_z, best_ori):
+            log.error("[ABORT] [5] 놓기 위치 진입 실패: 그리퍼를 열지 않고 중단합니다.")
+            return False
         self.gripper.open_gripper()
         time.sleep(1.0)
         
         log.info("[6] Retract")
-        self.plan_pose(place_x, place_y, place_z + 0.15, best_ori)
+        if not self.plan_pose(place_x, place_y, place_z + 0.15, best_ori):
+            log.error("[WARN] [6] 후퇴 실패: 릴리즈는 완료됐지만 수동 확인이 필요합니다.")
+            return False
         log.info("== 시퀀스 완료 ==")
+        return True
 
 def main(args=None):
     run_node(YoloCupUprightingNode)
