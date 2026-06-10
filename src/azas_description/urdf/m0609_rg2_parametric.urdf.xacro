@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="m0609_rg2_parametric">
+  <xacro:arg name="rg2_parent_link" default="tool0"/>
+  <xacro:arg name="rg2_prefix" default="rg2_"/>
+  <xacro:arg name="rg2_mount_xyz" default="0 0 0"/>
+  <xacro:arg name="rg2_mount_rpy" default="1.570796327 0 1.570796327"/>
+  <xacro:arg name="rg2_finger_joints_fixed" default="true"/>
+  <xacro:arg name="rg2_tcp_link_name" default="gripper_tcp"/>
+  <xacro:arg name="rg2_tcp_z_offset" default="0.213"/>
+
+  <xacro:include filename="$(find dsr_description2)/xacro/m0609.urdf.xacro"/>
+  <xacro:include filename="$(find azas_description)/urdf/rg2_parametric.xacro"/>
+
+  <xacro:azas_rg2_parametric
+    parent_link="$(arg rg2_parent_link)"
+    prefix="$(arg rg2_prefix)"
+    mount_xyz="$(arg rg2_mount_xyz)"
+    mount_rpy="$(arg rg2_mount_rpy)"
+    finger_joints_fixed="$(arg rg2_finger_joints_fixed)"
+    tcp_link_name="$(arg rg2_tcp_link_name)"
+    tcp_z_offset="$(arg rg2_tcp_z_offset)"/>
+</robot>
