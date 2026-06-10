@@ -10,6 +10,7 @@ def generate_launch_description():
     use_live_stt = LaunchConfiguration("use_live_stt")
     use_llm = LaunchConfiguration("use_llm")
     use_conversation_manager = LaunchConfiguration("use_conversation_manager")
+    run_voice_screen = LaunchConfiguration("run_voice_screen")
     use_tts = LaunchConfiguration("use_tts")
     enable_tts_audio = LaunchConfiguration("enable_tts_audio")
     tts_speech_rate = LaunchConfiguration("tts_speech_rate")
@@ -21,14 +22,21 @@ def generate_launch_description():
             DeclareLaunchArgument("use_live_stt", default_value="false"),
             DeclareLaunchArgument("use_llm", default_value="false"),
             DeclareLaunchArgument("use_conversation_manager", default_value="true"),
+            DeclareLaunchArgument("run_voice_screen", default_value="true"),
+            DeclareLaunchArgument("voice_screen_host", default_value="0.0.0.0"),
+            DeclareLaunchArgument("voice_screen_port", default_value="8090"),
             DeclareLaunchArgument("use_tts", default_value="true"),
             DeclareLaunchArgument("enable_tts_audio", default_value="true"),
             DeclareLaunchArgument("tts_speech_rate", default_value="1.25"),
-            DeclareLaunchArgument("tts_startup_prompt", default_value="주문하시겠어요?"),
+            DeclareLaunchArgument(
+                "tts_startup_prompt",
+                default_value="원하는 맛을 말씀해주시면 추천해드릴게요. 주문하시겠어요?",
+            ),
             DeclareLaunchArgument("enable_llm", default_value="false"),
             DeclareLaunchArgument("llm_model", default_value="gpt-4o-mini"),
             DeclareLaunchArgument("llm_base_url", default_value="https://api.openai.com/v1"),
             DeclareLaunchArgument("llm_api_key_env", default_value="OPENAI_API_KEY"),
+            DeclareLaunchArgument("llm_request_timeout_sec", default_value="20.0"),
             DeclareLaunchArgument("stt_topic", default_value="/stt_result"),
             Node(
                 package="azas_voice",
@@ -55,6 +63,9 @@ def generate_launch_description():
                         "model": LaunchConfiguration("llm_model"),
                         "base_url": LaunchConfiguration("llm_base_url"),
                         "api_key_env": LaunchConfiguration("llm_api_key_env"),
+                        "request_timeout_sec": ParameterValue(
+                            LaunchConfiguration("llm_request_timeout_sec"), value_type=float
+                        ),
                         "publish_confirmation": False,
                     }
                 ],
@@ -88,6 +99,22 @@ def generate_launch_description():
                     }
                 ],
                 condition=IfCondition(use_tts),
+            ),
+            Node(
+                package="azas_voice",
+                executable="voice_screen_node",
+                name="azas_voice_screen_node",
+                output="screen",
+                parameters=[
+                    {
+                        "host": LaunchConfiguration("voice_screen_host"),
+                        "port": ParameterValue(
+                            LaunchConfiguration("voice_screen_port"), value_type=int
+                        ),
+                        "stt_topic": stt_topic,
+                    }
+                ],
+                condition=IfCondition(run_voice_screen),
             ),
         ]
     )
