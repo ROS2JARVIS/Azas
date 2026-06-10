@@ -11,6 +11,7 @@ def generate_launch_description():
     use_llm = LaunchConfiguration("use_llm")
     use_conversation_manager = LaunchConfiguration("use_conversation_manager")
     run_voice_screen = LaunchConfiguration("run_voice_screen")
+    use_dispenser_executor = LaunchConfiguration("use_dispenser_executor")
     use_tts = LaunchConfiguration("use_tts")
     enable_tts_audio = LaunchConfiguration("enable_tts_audio")
     tts_speech_rate = LaunchConfiguration("tts_speech_rate")
@@ -22,6 +23,17 @@ def generate_launch_description():
             DeclareLaunchArgument("use_live_stt", default_value="false"),
             DeclareLaunchArgument("use_llm", default_value="false"),
             DeclareLaunchArgument("use_conversation_manager", default_value="true"),
+            DeclareLaunchArgument("use_dispenser_executor", default_value="false"),
+            DeclareLaunchArgument("enable_dispenser_hardware_execution", default_value="false"),
+            DeclareLaunchArgument("dispenser_service_prefix", default_value="/"),
+            DeclareLaunchArgument("dispenser_tcp_name", default_value=""),
+            DeclareLaunchArgument(
+                "dispenser_require_tcp_for_taught_posx", default_value="true"
+            ),
+            DeclareLaunchArgument("dispenser_joint_velocity", default_value="10.0"),
+            DeclareLaunchArgument("dispenser_joint_acceleration", default_value="10.0"),
+            DeclareLaunchArgument("dispenser_line_velocity", default_value="15.0"),
+            DeclareLaunchArgument("dispenser_line_acceleration", default_value="25.0"),
             DeclareLaunchArgument("run_voice_screen", default_value="true"),
             DeclareLaunchArgument("voice_screen_host", default_value="0.0.0.0"),
             DeclareLaunchArgument("voice_screen_port", default_value="8090"),
@@ -77,6 +89,39 @@ def generate_launch_description():
                 name="conversation_manager_node",
                 output="screen",
                 condition=IfCondition(use_conversation_manager),
+            ),
+            Node(
+                package="azas_voice",
+                executable="voice_dispenser_executor_node",
+                name="voice_dispenser_executor_node",
+                output="screen",
+                parameters=[
+                    {
+                        "enable_hardware_execution": ParameterValue(
+                            LaunchConfiguration("enable_dispenser_hardware_execution"),
+                            value_type=bool,
+                        ),
+                        "service_prefix": LaunchConfiguration("dispenser_service_prefix"),
+                        "tcp_name": LaunchConfiguration("dispenser_tcp_name"),
+                        "require_tcp_for_taught_posx": ParameterValue(
+                            LaunchConfiguration("dispenser_require_tcp_for_taught_posx"),
+                            value_type=bool,
+                        ),
+                        "joint_velocity": ParameterValue(
+                            LaunchConfiguration("dispenser_joint_velocity"), value_type=float
+                        ),
+                        "joint_acceleration": ParameterValue(
+                            LaunchConfiguration("dispenser_joint_acceleration"), value_type=float
+                        ),
+                        "line_velocity": ParameterValue(
+                            LaunchConfiguration("dispenser_line_velocity"), value_type=float
+                        ),
+                        "line_acceleration": ParameterValue(
+                            LaunchConfiguration("dispenser_line_acceleration"), value_type=float
+                        ),
+                    }
+                ],
+                condition=IfCondition(use_dispenser_executor),
             ),
             Node(
                 package="azas_voice",
