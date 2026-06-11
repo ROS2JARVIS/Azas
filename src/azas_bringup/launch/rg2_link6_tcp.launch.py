@@ -29,7 +29,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("open_tcp_offset_m", default_value="0.15"),
             DeclareLaunchArgument("closed_tcp_offset_m", default_value="0.25"),
-            DeclareLaunchArgument("publish_gripper_collision", default_value="true"),
+            DeclareLaunchArgument("publish_gripper_collision", default_value="false"),
             Node(
                 package="robot_state_publisher",
                 executable="robot_state_publisher",

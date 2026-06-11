@@ -27,6 +27,7 @@ MOVEIT_XACRO = (
     / "config"
     / "m0609.urdf.xacro"
 )
+MOVEIT_SRDF = MOVEIT_XACRO.with_name("dsr.srdf")
 
 REQUIRED_LINKS = {
     "rg2_quick_changer",
@@ -37,12 +38,23 @@ REQUIRED_LINKS = {
     "gripper_tcp",
 }
 
+REQUIRED_DISABLED_COLLISIONS = {
+    frozenset(("link_6", "rg2_quick_changer")),
+    frozenset(("rg2_quick_changer", "rg2_angle_bracket")),
+    frozenset(("rg2_angle_bracket", "rg2_gripper_body")),
+    frozenset(("rg2_gripper_body", "rg2_left_inner_knuckle")),
+    frozenset(("rg2_gripper_body", "rg2_right_inner_knuckle")),
+    frozenset(("rg2_left_inner_knuckle", "rg2_left_inner_finger")),
+    frozenset(("rg2_right_inner_knuckle", "rg2_right_inner_finger")),
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check that M0609 MoveIt robot_description contains RG2 mesh collisions."
     )
     parser.add_argument("--xacro", type=Path, default=MOVEIT_XACRO)
+    parser.add_argument("--srdf", type=Path, default=MOVEIT_SRDF)
     return parser.parse_args()
 
 
@@ -79,8 +91,8 @@ def main() -> int:
     required_source = [
         "rg2_parametric.xacro",
         "xacro:azas_rg2_parametric",
-        'name="rg2_parent_link" default="tool0"',
-        'name="rg2_mount_rpy" default="3.141592654 -1.570796327 0"',
+        'name="rg2_parent_link" default="link_6"',
+        'name="rg2_mount_rpy" default="0 0 0"',
     ]
     missing_source = [needle for needle in required_source if needle not in source]
     if missing_source:
@@ -111,13 +123,36 @@ def main() -> int:
 
     quick_changer_joint = root.find("./joint[@name='rg2_quick_changer_joint']")
     parent = quick_changer_joint.find("parent").attrib.get("link") if quick_changer_joint is not None else None
-    if parent != "tool0":
-        print(f"[FAIL] rg2_quick_changer_joint parent should be tool0, found {parent!r}")
+    if parent != "link_6":
+        print(f"[FAIL] rg2_quick_changer_joint parent should be link_6, found {parent!r}")
+        return 1
+    origin = quick_changer_joint.find("origin") if quick_changer_joint is not None else None
+    mount_rpy = origin.attrib.get("rpy") if origin is not None else None
+    if mount_rpy != "0 0 0":
+        print(f"[FAIL] rg2_quick_changer_joint mount rpy should be identity, found {mount_rpy!r}")
+        return 1
+
+    srdf_path = args.srdf.expanduser().resolve()
+    if not srdf_path.is_file():
+        print(f"[FAIL] missing MoveIt SRDF: {srdf_path}")
+        return 1
+    srdf = ET.parse(srdf_path).getroot()
+    disabled_collisions = {
+        frozenset((entry.attrib.get("link1", ""), entry.attrib.get("link2", "")))
+        for entry in srdf.findall("disable_collisions")
+    }
+    missing_disabled = REQUIRED_DISABLED_COLLISIONS - disabled_collisions
+    if missing_disabled:
+        print("[FAIL] MoveIt SRDF does not allow required RG2 internal self-collisions:")
+        for pair in sorted(tuple(sorted(pair)) for pair in missing_disabled):
+            print(f"missing={pair[0]} <-> {pair[1]}")
         return 1
 
     print("[PASS] M0609 MoveIt robot_description includes RG2 mesh collision links.")
     print(f"rg2_collision_meshes={len(rg2_collision_meshes)}")
-    print("rg2_parent=tool0")
+    print("rg2_parent=link_6")
+    print("rg2_mount_rpy=0 0 0")
+    print(f"rg2_required_disabled_collisions={len(REQUIRED_DISABLED_COLLISIONS)}")
     return 0
 
 

@@ -32,7 +32,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "rg2_mount_rpy",
-                default_value="1.570796327 0 1.570796327",
+                default_value="0 0 0",
             ),
             Node(
                 package="robot_state_publisher",

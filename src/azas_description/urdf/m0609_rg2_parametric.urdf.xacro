@@ -3,7 +3,7 @@
   <xacro:arg name="rg2_parent_link" default="link_6"/>
   <xacro:arg name="rg2_prefix" default="rg2_"/>
   <xacro:arg name="rg2_mount_xyz" default="0 0 0"/>
-  <xacro:arg name="rg2_mount_rpy" default="3.141592654 -1.570796327 0"/>
+  <xacro:arg name="rg2_mount_rpy" default="0 0 0"/>
   <xacro:arg name="rg2_finger_joints_fixed" default="true"/>
   <xacro:arg name="rg2_tcp_link_name" default="gripper_tcp"/>
   <xacro:arg name="rg2_tcp_z_offset" default="0.213"/>

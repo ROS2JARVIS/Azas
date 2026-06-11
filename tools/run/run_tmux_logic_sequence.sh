@@ -129,15 +129,9 @@ ensure_collision_scene() {
       dispenser_collision_publish_objects:=true \
       dispenser_collision_publish_markers:=true &
     ros2 launch azas_bringup rg2_link6_tcp.launch.py publish_gripper_collision:=false &
+    # The RG2 mesh is now in the MoveIt URDF; purge the legacy attached box.
     timeout 12s ros2 run azas_motion link6_gripper_collision_node \
       --ros-args -p operation:=remove -p publish_once:=true -p publish_markers:=false || true
-    ros2 run azas_motion link6_gripper_collision_node \
-      --ros-args \
-      -p palm_size_x_m:=0.075 -p palm_size_y_m:=0.115 -p palm_size_z_m:=0.040 -p palm_z_m:=0.070 \
-      -p finger_size_x_m:=0.030 -p finger_size_y_m:=0.014 -p finger_size_z_m:=0.120 \
-      -p finger_y_m:=0.050 -p finger_z_m:=0.125 \
-      -p pad_size_x_m:=0.022 -p pad_size_y_m:=0.010 -p pad_size_z_m:=0.025 \
-      -p pad_y_m:=0.037 -p pad_z_m:=0.180 &
     ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 --frame-id world --child-frame-id base_link &
     ros2 run azas_perception hand_eye_static_tf_node --ros-args -p compose_timeout_sec:=30.0 -p allow_direct_fallback:=false &
     python3 -m azas_motion.tumbler_collision_scene_node --ros-args -p action:=publish_detected -p object_id:=detected_tumbler -p use_lidded_height:=true
@@ -163,6 +157,7 @@ run_side_grip() {
       redetect_on_approach:=false redetect_settle_sec:=0.5 \
       grasp_mode:=side side_far_stage_enabled:=false side_approach_offset:=0.18 \
       side_short_stage_backoff_m:=0.08 side_grasp_stop_backoff_m:=0.04 side_close_underreach_m:=0.03 \
+      side_target_x_offset_m:="${SIDE_TARGET_X_OFFSET_M:--0.020}" \
       side_low_retry_lift_m:=0.0 side_low_retry_attempts:=0 \
       side_linear_approach_enabled:=true side_final_slide_enabled:=false \
       side_fixed_grasp_z_enabled:=false side_grasp_z_offset:=0.05 side_project_bbox_center_to_fixed_z:=false \

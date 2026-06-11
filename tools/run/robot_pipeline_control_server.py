@@ -343,6 +343,59 @@ def chain_recipe_after_manual_command(manual_cmd: str, payload: dict[str, Any], 
     )
 
 
+def chain_shake_after_lid_command(lid_cmd: str, payload: dict[str, Any]) -> str:
+    """Run holder re-pick + shake immediately after ArUco lid close success.
+
+    The lid-grip launch is an OpenCV/manual ROS launch that stays alive after a
+    successful `p`-triggered sequence.  Waiting for the process to exit would
+    block the next motion indefinitely, so the panel chain watches the planner's
+    `/jarvis/lid_gripper/status` success event, terminates the lid preview
+    launch, then starts the existing measured cup-holder re-pick/shake command.
+    """
+
+    steps_by_key = {step.key: step for step in STEPS}
+    shake_cmd = command_for(steps_by_key["shake_closed_cup"], payload)
+    wait_script = ROOT / "tools" / "run" / "wait_for_lid_grip_status.py"
+    wait_cmd = (
+        f"cd {ROOT} && {ROS_SETUP} && "
+        f"python3 {shlex.quote(str(wait_script))} "
+        "--timeout-sec 900 --success-status motion_sequence_requested"
+    )
+    return (
+        f"( {lid_cmd} ) & "
+        "lid_pid=$!; "
+        f"( {wait_cmd} ) & "
+        "wait_pid=$!; "
+        "while true; do "
+        "if ! kill -0 ${wait_pid} 2>/dev/null; then "
+        "wait ${wait_pid}; wait_rc=$?; break; "
+        "fi; "
+        "if ! kill -0 ${lid_pid} 2>/dev/null; then "
+        "wait ${lid_pid}; lid_rc=$?; "
+        "sleep 1; "
+        "if ! kill -0 ${wait_pid} 2>/dev/null; then "
+        "wait ${wait_pid}; wait_rc=$?; break; "
+        "fi; "
+        "echo '[Azas] lid_grip_close launch exited before ArUco success status; shake chain blocked.'; "
+        "kill -TERM ${wait_pid} 2>/dev/null || true; "
+        "wait ${wait_pid} 2>/dev/null || true; "
+        "if [ ${lid_rc} -eq 0 ]; then exit 1; else exit ${lid_rc}; fi; "
+        "fi; "
+        "sleep 1; "
+        "done; "
+        "kill -TERM ${lid_pid} 2>/dev/null || true; "
+        "wait ${lid_pid} 2>/dev/null || true; "
+        "if [ ${wait_rc} -eq 0 ]; then "
+        "echo '[Azas] ArUco lid_grip_close 성공 status 확인 -> 컵홀더 컵 다시 잡기 후 쉐이킹으로 바로 넘어갑니다.'; "
+        "echo '[Azas] auto_holder_pick_then_shake=true'; "
+        f"{shake_cmd}; "
+        "else "
+        "echo '[Azas] ArUco lid_grip_close 실패/타임아웃 -> 컵홀더 재픽업/쉐이킹을 건너뜁니다.'; "
+        "exit ${wait_rc}; "
+        "fi"
+    )
+
+
 def hand_eye_static_tf_command(*, compose_timeout_sec: float = 30.0) -> str:
     """Start the measured hand-eye TF publisher without inventing camera poses."""
     return (
@@ -686,15 +739,15 @@ STEPS = [
         False,
         "카메라 화면의 visible colored handle blob을 직접 검출해 왼쪽→오른쪽을 디스펜서 1~4로 매핑하고 outputs/dispenser_color_map.json 저장. TF 투영은 보조 경로",
     ),
-    Step("voice_input", "음성 입력 (STT+LLM 노드 시작)", "background", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT → /stt_result → llm_recipe_mapper → /azas/voice/recipe_decision"),
+    Step("voice_input", "수빈 STT/주문 UI 시작", "background", "ros2 launch azas_voice azas_voice.launch.py", True, False, "voice screen(8090) + STT topic(/stt_result) → recipe mapper → conversation manager. 로봇 좌표/모션은 만들지 않음"),
     Step(
         "listen_stt_recipe",
-        "STT 레시피 수신 대기 (60초)",
+        "수빈 STT 레시피 확정 대기 (60초)",
         "run",
         "tools/run/listen_stt_recipe.py --timeout 60",
         True,
         False,
-        "사용자가 말하면 /azas/voice/recipe_decision 수신 → outputs/latest_recipe.json 저장",
+        "사용자가 메뉴를 말하고 '응'으로 확정하면 /azas/voice/confirmed_recipe_decision 수신 → outputs/latest_recipe.json 저장",
     ),
     Step(
         "run_color_recipe_sequence",
@@ -709,10 +762,10 @@ STEPS = [
         "side_grip",
         "PR #20 RealSense 컵 인식 후 side grip",
         "background",
-        "ros2 launch dsr_practice yolo_cup_pick_node.launch.py auto_pick:=false exit_after_pick:=false grasp_mode:=side moveit_controller_name:=/dsr01/dsr_moveit_controller",
+        "SIDE_TARGET_X_OFFSET_M=-0.020 bash tools/run/run_changhyun_side_grip_direct.sh",
         True,
         True,
-        "OpenCV 창에서 컵 확인 후 p 키로 side-grip 실행. 장기 실행 GUI 노드라 패널에서는 tmux 창으로 분리 실행",
+        "OpenCV 창에서 컵 확인 후 p 키로 side-grip 실행. 패널은 direct runner를 tmux로 띄우며 기본 X 보정은 -20mm",
     ),
     Step(
         "cup_uprighting",
@@ -887,7 +940,7 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "컵홀더 컵 다시 잡기 후 쉐이킹", "run", "tools/run/pick_from_cup_holder_side_grip.py && tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 측정된 cup_holder.side_grip_place pose로 다시 side-grip 픽업한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행"),
+    Step("shake_closed_cup", "컵홀더 컵 다시 잡기 후 쉐이킹", "run", "tools/run/pick_from_cup_holder_side_grip.py && tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 측정된 cup_holder.side_grip_place pose로 다시 side-grip 픽업한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행. 쉐이킹 성공 시 컵을 든 채 카메라 포즈(J=[3, -12.7, 44, -9, 133, 90])로 복귀해 손 검출/핸드오버 준비"),
     Step(
         "start_hand_detection",
         "손 검출 시작 / 무모션",
@@ -896,6 +949,15 @@ STEPS = [
         True,
         False,
         "perception 전용: MediaPipe로 펼친 손바닥을 추적해 /azas/human_hand_detection으로 발행. 로봇 모션 없음",
+    ),
+    Step(
+        "start_hand_detection_view",
+        "손 검출 화면 보기",
+        "background",
+        "rqt_image_view /azas/human_hand_detection/overlay",
+        True,
+        False,
+        "손 검출 overlay(랜드마크/STABLE 라벨)를 rqt_image_view 창으로 표시. 손 검출 시작 버튼이 먼저 켜져 있어야 영상이 나옴",
     ),
     Step(
         "handover_cup_to_palm",
@@ -934,6 +996,7 @@ PANEL_TMUX_STEPS = {
     "lid_grip_close",
     "shake_rviz_preview",
     "start_hand_detection",
+    "start_hand_detection_view",
 }
 PANEL_HIDDEN_STEP_KEYS = {
     "rviz_cocktail_collision_preview",
@@ -945,8 +1008,6 @@ PANEL_HIDDEN_STEP_KEYS = {
     "run_cocktail_now_real",
     "start_camera_view",
     "detect_cup_lid",
-    "voice_input",
-    "listen_stt_recipe",
     "run_one_click_cocktail_real",
     "move_to_dispenser_1",
     "move_to_dispenser_2",
@@ -2193,12 +2254,10 @@ def wait_for_collision_object_sample(
     timeout_sec: float = 10.0,
     proc: subprocess.Popen[str] | None = None,
 ) -> tuple[bool, str]:
-    """Wait until workspace objects and the link_6 gripper attachment are visible."""
+    """Wait until workspace collision objects are visible."""
     deadline = time.monotonic() + max(timeout_sec, 0.1)
     last_collision_output = ""
-    last_attached_output = ""
     saw_collision = False
-    saw_attached_gripper = False
     while time.monotonic() < deadline:
         if proc is not None and proc.poll() is not None:
             return False, "collision scene process exited while waiting\n" + tail_file(process_logs.get("start_collision_scene"))
@@ -2216,38 +2275,17 @@ def wait_for_collision_object_sample(
         if collision_result.returncode == 0 and "id:" in collision_result.stdout:
             saw_collision = True
 
-        attached_result = subprocess.run(
-            ["bash", "-lc", "timeout 2s ros2 topic echo /attached_collision_object --once"],
-            cwd=str(ROOT),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=3.0,
-            check=False,
-        )
-        last_attached_output = attached_result.stdout[-2000:]
-        if (
-            attached_result.returncode == 0
-            and "azas_rg2_gripper_on_link6" in attached_result.stdout
-            and "link_name: link_6" in attached_result.stdout
-        ):
-            saw_attached_gripper = True
-
-        if saw_collision and saw_attached_gripper:
+        if saw_collision:
             return (
                 True,
                 "collision object sample observed on /collision_object\n"
-                + last_collision_output
-                + "\nattached RG2 gripper envelope observed on /attached_collision_object\n"
-                + last_attached_output,
+                + last_collision_output,
             )
         time.sleep(0.5)
     return False, (
         f"scene readiness incomplete within {timeout_sec:.1f}s "
-        f"(workspace={saw_collision}, link6_gripper={saw_attached_gripper})\n"
-        f"--- last /collision_object ---\n{last_collision_output}\n"
-        f"--- last /attached_collision_object ---\n{last_attached_output}"
+        f"(workspace={saw_collision})\n"
+        f"--- last /collision_object ---\n{last_collision_output}"
     )
 
 
@@ -3404,15 +3442,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "dispenser_collision_publish_markers:=true & "
             "ros2 launch azas_bringup rg2_link6_tcp.launch.py "
             "publish_gripper_collision:=false & "
-            "(timeout 12s ros2 run azas_motion link6_gripper_collision_node "
+            "timeout 12s ros2 run azas_motion link6_gripper_collision_node "
             "--ros-args -p operation:=remove -p publish_once:=true -p publish_markers:=false || true; "
-            "ros2 run azas_motion link6_gripper_collision_node "
-            "--ros-args "
-            "-p palm_size_x_m:=0.075 -p palm_size_y_m:=0.115 -p palm_size_z_m:=0.040 -p palm_z_m:=0.070 "
-            "-p finger_size_x_m:=0.030 -p finger_size_y_m:=0.014 -p finger_size_z_m:=0.120 "
-            "-p finger_y_m:=0.050 -p finger_z_m:=0.125 "
-            "-p pad_size_x_m:=0.022 -p pad_size_y_m:=0.010 -p pad_size_z_m:=0.025 "
-            "-p pad_y_m:=0.037 -p pad_z_m:=0.180) & "
             "ros2 run tf2_ros static_transform_publisher "
             "--x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 "
             "--frame-id world --child-frame-id base_link & "
@@ -3446,6 +3477,13 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             "ros2 run rqt_image_view rqt_image_view /camera/camera/color/image_raw"
         )
+    if step.key == "start_hand_detection_view":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "DISPLAY=${DISPLAY:-:0} "
+            "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
+            "ros2 run rqt_image_view rqt_image_view /azas/human_hand_detection/overlay"
+        )
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
     if step.key == "pick_lid":
@@ -3455,13 +3493,17 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key == "lid_grip_close":
         direct_script = ROOT / "tools" / "run" / "run_kang_lid_grip_close_direct.sh"
-        return (
+        manual_cmd = (
             f"cd {ROOT} && "
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
+            "MOVE_TO_LID_VIEW_POSE=true "
             f"bash {shlex.quote(str(direct_script))}"
         )
+        if payload.get("_auto_shake_after_lid_grip_close", True):
+            return chain_shake_after_lid_command(manual_cmd, payload)
+        return manual_cmd
     if step.key == "cup_uprighting":
         direct_script = ROOT / "tools" / "run" / "run_somyeong_cup_uprighting_direct.sh"
         manual_cmd = (
@@ -3477,12 +3519,23 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             return chain_recipe_after_manual_command(manual_cmd, payload, "소명 cup_uprighting")
         return manual_cmd
     if step.key == "voice_input":
-        return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py"
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "echo '[Azas] 수빈 STT/주문 UI: voice screen http://localhost:8090' && "
+            "echo '[Azas] 메뉴를 말하거나 테스트 발화 입력 후, 응/시작으로 확정하면 listen_stt_recipe가 latest_recipe.json을 저장합니다.' && "
+            "ros2 launch azas_voice azas_voice.launch.py run_voice_screen:=true"
+        )
     if step.key == "side_grip":
         direct_script = ROOT / "tools" / "run" / "run_changhyun_side_grip_direct.sh"
+        side_target_x_offset_m = str(
+            payload.get("side_target_x_offset_m")
+            or os.environ.get("SIDE_TARGET_X_OFFSET_M")
+            or "-0.020"
+        )
         manual_cmd = (
             f"cd {ROOT} && "
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
+            f"SIDE_TARGET_X_OFFSET_M={shlex.quote(side_target_x_offset_m)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             f"bash {shlex.quote(str(direct_script))}"
@@ -3709,6 +3762,13 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
+            " && echo '[Azas] SHAKE DONE: 손 검출/핸드오버를 위해 카메라 포즈로 복귀합니다 (컵 파지 유지).' && "
+            "python3 tools/run/direct_movej_joints.py "
+            f"--service-prefix {service_prefix} "
+            "--j1 3.0 --j2 -12.7 --j3 44.0 --j4 -9.0 --j5 133.0 --j6 90.0 "
+            "--velocity 15 --acceleration 15 "
+            "--j5-min-deg -150 --j5-max-deg 150 --timeout-sec 60 --motion-timeout-sec 120 "
+            "--execute --confirm ENABLE_DIRECT_MOVEJ"
         )
     if step.key == "handover_cup_to_palm":
         release_height_m = str(
