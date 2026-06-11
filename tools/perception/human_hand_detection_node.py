@@ -28,7 +28,6 @@ import time
 import cv2
 import numpy as np
 import rclpy
-from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
@@ -52,13 +51,38 @@ FINGER_TIPS = (8, 12, 16, 20)
 FINGER_PIPS = (6, 10, 14, 18)
 
 
+# cv_bridge is avoided on purpose: the ROS humble build is ABI-incompatible
+# with the pip-installed numpy 2.x that mediapipe requires.
+def image_msg_to_array(msg: Image) -> np.ndarray:
+    if msg.encoding in ("bgr8", "rgb8"):
+        array = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3)
+        return cv2.cvtColor(array, cv2.COLOR_RGB2BGR) if msg.encoding == "rgb8" else array.copy()
+    if msg.encoding == "16UC1":
+        dtype = np.dtype(np.uint16).newbyteorder(">" if msg.is_bigendian else "<")
+        return np.frombuffer(msg.data, dtype=dtype).reshape(msg.height, msg.width)
+    if msg.encoding == "32FC1":
+        dtype = np.dtype(np.float32).newbyteorder(">" if msg.is_bigendian else "<")
+        return np.frombuffer(msg.data, dtype=dtype).reshape(msg.height, msg.width)
+    raise ValueError(f"unsupported image encoding: {msg.encoding}")
+
+
+def bgr_array_to_image_msg(array: np.ndarray, header) -> Image:
+    msg = Image()
+    msg.header = header
+    msg.height, msg.width = array.shape[:2]
+    msg.encoding = "bgr8"
+    msg.is_bigendian = 0
+    msg.step = msg.width * 3
+    msg.data = np.ascontiguousarray(array).tobytes()
+    return msg
+
+
 class HumanHandDetectionNode(Node):
     """Perception-only node: no motion service client is created here."""
 
     def __init__(self, args: argparse.Namespace) -> None:
         super().__init__("azas_human_hand_detection")
         self.args = args
-        self.bridge = CvBridge()
         self.camera_info: CameraInfo | None = None
         self.latest_depth: np.ndarray | None = None
         self.latest_depth_encoding = ""
@@ -95,7 +119,7 @@ class HumanHandDetectionNode(Node):
         self.camera_info = msg
 
     def on_depth(self, msg: Image) -> None:
-        self.latest_depth = self.bridge.imgmsg_to_cv2(msg)
+        self.latest_depth = image_msg_to_array(msg)
         self.latest_depth_encoding = msg.encoding
 
     def on_color(self, msg: Image) -> None:
@@ -107,7 +131,7 @@ class HumanHandDetectionNode(Node):
             self.publish_status({"detected": False, "reason": "waiting for camera_info/depth"})
             return
 
-        color = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        color = image_msg_to_array(msg)
         rgb = cv2.cvtColor(color, cv2.COLOR_BGR2RGB)
         timestamp_ms = max(int(now * 1000.0), self.last_timestamp_ms + 1)
         self.last_timestamp_ms = timestamp_ms
@@ -175,9 +199,7 @@ class HumanHandDetectionNode(Node):
         finally:
             self.publish_status(status)
             if overlay is not None and self.overlay_pub is not None:
-                overlay_msg = self.bridge.cv2_to_imgmsg(overlay, encoding="bgr8")
-                overlay_msg.header = msg.header
-                self.overlay_pub.publish(overlay_msg)
+                self.overlay_pub.publish(bgr_array_to_image_msg(overlay, msg.header))
 
     def count_extended_fingers(self, pixels: list[tuple[float, float]]) -> int:
         """A finger counts as extended when its tip is farther from the wrist than its PIP joint."""

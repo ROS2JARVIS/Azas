@@ -1799,13 +1799,27 @@ class IntegratedRecipeMotion:
                     f"target_posx=[{pre_target[0]:.1f}, {pre_target[1]:.1f}, {pre_target[2]:.1f}, "
                     f"{pre_target[3]:.1f}, {pre_target[4]:.1f}, {pre_target[5]:.1f}]"
                 )
-                self.move_posx_joint_fallback(
-                    pre_target,
-                    label=f"generated DISP{dispenser_id}_PRE from DISP_PLACE X offset",
-                    velocity=self.args.move_prehold_velocity,
-                    acceleration=self.args.move_prehold_acceleration,
-                    max_joint_delta_deg=self.args.generated_cup_pre_max_joint_delta_deg,
-                )
+                pre_label = f"generated DISP{dispenser_id}_PRE from DISP_PLACE X/Z offset"
+                if self.args.generated_cup_pre_use_joint_fallback:
+                    print(
+                        f"[Azas] {pre_label}: using IK MoveJoint fallback because "
+                        "generated_cup_pre_use_joint_fallback=true"
+                    )
+                    self.move_posx_joint_fallback(
+                        pre_target,
+                        label=pre_label,
+                        velocity=self.args.move_prehold_velocity,
+                        acceleration=self.args.move_prehold_acceleration,
+                        max_joint_delta_deg=self.args.generated_cup_pre_max_joint_delta_deg,
+                    )
+                else:
+                    self.move_posx(
+                        pre_target,
+                        label=pre_label,
+                        velocity=self.args.move_prehold_velocity,
+                        acceleration=self.args.move_prehold_acceleration,
+                        timeout_sec=self.args.move_timeout_sec,
+                    )
             self.move_posx(
                 final_target,
                 label=f"DISP_PLACE measured DISP{dispenser_id} cup release",
@@ -2883,13 +2897,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--generated-cup-pre-use-joint-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Use IK MoveJoint for generated DISP_PRE. Default false: generated DISP_PRE "
+            "uses Cartesian MoveLine so X/Z-offset cup pre does not jump to a different wrist/joint branch."
+        ),
+    )
+    parser.add_argument(
         "--generated-cup-pre-max-joint-delta-deg",
         type=float,
         default=190.0,
         help=(
-            "Joint delta guard used only for the generated DISP_PRE IK MoveJoint from "
-            "latest cup_place X offset. Default 190deg allows the measured wrist branch "
-            "while keeping the global IK fallback guard unchanged."
+            "Joint delta guard used only when --generated-cup-pre-use-joint-fallback is enabled. "
+            "Default 190deg preserves the old fallback limit without affecting the default Cartesian path."
         ),
     )
     parser.add_argument(
