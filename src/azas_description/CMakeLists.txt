@@ -4,7 +4,12 @@ project(azas_description)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY launch urdf
+  DIRECTORY launch meshes urdf
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY LICENSES
   DESTINATION share/${PROJECT_NAME}
 )
 
