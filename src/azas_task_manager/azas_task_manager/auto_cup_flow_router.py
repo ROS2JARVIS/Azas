@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -24,6 +25,17 @@ class RouteDecision:
     route: str
     status: str
     confidence: float
+
+
+@dataclass(frozen=True)
+class DetectionOverlay:
+    center_u: int
+    center_v: int
+    width: int
+    height: int
+    orientation: str
+    class_name: str
+    classifier_confidence: Optional[float]
 
 
 class AutoCupFlowRouter(Node):
@@ -50,7 +62,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("route_timeout_sec", 30.0)
         self.declare_parameter("route_stable_required_samples", 5)
         self.declare_parameter("route_stable_min_sec", 0.8)
-        self.declare_parameter("route_hold_sec", 2.0)
+        self.declare_parameter("route_hold_sec", 3.5)
         self.declare_parameter("show_classification_window", True)
         self.declare_parameter("window_name", "Azas cup route classifier")
 
@@ -97,7 +109,6 @@ class AutoCupFlowRouter(Node):
             if decision is None:
                 self.get_logger().error("route decision failed: no stable upright/lying classification")
                 return 1
-            self._destroy_window()
             self._stop_process(perception, "perception")
             perception = None
 
@@ -156,7 +167,7 @@ class AutoCupFlowRouter(Node):
         timeout = float(self.get_parameter("route_timeout_sec").value)
         required = max(1, int(self.get_parameter("route_stable_required_samples").value))
         stable_min_sec = max(0.0, float(self.get_parameter("route_stable_min_sec").value))
-        hold_sec = max(2.0, float(self.get_parameter("route_hold_sec").value))
+        hold_sec = max(3.0, float(self.get_parameter("route_hold_sec").value))
         end_time = time.monotonic() + timeout
         stable_route: Optional[str] = None
         stable_since = 0.0
@@ -220,14 +231,136 @@ class AutoCupFlowRouter(Node):
             return
         status = self._latest_detection.status if self._latest_detection is not None else "waiting"
         route = decision.route if decision else "stabilizing"
-        cv2.putText(image, f"route: {route}", (20, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
-        cv2.putText(image, status[:100], (20, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
+        overlay = self._overlay_from_status(status)
+        if overlay is not None:
+            self._draw_detection_overlay(image, overlay, route)
+        self._draw_text_panel(image, route, status)
         try:
             cv2.imshow(str(self.get_parameter("window_name").value), image)
             cv2.waitKey(1)
         except Exception as exc:
             self.get_logger().warn(f"classification window disabled: {exc}")
             self._window_enabled = False
+
+    @staticmethod
+    def _overlay_from_status(status: str) -> Optional[DetectionOverlay]:
+        bbox_match = re.search(r"bbox=(\d+)x(\d+)", status)
+        center_match = re.search(r"center=\((\d+),(\d+)\)", status)
+        orientation_match = re.search(r"orientation=([^\s]+)", status)
+        if bbox_match is None or center_match is None:
+            return None
+        return DetectionOverlay(
+            center_u=int(center_match.group(1)),
+            center_v=int(center_match.group(2)),
+            width=int(bbox_match.group(1)),
+            height=int(bbox_match.group(2)),
+            orientation=orientation_match.group(1) if orientation_match else "unknown",
+            class_name=AutoCupFlowRouter._status_field(status, "class") or "cup",
+            classifier_confidence=AutoCupFlowRouter._status_float(
+                status,
+                "orientation_classifier_confidence",
+            ),
+        )
+
+    @staticmethod
+    def _status_field(status: str, key: str) -> Optional[str]:
+        match = re.search(rf"{re.escape(key)}=([^\s]+)", status)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _status_float(status: str, key: str) -> Optional[float]:
+        value = AutoCupFlowRouter._status_field(status, key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _draw_detection_overlay(image: np.ndarray, overlay: DetectionOverlay, route: str) -> None:
+        image_h, image_w = image.shape[:2]
+        x1 = max(0, overlay.center_u - overlay.width // 2)
+        y1 = max(0, overlay.center_v - overlay.height // 2)
+        x2 = min(image_w - 1, overlay.center_u + overlay.width // 2)
+        y2 = min(image_h - 1, overlay.center_v + overlay.height // 2)
+        color = (50, 210, 90) if route == "side_grasp" or overlay.orientation == "upright" else (0, 150, 255)
+        if route == "stabilizing":
+            color = (0, 220, 255)
+        AutoCupFlowRouter._draw_corner_box(image, x1, y1, x2, y2, color)
+        cv2.circle(image, (overlay.center_u, overlay.center_v), 5, color, -1)
+        conf = "" if overlay.classifier_confidence is None else f" {overlay.classifier_confidence:.2f}"
+        label = f"{overlay.orientation}{conf} -> {route}"
+        AutoCupFlowRouter._draw_label(image, label, x1, max(30, y1 - 34), color)
+
+    @staticmethod
+    def _draw_corner_box(image: np.ndarray, x1: int, y1: int, x2: int, y2: int, color: tuple[int, int, int]) -> None:
+        thickness = 3
+        corner = max(18, min((x2 - x1) // 4, (y2 - y1) // 4, 44))
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, 1)
+        for start, end in [
+            ((x1, y1), (x1 + corner, y1)),
+            ((x1, y1), (x1, y1 + corner)),
+            ((x2, y1), (x2 - corner, y1)),
+            ((x2, y1), (x2, y1 + corner)),
+            ((x1, y2), (x1 + corner, y2)),
+            ((x1, y2), (x1, y2 - corner)),
+            ((x2, y2), (x2 - corner, y2)),
+            ((x2, y2), (x2, y2 - corner)),
+        ]:
+            cv2.line(image, start, end, color, thickness)
+
+    @staticmethod
+    def _draw_label(image: np.ndarray, text: str, x: int, y: int, color: tuple[int, int, int]) -> None:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.62
+        thickness = 2
+        (text_w, text_h), baseline = cv2.getTextSize(text, font, scale, thickness)
+        x2 = min(image.shape[1] - 8, x + text_w + 18)
+        y1 = max(8, y - text_h - 10)
+        cv2.rectangle(image, (x, y1), (x2, y + baseline + 8), color, -1)
+        cv2.putText(image, text, (x + 9, y), font, scale, (20, 20, 20), thickness)
+
+    @staticmethod
+    def _draw_text_panel(image: np.ndarray, route: str, status: str) -> None:
+        panel = image.copy()
+        margin = 14
+        panel_h = 96
+        cv2.rectangle(panel, (margin, margin), (image.shape[1] - margin, panel_h), (12, 16, 20), -1)
+        cv2.addWeighted(panel, 0.78, image, 0.22, 0, image)
+
+        route_color = (50, 210, 90) if route == "side_grasp" else (0, 150, 255)
+        if route == "stabilizing":
+            route_color = (0, 220, 255)
+        AutoCupFlowRouter._draw_pill(image, route.replace("_", " ").upper(), margin + 14, 48, route_color)
+
+        orientation = AutoCupFlowRouter._status_field(status, "orientation") or "waiting"
+        cls = AutoCupFlowRouter._status_field(status, "class") or "cup"
+        conf = AutoCupFlowRouter._status_float(status, "orientation_classifier_confidence")
+        conf_text = "--" if conf is None else f"{conf:.2f}"
+        detail = f"{cls} / {orientation} / classifier {conf_text}"
+        cv2.putText(image, detail, (margin + 210, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (235, 245, 245), 2)
+
+        compact_status = AutoCupFlowRouter._compact_status(status)
+        cv2.putText(image, compact_status, (margin + 18, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (170, 225, 205), 1)
+
+    @staticmethod
+    def _draw_pill(image: np.ndarray, text: str, x: int, y: int, color: tuple[int, int, int]) -> None:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.56
+        thickness = 2
+        (text_w, text_h), baseline = cv2.getTextSize(text, font, scale, thickness)
+        cv2.rectangle(image, (x, y - text_h - 12), (x + text_w + 28, y + baseline + 10), color, -1)
+        cv2.putText(image, text, (x + 14, y), font, scale, (18, 22, 24), thickness)
+
+    @staticmethod
+    def _compact_status(status: str) -> str:
+        parts = []
+        for key in ["center", "orientation_classifier_result"]:
+            value = AutoCupFlowRouter._status_field(status, key)
+            if value:
+                parts.append(f"{key}={value}")
+        return "  ".join(parts) if parts else status[:120]
 
     def _run_side_grasp(self, decision: RouteDecision) -> bool:
         self.get_logger().info(f"route=side_grasp: launching existing side grasp flow ({decision.status})")
