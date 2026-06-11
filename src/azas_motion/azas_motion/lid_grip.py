@@ -11,6 +11,7 @@ from geometry_msgs.msg import Pose
 class LidGripConfig:
     approach_offset_m: float = 0.08
     lift_offset_m: float = 0.10
+    min_approach_z_m: float = 0.0
     surface_offset_m: float = 0.0
     offset_axis: str = "local_z"
     tcp_grasp_offset_x_m: float = 0.0
@@ -66,6 +67,8 @@ def compute_lid_grip_plan(lid_pose: Pose, config: LidGripConfig) -> LidGripPlan:
         config.approach_offset_m,
         config.offset_axis,
     )
+    if approach_pose.position.z < config.min_approach_z_m:
+        approach_pose.position.z = config.min_approach_z_m
     lift_pose = _translated_along_offset_axis(
         grasp_pose,
         config.lift_offset_m,
@@ -84,6 +87,7 @@ def _validate_config(config: LidGripConfig) -> None:
     values = (
         config.approach_offset_m,
         config.lift_offset_m,
+        config.min_approach_z_m,
         config.surface_offset_m,
         config.tcp_grasp_offset_x_m,
         config.tcp_grasp_offset_y_m,
@@ -97,6 +101,8 @@ def _validate_config(config: LidGripConfig) -> None:
         raise ValueError("approach_offset_m must be positive")
     if config.lift_offset_m <= 0.0:
         raise ValueError("lift_offset_m must be positive")
+    if config.min_approach_z_m < 0.0:
+        raise ValueError("min_approach_z_m must be non-negative")
     if config.min_grasp_z_m > config.max_grasp_z_m:
         raise ValueError("min_grasp_z_m must be <= max_grasp_z_m")
     if config.offset_axis not in ("local_z", "base_z"):

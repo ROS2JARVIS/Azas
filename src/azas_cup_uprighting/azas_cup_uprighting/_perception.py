@@ -51,13 +51,14 @@ def pixel_to_base(robot, gripper2cam, depth_image, intrinsics,
         logger.warn("pixel 범위 초과")
         return None
 
-    z_raw = depth_image[py, px]
-    if z_raw == 0:
-        logger.warn(f"depth=0 at ({px}, {py})")
-        return None
-
-    z_m = (float(z_raw) / 1000.0
-           if depth_image.dtype == np.uint16 else float(z_raw))
+    z_m = _depth_at(depth_image, px, py)
+    if not np.isfinite(z_m):
+        z_m = _median_depth_near(depth_image, px, py)
+        if np.isfinite(z_m):
+            logger.info(f"depth=0 at ({px}, {py}); using nearby median depth={z_m:.3f}m")
+        else:
+            logger.warn(f"depth=0 at ({px}, {py}) and no nearby valid depth")
+            return None
 
     fx, fy   = intrinsics["fx"],  intrinsics["fy"]
     ppx, ppy = intrinsics["ppx"], intrinsics["ppy"]
@@ -72,6 +73,28 @@ def pixel_to_base(robot, gripper2cam, depth_image, intrinsics,
         f"-> base({base[0]:.3f},{base[1]:.3f},{base[2]:.3f}) m"
     )
     return tuple(float(v) for v in base)
+
+
+def _median_depth_near(depth_image, cx: int, cy: int, radius: int = 4) -> float:
+    """주변 patch의 유효 depth median (m). 없으면 inf."""
+    if depth_image is None:
+        return float("inf")
+    h, w = depth_image.shape[:2]
+    x1 = max(0, cx - radius)
+    x2 = min(w, cx + radius + 1)
+    y1 = max(0, cy - radius)
+    y2 = min(h, cy + radius + 1)
+    patch = depth_image[y1:y2, x1:x2]
+    if patch.size == 0:
+        return float("inf")
+
+    if depth_image.dtype == np.uint16:
+        valid = patch[patch > 0].astype(float) / 1000.0
+    else:
+        valid = patch[np.isfinite(patch) & (patch > 0)].astype(float)
+    if valid.size == 0:
+        return float("inf")
+    return float(np.median(valid))
 
 
 def _depth_at(depth_image, cx: int, cy: int) -> float:

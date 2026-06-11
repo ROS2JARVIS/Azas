@@ -12,7 +12,10 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (
             f"share/{package_name}/config",
-            glob("config/*.npy") + glob("config/*.yaml") + glob("config/*.json"),
+            glob("config/*.npy")
+            + glob("config/*.yaml")
+            + glob("config/*.pt")
+            + glob("config/*.json"),
         ),
     ],
     install_requires=["setuptools"],

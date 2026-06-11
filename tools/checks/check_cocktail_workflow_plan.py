@@ -27,6 +27,10 @@ def main() -> int:
         "SHAKE_CUP",
         "OPEN_LID",
         "POUR",
+        "VERIFY_HUMAN_HAND_TRACKING",
+        "COMPUTE_HANDOVER_POSE",
+        "WAIT_FOR_HANDOVER_APPROVAL",
+        "HANDOVER_CUP_TO_HUMAN_DISABLED",
     ]
     if phases != required_order:
         print("[FAIL] unexpected workflow phase order")
@@ -64,7 +68,28 @@ def main() -> int:
         print("[FAIL] SHAKE_CUP dispenser_keepout_radius_m is too small")
         return 1
 
-    print("[PASS] full cocktail workflow plan includes calibration, dispenser press, and shake gates")
+    handover = {step.phase: step for step in steps if step.phase.startswith(("VERIFY_HUMAN", "COMPUTE_HANDOVER", "WAIT_FOR_HANDOVER", "HANDOVER_CUP"))}
+    expected_handover = {
+        "VERIFY_HUMAN_HAND_TRACKING",
+        "COMPUTE_HANDOVER_POSE",
+        "WAIT_FOR_HANDOVER_APPROVAL",
+        "HANDOVER_CUP_TO_HUMAN_DISABLED",
+    }
+    if set(handover) != expected_handover:
+        print("[FAIL] post-shake human handover dry-run steps are missing")
+        print(json.dumps(sorted(handover), ensure_ascii=False, indent=2))
+        return 1
+    if handover["VERIFY_HUMAN_HAND_TRACKING"].hardware_gate != "no_motion_hri_perception_only":
+        print("[FAIL] hand tracking must remain perception-only")
+        return 1
+    if handover["HANDOVER_CUP_TO_HUMAN_DISABLED"].hardware_gate != "disabled_until_hri_safety_review":
+        print("[FAIL] live handover must remain disabled until HRI safety review")
+        return 1
+    if handover["HANDOVER_CUP_TO_HUMAN_DISABLED"].command != "disabled_handover_motion_placeholder":
+        print("[FAIL] handover placeholder must not route to a live motion command")
+        return 1
+
+    print("[PASS] full cocktail workflow plan includes calibration, dispenser press, shake gates, and disabled post-shake handover planning")
     return 0
 
 

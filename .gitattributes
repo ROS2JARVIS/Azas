@@ -1,1 +1,2 @@
 cup_classifier_best.pth filter=lfs diff=lfs merge=lfs -text
+src/azas_perception/config/yolo_cup_uprighting_best.pt filter=lfs diff=lfs merge=lfs -text

@@ -24,6 +24,14 @@ def generate_launch_description():
     show_dispenser_markers = LaunchConfiguration("show_dispenser_markers")
     show_animated_cup = LaunchConfiguration("show_animated_cup")
     show_demo_arm = LaunchConfiguration("show_demo_arm")
+    show_workspace_safety = LaunchConfiguration("show_workspace_safety")
+    show_measured_dispenser_collision = LaunchConfiguration("show_measured_dispenser_collision")
+    show_full_collision_scene = LaunchConfiguration("show_full_collision_scene")
+    show_link6_gripper = LaunchConfiguration("show_link6_gripper")
+    enable_rule_joint_preview = LaunchConfiguration("enable_rule_joint_preview")
+    safety_config_path = LaunchConfiguration("safety_config_path")
+    dispenser_collision_config_path = LaunchConfiguration("dispenser_collision_config_path")
+    calibration_path = LaunchConfiguration("calibration_path")
 
     robot_description = {
         "robot_description": Command(
@@ -69,6 +77,33 @@ def generate_launch_description():
             DeclareLaunchArgument("show_dispenser_markers", default_value="true"),
             DeclareLaunchArgument("show_animated_cup", default_value="true"),
             DeclareLaunchArgument("show_demo_arm", default_value="true"),
+            DeclareLaunchArgument("show_workspace_safety", default_value="true"),
+            DeclareLaunchArgument("show_measured_dispenser_collision", default_value="true"),
+            DeclareLaunchArgument("show_full_collision_scene", default_value="true"),
+            DeclareLaunchArgument("show_link6_gripper", default_value="true"),
+            DeclareLaunchArgument("enable_rule_joint_preview", default_value="false"),
+            DeclareLaunchArgument(
+                "safety_config_path",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("azas_bringup"), "config", "safety.yaml"]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "dispenser_collision_config_path",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("azas_bringup"),
+                        "config",
+                        "measured_dispenser_collision.yaml",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "calibration_path",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("azas_bringup"), "config", "calibration.yaml"]
+                ),
+            ),
             DeclareLaunchArgument("planning_group", default_value="manipulator"),
             DeclareLaunchArgument("ee_link", default_value="tool0"),
             DeclareLaunchArgument("planning_pipeline", default_value="pilz_industrial_motion_planner"),
@@ -80,6 +115,8 @@ def generate_launch_description():
             DeclareLaunchArgument("preview_publish_rate", default_value="30.0"),
             DeclareLaunchArgument("preview_frames_per_step", default_value="45"),
             DeclareLaunchArgument("preview_hold_frames", default_value="10"),
+            DeclareLaunchArgument("ik_preview_pose_limit", default_value="15"),
+            DeclareLaunchArgument("ik_preview_planning_start_delay_sec", default_value="2.5"),
             DeclareLaunchArgument(
                 "rviz_config",
                 default_value=PathJoinSubstitution(
@@ -162,6 +199,10 @@ def generate_launch_description():
                     {
                         "cup_pose_topic": tumbler_pose_topic,
                         "frame_id": frame_id,
+                        "calibration_path": ParameterValue(calibration_path, value_type=str),
+                        "dispenser_collision_config_path": ParameterValue(
+                            dispenser_collision_config_path, value_type=str
+                        ),
                         "selected_dispenser_id": ParameterValue(
                             selected_dispenser_id, value_type=int
                         ),
@@ -173,6 +214,92 @@ def generate_launch_description():
                         ),
                         "show_animated_cup": ParameterValue(show_animated_cup, value_type=bool),
                         "show_demo_arm": ParameterValue(show_demo_arm, value_type=bool),
+                    }
+                ],
+            ),
+            Node(
+                package="azas_motion",
+                executable="workspace_collision_scene_node",
+                name="workspace_collision_scene_node",
+                output="screen",
+                condition=IfCondition(show_workspace_safety),
+                parameters=[
+                    {
+                        "safety_config_path": ParameterValue(safety_config_path, value_type=str),
+                        "publish_collision_objects": True,
+                        "publish_period_sec": 2.0,
+                        "frame_id": frame_id,
+                        "table_collision_enabled": True,
+                        "table_collision_expand_to_workspace_walls": True,
+                        "workspace_boundary_collision_enabled": True,
+                    }
+                ],
+            ),
+            Node(
+                package="azas_motion",
+                executable="measured_dispenser_collision_scene_node",
+                name="measured_dispenser_collision_scene_node",
+                output="screen",
+                condition=IfCondition(show_measured_dispenser_collision),
+                parameters=[
+                    {
+                        "config_path": ParameterValue(
+                            dispenser_collision_config_path, value_type=str
+                        ),
+                        "calibration_path": ParameterValue(calibration_path, value_type=str),
+                        "publish_collision_objects": True,
+                        "publish_markers": True,
+                        "publish_rviz_visual_tools_compat": True,
+                        "publish_debug_labels": True,
+                        "publish_period_sec": 2.0,
+                    }
+                ],
+            ),
+            Node(
+                package="azas_bringup",
+                executable="collision_scene_rviz_publisher",
+                name="collision_scene_rviz_publisher",
+                output="screen",
+                condition=IfCondition(show_full_collision_scene),
+                parameters=[
+                    {
+                        "frame_id": frame_id,
+                        "safety_config_path": ParameterValue(safety_config_path, value_type=str),
+                        "dispenser_collision_config_path": ParameterValue(
+                            dispenser_collision_config_path, value_type=str
+                        ),
+                        "calibration_path": ParameterValue(calibration_path, value_type=str),
+                    }
+                ],
+            ),
+            Node(
+                package="azas_motion",
+                executable="link6_gripper_collision_node",
+                name="link6_gripper_collision_node",
+                output="screen",
+                condition=IfCondition(show_link6_gripper),
+                parameters=[
+                    {
+                        "attached_link_name": "link_6",
+                        "publish_markers": True,
+                        "marker_topic": "/azas/link6_gripper/markers",
+                        "remove_on_shutdown": False,
+                    }
+                ],
+            ),
+            Node(
+                package="azas_bringup",
+                executable="rule_motion_joint_preview_node",
+                name="rule_motion_joint_preview_node",
+                output="screen",
+                condition=IfCondition(enable_rule_joint_preview),
+                parameters=[
+                    {
+                        "path_topic": "/azas/dispenser_sequence/plan",
+                        "joint_state_topic": "/joint_states",
+                        "publish_rate_hz": 30.0,
+                        "frames_per_pose": 12,
+                        "loop_preview": True,
                     }
                 ],
             ),
@@ -216,6 +343,13 @@ def generate_launch_description():
                         ),
                         "loop_preview": ParameterValue(
                             LaunchConfiguration("loop_preview"), value_type=bool
+                        ),
+                        "max_preview_poses": ParameterValue(
+                            LaunchConfiguration("ik_preview_pose_limit"), value_type=int
+                        ),
+                        "planning_start_delay_sec": ParameterValue(
+                            LaunchConfiguration("ik_preview_planning_start_delay_sec"),
+                            value_type=float,
                         ),
                     }
                 ],

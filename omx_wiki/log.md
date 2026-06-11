@@ -1,5 +1,17 @@
 # Wiki Log
 
+## [2026-06-10T16:48:48+09:00] update
+- **Pages:** robot-operation-rules.md
+- **Summary:** Recorded the operator confirmation that dispenser 4 press-only real-motion check also works normally.
+
+## [2026-06-10T16:48:12+09:00] update
+- **Pages:** robot-operation-rules.md
+- **Summary:** Recorded operator confirmation that D1-D4 dispenser press contacts are saved and confirmed; D4 press-check failure was cable disconnect, not calibration.
+
+## [2026-06-10T15:50:45+09:00] add
+- **Pages:** robot-operation-rules.md
+- **Summary:** Recorded the operator directive that dry-run / plan-only / no-execute commands are banned as substitutes for real robot motion checks.
+
 ## [2026-05-18T10:06:59.396Z] ingest
 - **Pages:** azas-real-robot-handoff-2026-05-18-dispenser-shake-panel.md
 - **Summary:** Created new page "Azas Real Robot Handoff 2026-05-18 Dispenser Shake Panel"
@@ -54,3 +66,10 @@
 - **Pages:** session-log-2026-05-28-3-adlm15.md
 - **Summary:** Auto-captured session log for omx-1779933651513-adlm15
 
+## [2026-06-05T03:23:17.633Z] session-end
+- **Pages:** session-log-2026-06-05-8-3rrp4t.md
+- **Summary:** Auto-captured session log for omx-1780629727098-3rrp4t
+
+## [2026-06-07T11:46:17.707Z] session-end
+- **Pages:** session-log-2026-06-07-9-5l0d8p.md
+- **Summary:** Auto-captured session log for omx-1780832772689-5l0d8p

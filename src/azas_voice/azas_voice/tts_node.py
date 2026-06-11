@@ -97,6 +97,10 @@ class _GttsPygameSpeechEngine(_SpeechEngine):
             ],
             check=True,
         )
+        try:
+            os.unlink(raw_path)
+        except OSError:
+            pass
         return adjusted_path
 
     def shutdown(self) -> None:
@@ -172,7 +176,7 @@ class TtsNode(Node):
             except Exception as exc:
                 self.get_logger().error(f"TTS playback failed: {exc}")
                 self._publish_state("error", text=text, emotion="concerned")
-            finally:
+            else:
                 self._publish_state("idle")
 
     def _publish_state(self, state: str, text: str = "", emotion: str = "neutral") -> None:

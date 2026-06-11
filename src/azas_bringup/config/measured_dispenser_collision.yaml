@@ -1,66 +1,84 @@
 # Measured dispenser collision draft from real robot teaching.
 #
 # IMPORTANT:
-# - These values were measured as base_link -> link_6 probe poses while the
-#   gripper/link_6 assembly was placed against the dispenser. They are not
-#   direct surface coordinates and must be reviewed with TCP/gripper offset
-#   before enabling hard real-motion collision enforcement.
+# - front_hold_poses were measured as base_link -> link_6 teaching poses.
+# - raw_probe_poses for the collision box were remeasured as
+#   base_link -> gripper_tcp poses so the RG2 TCP offset is reflected.
 # - The boxes below are conservative primitive estimates for MoveIt Planning
 #   Scene. Keep them disabled until verified in RViz against the real workcell.
+# - Conflict resolution 2026-06-10: probe/box numbers take origin/develop's
+#   gripper_tcp-basis re-measurement (body box center x 0.879). The previous
+#   integration-branch numbers (center x 0.765) were link_6/flange-basis and
+#   sat ~0.11m in front of the real bottles. front_hold_poses keep this
+#   branch's operator teaching.
 
 metadata:
   frame_id: base_link
   measured_target_frame: link_6
+  collision_probe_target_frame: gripper_tcp
   source: operator_teaching_tf2_echo
-  status: measured_draft_single_box_not_enabled
-  body_bottom_z_m: 0.000
+  status: measured_draft_merged_horizontal_spout_block_not_enabled
+  body_bottom_z_m: 0.0
   body_bottom_reason: dispenser bottles start on same floor plane as robot base
   margin_m:
-    x: 0.020
-    y: 0.020
-    z: 0.020
-
+    x: 0.02
+    y: 0.02
+    z: 0.02
+  nozzle_merge_policy: single horizontal spout cuboid uses the same X/Y footprint
+    dimensions and orientation as dispenser_combined_body_box
 front_hold_poses:
-  # Cup hold/front limit poses. Cup pose itself still comes from vision.
   dispenser_1:
-    position_xyz_m: [0.609000, 0.070000, 0.087000]
-    quaternion_xyzw: [0.489000, 0.517000, 0.517000, 0.475000]
-    rpy_deg: [90.798, -0.845, 93.984]
+    position_xyz_m: [0.603855, 0.083532, 0.079630]
+    quaternion_xyzw: [0.476935, 0.550359, 0.474620, 0.494343]
+    rpy_deg: [93.496, 5.244, 93.242]
   dispenser_2:
-    position_xyz_m: [0.617000, 0.028000, 0.082000]
-    quaternion_xyzw: [0.504000, 0.504000, 0.500000, 0.491000]
-    rpy_deg: [90.946, -0.512, 90.501]
+    position_xyz_m: [0.588709, 0.039032, 0.073706]
+    quaternion_xyzw: [0.506185, 0.526041, 0.482369, 0.484126]
+    rpy_deg: [93.778, 1.204, 91.077]
   dispenser_3:
-    position_xyz_m: [0.616000, -0.026000, 0.079000]
-    quaternion_xyzw: [0.504000, 0.504000, 0.498000, 0.494000]
-    rpy_deg: [90.926, -0.278, 90.234]
+    position_xyz_m: [0.607892, -0.038249, 0.083077]
+    quaternion_xyzw: [0.477410, 0.540579, 0.505177, 0.473973]
+    rpy_deg: [92.310, 1.724, 95.446]
   dispenser_4:
-    position_xyz_m: [0.607000, -0.083000, 0.075000]
-    quaternion_xyzw: [0.511000, 0.498000, 0.492000, 0.499000]
-    rpy_deg: [91.042, -0.280, 88.871]
-
+    position_xyz_m: [0.606769, -0.093142, 0.084589]
+    quaternion_xyzw: [0.463470, 0.552601, 0.487955, 0.491658]
+    rpy_deg: [92.322, 5.226, 95.008]
 raw_probe_poses:
   left_front_bottom_probe:
-    position_xyz_m: [0.767, 0.072, 0.219]
-    quaternion_xyzw: [0.642, 0.732, 0.215, 0.079]
-    rpy_deg: [155.003, -9.233, 99.561]
+    position_xyz_m: [0.850, 0.121, 0.031]
+    quaternion_xyzw: [0.680, -0.594, 0.283, -0.323]
+    rpy_deg: [-129.105, -0.054, -82.270]
   right_back_top_probe:
-    position_xyz_m: [0.763, -0.103, 0.412]
-    quaternion_xyzw: [0.658, 0.654, 0.200, 0.313]
-    rpy_deg: [137.024, 8.372, 86.350]
-
+    position_xyz_m: [0.908, -0.145, 0.308]
+    quaternion_xyzw: [-0.527, 0.637, -0.423, 0.370]
+    rpy_deg: [-111.636, 1.516, -99.773]
 estimated_collision_objects:
   dispenser_combined_body_box:
     type: box
     frame_id: base_link
     # Single measured draft box from left-front-bottom and right-back-top
-    # link_6 probe poses. X/Y are expanded by metadata.margin_m on each side;
+    # gripper_tcp probe poses. X/Y are expanded by metadata.margin_m on each side;
     # Z uses body_bottom_z_m as the dispenser rests on the base/table plane.
-    center_xyz_m: [0.7650, -0.0155, 0.2160]
-    size_xyz_m: [0.0440, 0.2150, 0.4320]
+    center_xyz_m: [0.8790, -0.0120, 0.1640]
+    size_xyz_m: [0.0980, 0.3060, 0.3280]
     bounds_xyz_m:
-      min: [0.7430, -0.1230, 0.0000]
-      max: [0.7870, 0.0920, 0.4320]
+      min: [0.8300, -0.1650, 0.0000]
+      max: [0.9280, 0.1410, 0.3280]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
     publish_to_planning_scene: true
     enabled_for_real_motion: false
+  dispenser_head_nozzle_merged_horizontal_spout_box:
+    type: box
+    frame_id: base_link
+    center_xyz_m: [0.7810, -0.0120, 0.4320]
+    size_xyz_m: [0.0980, 0.3060, 0.0400]
+    bounds_xyz_m:
+      min: [0.7320, -0.1650, 0.4120]
+      max: [0.8300, 0.1410, 0.4520]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    publish_to_planning_scene: true
+    enabled_for_real_motion: false
+    '# note': Merged horizontal nozzle block has the same X/Y footprint dimensions
+      and orientation as dispenser_combined_body_box, with its max X face touching
+      the body min X face. Recomputed 2026-06-10 against the gripper_tcp-basis
+      body box (min X 0.830); verify in RViz before enabling for real motion.

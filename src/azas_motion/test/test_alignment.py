@@ -95,6 +95,37 @@ def test_lid_grip_plan_applies_measured_tcp_grasp_offset_in_base_frame():
     assert plan.lift_pose.position.z == pytest.approx(0.256)
 
 
+def test_lid_grip_plan_clamps_approach_height_above_low_depth_detection():
+    pose = _pose(x=0.41, y=-0.06, z=0.072)
+    plan = compute_lid_grip_plan(
+        pose,
+        LidGripConfig(
+            approach_offset_m=0.08,
+            lift_offset_m=0.10,
+            min_approach_z_m=0.26,
+            offset_axis="base_z",
+            tcp_grasp_offset_z_m=0.16,
+            min_grasp_z_m=0.18,
+        ),
+    )
+
+    assert plan.grasp_pose.position.z == pytest.approx(0.232)
+    assert plan.approach_pose.position.z == pytest.approx(0.312)
+    assert plan.lift_pose.position.z == pytest.approx(0.332)
+
+
+def test_lid_grip_plan_refuses_low_grasp_after_tcp_compensation():
+    with pytest.raises(ValueError, match="LID_GRASP_Z_OUT_OF_BOUNDS"):
+        compute_lid_grip_plan(
+            _pose(z=0.01),
+            LidGripConfig(
+                offset_axis="base_z",
+                tcp_grasp_offset_z_m=0.16,
+                min_grasp_z_m=0.18,
+            ),
+        )
+
+
 def test_lid_grip_plan_rejects_unmeasured_z_bounds():
     with pytest.raises(ValueError, match="LID_GRASP_Z_OUT_OF_BOUNDS"):
         compute_lid_grip_plan(

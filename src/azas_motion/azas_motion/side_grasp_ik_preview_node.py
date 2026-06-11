@@ -69,6 +69,8 @@ class SideGraspIkPreviewNode(Node):
         self.declare_parameter("frames_per_step", 90)
         self.declare_parameter("hold_frames", 35)
         self.declare_parameter("loop_preview", False)
+        self.declare_parameter("max_preview_poses", 0)
+        self.declare_parameter("planning_start_delay_sec", 2.5)
         self.declare_parameter("home_joints_rad", DEFAULT_HOME_JOINTS)
 
         self.publisher = self.create_publisher(JointState, "/joint_states", 10)
@@ -79,6 +81,7 @@ class SideGraspIkPreviewNode(Node):
             10,
         )
         self.pending_path: Optional[Path] = None
+        self.pending_path_time = None
         self.planning_started = False
         self.planning_failed = False
         self.joint_names = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
@@ -94,12 +97,13 @@ class SideGraspIkPreviewNode(Node):
         )
 
     def on_path(self, msg: Path) -> None:
-        if self.planning_started or self.preview_points:
+        if self.planning_started or self.preview_points or self.pending_path is not None:
             return
         if len(msg.poses) < 2:
             self.get_logger().warning("Ignoring preview Path with fewer than two poses")
             return
         self.pending_path = msg
+        self.pending_path_time = self.get_clock().now()
         self.get_logger().info(f"Received Azas dispenser sequence Path with {len(msg.poses)} poses")
 
     def on_timer(self) -> None:
@@ -108,6 +112,13 @@ class SideGraspIkPreviewNode(Node):
             return
         self.publish_home()
         if self.pending_path is not None and not self.planning_started and not self.planning_failed:
+            delay_sec = max(float(self.get_parameter("planning_start_delay_sec").value), 0.0)
+            if self.pending_path_time is not None:
+                elapsed_sec = (
+                    self.get_clock().now() - self.pending_path_time
+                ).nanoseconds / 1_000_000_000.0
+                if elapsed_sec < delay_sec:
+                    return
             self.planning_started = True
             self.plan_preview(self.pending_path)
 
@@ -152,7 +163,11 @@ class SideGraspIkPreviewNode(Node):
         try:
             self.ensure_moveit()
             points: List[List[float]] = []
-            for index, pose_stamped in enumerate(path.poses, start=1):
+            max_preview_poses = int(self.get_parameter("max_preview_poses").value)
+            poses = list(path.poses)
+            if max_preview_poses > 0:
+                poses = poses[:max_preview_poses]
+            for index, pose_stamped in enumerate(poses, start=1):
                 trajectory = self.plan_pose(pose_stamped)
                 names, positions = self.trajectory_points(trajectory)
                 if not positions:
@@ -162,7 +177,7 @@ class SideGraspIkPreviewNode(Node):
                 start = points[-1] if points else self.current_home_positions(len(target))
                 points.extend(self.interpolate_positions(start, target))
                 self.get_logger().info(
-                    f"IK preview planned sequential pose {index}/{len(path.poses)}"
+                    f"IK preview planned sequential pose {index}/{len(poses)}"
                 )
             self.preview_points = points
             self.preview_index = 0

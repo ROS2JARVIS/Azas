@@ -143,21 +143,125 @@ def detect_aruco_marker(
         return None
 
     gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
-    dictionary = cv2.aruco.getPredefinedDictionary(dictionary_id)
-    parameters = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(dictionary, parameters)
-    corners_list, ids, _rejected = detector.detectMarkers(gray)
+    dictionary = _create_aruco_dictionary(dictionary_id)
+    parameters = _create_aruco_detector_parameters()
+
+    # The lid marker appears small and oblique in the wrist-camera view.  Try
+    # conservative contrast/scale variants, but keep the dictionary/id filter
+    # strict so a noisy table feature cannot become a false lid marker.
+    best: ArucoMarker | None = None
+    best_score = -1.0
+    for candidate_gray, scale in _aruco_detection_images(gray):
+        corners_list, ids, _rejected = _detect_aruco_markers(candidate_gray, dictionary, parameters)
+        candidate = _select_aruco_marker_from_detections(
+            corners_list,
+            ids,
+            roi=roi,
+            desired_id=int(marker_id),
+            scale=scale,
+        )
+        if candidate is not None and candidate.side_px > best_score:
+            best = candidate
+            best_score = candidate.side_px
+    return best
+
+
+def _aruco_dictionary_id(dictionary_name: str) -> int | None:
+    name = str(dictionary_name).strip().upper()
+    if not name:
+        return None
+    if not name.startswith("DICT_"):
+        name = f"DICT_{name}"
+    return getattr(cv2.aruco, name, None)
+
+
+def _create_aruco_dictionary(dictionary_id: int):
+    if hasattr(cv2.aruco, "getPredefinedDictionary"):
+        return cv2.aruco.getPredefinedDictionary(dictionary_id)
+    return cv2.aruco.Dictionary_get(dictionary_id)
+
+
+def _create_aruco_detector_parameters():
+    if hasattr(cv2.aruco, "DetectorParameters"):
+        parameters = cv2.aruco.DetectorParameters()
+    else:
+        parameters = cv2.aruco.DetectorParameters_create()
+    return _tune_lid_aruco_detector_parameters(parameters)
+
+
+def _tune_lid_aruco_detector_parameters(parameters):
+    # The lid marker is small in the wrist-camera overview image and often seen
+    # at an angle. Keep the expected marker-id filter strict, but make candidate
+    # extraction and perspective sampling tolerant enough for the measured setup.
+    tuned_values = {
+        "adaptiveThreshWinSizeMin": 3,
+        "adaptiveThreshWinSizeMax": 53,
+        "adaptiveThreshWinSizeStep": 4,
+        "minMarkerPerimeterRate": 0.01,
+        "polygonalApproxAccuracyRate": 0.05,
+        "minCornerDistanceRate": 0.02,
+        "minDistanceToBorder": 1,
+        "perspectiveRemovePixelPerCell": 8,
+        "perspectiveRemoveIgnoredMarginPerCell": 0.20,
+        "errorCorrectionRate": 0.75,
+        "cornerRefinementMethod": getattr(cv2.aruco, "CORNER_REFINE_SUBPIX", 1),
+        "cornerRefinementWinSize": 3,
+    }
+    for name, value in tuned_values.items():
+        if hasattr(parameters, name):
+            setattr(parameters, name, value)
+    return parameters
+
+
+def _aruco_detection_images(gray: np.ndarray) -> list[tuple[np.ndarray, float]]:
+    """Return grayscale variants for small/low-contrast lid ArUco detection.
+
+    OpenCV returns corners in the coordinate system of the image it receives,
+    so each variant carries the scale needed to map corners back to the source
+    ROI.  Variants are intentionally limited to deterministic contrast/scale
+    transforms; no dictionary or marker-id relaxation is performed.
+    """
+    variants: list[tuple[np.ndarray, float]] = [(gray, 1.0)]
+    equalized = cv2.equalizeHist(gray)
+    variants.append((equalized, 1.0))
+
+    blur = cv2.GaussianBlur(gray, (0, 0), 1.0)
+    sharpened = cv2.addWeighted(gray, 1.6, blur, -0.6, 0)
+    variants.append((sharpened, 1.0))
+
+    # Upscaling materially helps when the marker body is only a few tens of
+    # pixels wide in the RealSense overview frame.
+    for source in (gray, equalized, sharpened):
+        variants.append((cv2.resize(source, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC), 2.0))
+    return variants
+
+
+def _detect_aruco_markers(gray: np.ndarray, dictionary, parameters):
+    if hasattr(cv2.aruco, "ArucoDetector"):
+        detector = cv2.aruco.ArucoDetector(dictionary, parameters)
+        return detector.detectMarkers(gray)
+    return cv2.aruco.detectMarkers(gray, dictionary, parameters=parameters)
+
+
+def _select_aruco_marker_from_detections(
+    corners_list,
+    ids,
+    *,
+    roi: ImageRoi,
+    desired_id: int,
+    scale: float,
+) -> ArucoMarker | None:
     if ids is None or len(ids) == 0:
         return None
 
-    desired_id = int(marker_id)
     best: ArucoMarker | None = None
     best_score = -1.0
+    inverse_scale = 1.0 / max(float(scale), 1e-9)
     for corners, marker_id_array in zip(corners_list, ids):
         detected_id = int(marker_id_array[0])
         if desired_id >= 0 and detected_id != desired_id:
             continue
-        local_corners = np.asarray(corners, dtype=float).reshape(4, 2)
+        local_corners = np.asarray(corners, dtype=float).reshape(4, 2) * inverse_scale
         global_corners = local_corners + np.array([roi.x_min, roi.y_min], dtype=float)
         side_px = _aruco_side_px(global_corners)
         if side_px <= 0.0:
@@ -174,15 +278,6 @@ def detect_aruco_marker(
             best = candidate
             best_score = side_px
     return best
-
-
-def _aruco_dictionary_id(dictionary_name: str) -> int | None:
-    name = str(dictionary_name).strip().upper()
-    if not name:
-        return None
-    if not name.startswith("DICT_"):
-        name = f"DICT_{name}"
-    return getattr(cv2.aruco, name, None)
 
 
 def _aruco_side_px(corners: np.ndarray) -> float:

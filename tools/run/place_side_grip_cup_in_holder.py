@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import time
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -93,6 +94,107 @@ def print_target(target: TargetPose) -> None:
         f"[Azas] {target.label}: xyz_m=[{x:.6f}, {y:.6f}, {z:.6f}] "
         f"doosan_rpy_deg=[{rx:.3f}, {ry:.3f}, {rz:.3f}]"
     )
+
+
+def quaternion_from_rpy_rad(roll: float, pitch: float, yaw: float):
+    from geometry_msgs.msg import Quaternion
+
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+
+    q = Quaternion()
+    q.w = cr * cp * cy + sr * sp * sy
+    q.x = sr * cp * cy - cr * sp * sy
+    q.y = cr * sp * cy + sr * cp * sy
+    q.z = cr * cp * sy - sr * sp * cy
+    return q
+
+
+def pose_stamped_from_target(target: TargetPose, frame_id: str):
+    from geometry_msgs.msg import PoseStamped
+
+    pose = PoseStamped()
+    pose.header.frame_id = frame_id
+    pose.pose.position.x = target.xyz_m[0]
+    pose.pose.position.y = target.xyz_m[1]
+    pose.pose.position.z = target.xyz_m[2]
+    pose.pose.orientation = quaternion_from_rpy_rad(*target.rpy_rad)
+    return pose
+
+
+def plan_and_execute_moveit_pose(robot, arm, params, target: TargetPose, *, args: argparse.Namespace) -> int:
+    pose = pose_stamped_from_target(target, args.moveit_frame_id)
+    arm.set_start_state_to_current_state()
+    arm.set_goal_state(pose_stamped_msg=pose, pose_link=args.moveit_ee_link)
+    print(
+        f"[Azas] MoveIt plan step={target.label}: "
+        f"xyz_m=[{target.xyz_m[0]:.6f}, {target.xyz_m[1]:.6f}, {target.xyz_m[2]:.6f}] "
+        f"pipeline={args.moveit_planning_pipeline} planner={args.moveit_planner_id}"
+    )
+    sys.stdout.flush()
+    result = arm.plan(parameters=params)
+    if not result:
+        print(f"[FAIL] MoveIt planning failed for {target.label}")
+        return 1
+    if not args.execute:
+        print(f"[DRY-RUN] MoveIt plan succeeded for {target.label}; --execute not set.")
+        return 0
+    print(f"[Azas] MoveIt execute step={target.label}")
+    sys.stdout.flush()
+    ok = robot.execute(
+        group_name=args.moveit_planning_group,
+        robot_trajectory=result.trajectory,
+        blocking=True,
+    )
+    if ok is False:
+        print(f"[FAIL] MoveIt execution failed for {target.label}")
+        return 1
+    time.sleep(max(args.moveit_waypoint_hold_sec, 0.0))
+    return 0
+
+
+def run_moveit_sequence(
+    targets: list[TargetPose],
+    *,
+    args: argparse.Namespace,
+) -> int:
+    try:
+        import rclpy
+        from moveit.planning import MoveItPy, PlanRequestParameters
+        from azas_motion.side_grasp_ik_preview_node import moveit_config_dict
+    except Exception as exc:
+        print(f"[FAIL] MoveIt imports failed: {exc}")
+        return 1
+
+    rclpy.init(args=None)
+    try:
+        robot = MoveItPy(
+            node_name="azas_cup_holder_place_moveit_py",
+            config_dict=moveit_config_dict(args.moveit_robot_model, args.moveit_config_package),
+            provide_planning_service=False,
+        )
+        arm = robot.get_planning_component(args.moveit_planning_group)
+        params = PlanRequestParameters(robot)
+        params.planning_pipeline = args.moveit_planning_pipeline
+        params.planner_id = args.moveit_planner_id
+        params.planning_time = args.moveit_planning_time_sec
+        params.planning_attempts = args.moveit_planning_attempts
+        params.max_velocity_scaling_factor = args.moveit_velocity_scaling
+        params.max_acceleration_scaling_factor = args.moveit_acceleration_scaling
+        if args.moveit_settle_sec > 0.0:
+            print(f"[Azas] Waiting {args.moveit_settle_sec:.1f}s for MoveIt/controller state to settle")
+            time.sleep(args.moveit_settle_sec)
+        for target in targets:
+            rc = plan_and_execute_moveit_pose(robot, arm, params, target, args=args)
+            if rc != 0:
+                return rc
+        return 0
+    finally:
+        rclpy.shutdown()
 
 
 def run_movel(
@@ -202,6 +304,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gripper-open-width-m", type=float, default=0.110)
     parser.add_argument("--gripper-open-force-n", type=float, default=12.0)
     parser.add_argument("--gripper-timeout-sec", type=float, default=12.0)
+    parser.add_argument(
+        "--motion-backend",
+        choices=("direct", "moveit"),
+        default="direct",
+        help="direct uses Doosan MoveLine services; moveit plans through MoveItPy before execution.",
+    )
+    parser.add_argument("--moveit-frame-id", default="base_link")
+    parser.add_argument("--moveit-ee-link", default="link_6")
+    parser.add_argument("--moveit-planning-group", default="manipulator")
+    parser.add_argument("--moveit-robot-model", default="m0609")
+    parser.add_argument("--moveit-config-package", default="dsr_moveit_config_m0609")
+    parser.add_argument("--moveit-planning-pipeline", default="ompl")
+    parser.add_argument("--moveit-planner-id", default="RRTConnectkConfigDefault")
+    parser.add_argument("--moveit-planning-time-sec", type=float, default=8.0)
+    parser.add_argument("--moveit-planning-attempts", type=int, default=5)
+    parser.add_argument("--moveit-velocity-scaling", type=float, default=0.08)
+    parser.add_argument("--moveit-acceleration-scaling", type=float, default=0.06)
+    parser.add_argument("--moveit-settle-sec", type=float, default=3.0)
+    parser.add_argument("--moveit-waypoint-hold-sec", type=float, default=0.5)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
         "--confirm",
@@ -239,30 +360,43 @@ def main() -> int:
     if not args.execute:
         print("[DRY-RUN] --execute not set; no robot or gripper command will be sent.")
 
-    steps = [
-        (pre_place, args.approach_velocity, args.approach_acceleration),
-        (place_final, args.place_velocity, args.place_acceleration),
-    ]
-    for target, velocity, acceleration in steps:
-        rc = run_movel(target, args=args, velocity=velocity, acceleration=acceleration)
+    if args.motion_backend == "moveit":
+        print("[Azas] motion_backend=moveit: planning cup-holder transfer with MoveItPy")
+        rc = run_moveit_sequence([pre_place, place_final], args=args)
         if rc != 0:
-            print(f"[FAIL] {target.label} MoveLine failed; aborting sequence.")
+            print("[FAIL] MoveIt cup-holder approach/place failed; gripper open skipped.")
             return rc
+    else:
+        steps = [
+            (pre_place, args.approach_velocity, args.approach_acceleration),
+            (place_final, args.place_velocity, args.place_acceleration),
+        ]
+        for target, velocity, acceleration in steps:
+            rc = run_movel(target, args=args, velocity=velocity, acceleration=acceleration)
+            if rc != 0:
+                print(f"[FAIL] {target.label} MoveLine failed; aborting sequence.")
+                return rc
 
     rc = run_gripper_open(args)
     if rc != 0:
         print("[FAIL] gripper open failed; retreat skipped to avoid dragging the cup.")
         return rc
 
-    rc = run_movel(
-        retreat,
-        args=args,
-        velocity=args.retreat_velocity,
-        acceleration=args.retreat_acceleration,
-    )
-    if rc != 0:
-        print("[FAIL] retreat MoveLine failed.")
-        return rc
+    if args.motion_backend == "moveit":
+        rc = run_moveit_sequence([retreat], args=args)
+        if rc != 0:
+            print("[FAIL] MoveIt retreat failed.")
+            return rc
+    else:
+        rc = run_movel(
+            retreat,
+            args=args,
+            velocity=args.retreat_velocity,
+            acceleration=args.retreat_acceleration,
+        )
+        if rc != 0:
+            print("[FAIL] retreat MoveLine failed.")
+            return rc
 
     print("[PASS] cup holder side-grip place sequence completed")
     return 0

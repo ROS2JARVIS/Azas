@@ -2,8 +2,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
@@ -49,9 +50,30 @@ def rviz_node_function(context):
 
 
 def generate_launch_description():
+    collision_scene = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare("azas_bringup"),
+                "launch",
+                "workspace_collision_scene.launch.py",
+            ])
+        ])
+    )
+    gripper_tcp_tree = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare("azas_bringup"),
+                "launch",
+                "rg2_link6_tcp.launch.py",
+            ])
+        ])
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("model", default_value="m0609"),
+            collision_scene,
+            gripper_tcp_tree,
             OpaqueFunction(function=rviz_node_function),
         ]
     )
