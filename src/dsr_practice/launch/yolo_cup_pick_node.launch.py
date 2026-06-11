@@ -1,7 +1,9 @@
 from copy import deepcopy
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -152,6 +154,20 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
         )
 
     nodes.append(
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [FindPackageShare("azas_bringup"), "launch", "rg2_link6_tcp.launch.py"]
+                )
+            ),
+            launch_arguments={
+                "publish_gripper_collision": LaunchConfiguration("link6_gripper_collision_enabled"),
+            }.items(),
+            condition=IfCondition(LaunchConfiguration("link6_gripper_collision_enabled")),
+        )
+    )
+
+    nodes.append(
         Node(
             package="dsr_practice",
             executable="yolo_cup_pick_node",
@@ -176,7 +192,7 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                         value_type=str,
                     ),
                     "auto_pick_interval": LaunchConfiguration("auto_pick_interval"),
-                    "pick_depth_ratio": LaunchConfiguration("pick_depth_ratio"),
+                    "exit_after_pick": LaunchConfiguration("exit_after_pick"),
                     "depth_patch_radius": LaunchConfiguration("depth_patch_radius"),
                     "min_depth_valid_ratio": LaunchConfiguration("min_depth_valid_ratio"),
                     "min_depth_m": LaunchConfiguration("min_depth_m"),
@@ -297,6 +313,9 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "joint_goal_tolerance_rad": LaunchConfiguration(
                         "joint_goal_tolerance_rad"
                     ),
+                    "skip_initial_home_move": LaunchConfiguration(
+                        "skip_initial_home_move"
+                    ),
                     "move_to_camera_home": LaunchConfiguration("move_to_camera_home"),
                     "move_joint_home_before_camera_home": LaunchConfiguration(
                         "move_joint_home_before_camera_home"
@@ -394,8 +413,10 @@ def generate_launch_description():
     auto_pick_interval_arg = DeclareLaunchArgument(
         "auto_pick_interval", default_value="3.0"
     )
-    pick_depth_ratio_arg = DeclareLaunchArgument(
-        "pick_depth_ratio", default_value="0.55"
+    exit_after_pick_arg = DeclareLaunchArgument(
+        "exit_after_pick",
+        default_value="false",
+        description="Exit the side-grip process after one successful pick so queued panel flows can continue.",
     )
     depth_patch_radius_arg = DeclareLaunchArgument(
         "depth_patch_radius", default_value="7"
@@ -548,6 +569,14 @@ def generate_launch_description():
         default_value="true",
         description="Publish RViz markers for dispenser collision boxes.",
     )
+    link6_gripper_collision_enabled_arg = DeclareLaunchArgument(
+        "link6_gripper_collision_enabled",
+        default_value="true",
+        description=(
+            "Publish the RG2/link_6 attached collision envelope so MoveIt plans "
+            "with the mounted gripper, not only the bare robot flange."
+        ),
+    )
     table_collision_enabled_arg = DeclareLaunchArgument(
         "table_collision_enabled",
         default_value="true",
@@ -699,6 +728,11 @@ def generate_launch_description():
     joint_goal_tolerance_rad_arg = DeclareLaunchArgument(
         "joint_goal_tolerance_rad", default_value="0.02"
     )
+    skip_initial_home_move_arg = DeclareLaunchArgument(
+        "skip_initial_home_move",
+        default_value="false",
+        description="Start scanning from the current robot pose without commanding joint/camera home first.",
+    )
     move_to_camera_home_arg = DeclareLaunchArgument(
         "move_to_camera_home", default_value="true"
     )
@@ -791,7 +825,7 @@ def generate_launch_description():
             device_arg,
             target_class_arg,
             auto_pick_interval_arg,
-            pick_depth_ratio_arg,
+            exit_after_pick_arg,
             depth_patch_radius_arg,
             min_depth_valid_ratio_arg,
             min_depth_m_arg,
@@ -825,6 +859,7 @@ def generate_launch_description():
             dispenser_collision_publish_period_sec_arg,
             dispenser_collision_publish_objects_arg,
             dispenser_collision_publish_markers_arg,
+            link6_gripper_collision_enabled_arg,
             workspace_collision_scene_enabled_arg,
             workspace_collision_publish_period_sec_arg,
             table_collision_enabled_arg,
@@ -858,6 +893,7 @@ def generate_launch_description():
             verify_motion_arg,
             motion_verify_tolerance_arg,
             joint_goal_tolerance_rad_arg,
+            skip_initial_home_move_arg,
             move_to_camera_home_arg,
             move_joint_home_before_camera_home_arg,
             camera_home_mode_arg,

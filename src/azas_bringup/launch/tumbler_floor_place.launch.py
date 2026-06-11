@@ -36,6 +36,7 @@ def generate_launch_description():
     place_approach_height = LaunchConfiguration("place_approach_height")
     place_mouth_under_outlet = LaunchConfiguration("place_mouth_under_outlet")
     outlet_mouth_clearance = LaunchConfiguration("outlet_mouth_clearance")
+    disable_gripper_commands = LaunchConfiguration("disable_gripper_commands")
     gripper_open_service = LaunchConfiguration("gripper_open_service")
     gripper_close_service = LaunchConfiguration("gripper_close_service")
     gripper_set_service = LaunchConfiguration("gripper_set_service")
@@ -44,6 +45,7 @@ def generate_launch_description():
     gripper_grasp_force_n = LaunchConfiguration("gripper_grasp_force_n")
     gripper_preopen_force_n = LaunchConfiguration("gripper_preopen_force_n")
     gripper_max_width_m = LaunchConfiguration("gripper_max_width_m")
+    motion_response_timeout_sec = LaunchConfiguration("motion_response_timeout_sec")
     gripper_min_width_m = LaunchConfiguration("gripper_min_width_m")
 
     params = {
@@ -102,18 +104,18 @@ def generate_launch_description():
             0.1375,
         ],
         "dispenser_outlet_positions": [
-            0.609,
-            0.070,
-            0.087,
-            0.617,
-            0.028,
-            0.082,
-            0.616,
-            -0.026,
-            0.079,
-            0.607,
-            -0.083,
-            0.075,
+            0.555,
+            -0.100,
+            0.093,
+            0.549,
+            -0.150,
+            0.097,
+            0.527,
+            -0.204,
+            0.107,
+            0.517,
+            -0.235,
+            0.109,
         ],
         "home_joints_deg": [0.0, 0.0, 90.0, 0.0, 90.0, 0.0],
         "move_home_first": False,
@@ -125,12 +127,14 @@ def generate_launch_description():
         "joint_acceleration": 20.0,
         "line_velocity": 30.0,
         "line_acceleration": 50.0,
+        "motion_response_timeout_sec": ParameterValue(motion_response_timeout_sec, value_type=float),
         "workspace_x_min": 0.0,
         "workspace_x_max": 0.80,
         "workspace_y_min": -0.35,
         "workspace_y_max": 0.35,
         "workspace_z_min": 0.0,
         "workspace_z_max": 0.80,
+        "disable_gripper_commands": ParameterValue(disable_gripper_commands, value_type=bool),
         # Optional std_srvs/Trigger services. Leave empty until RG2 wrapper is confirmed.
         "gripper_open_service": gripper_open_service,
         "gripper_close_service": gripper_close_service,
@@ -169,7 +173,7 @@ def generate_launch_description():
             DeclareLaunchArgument("tumbler_position_y", default_value="-0.22"),
             DeclareLaunchArgument("tumbler_position_z", default_value="0.05"),
             DeclareLaunchArgument("tumbler_bottom_diameter", default_value="0.065"),
-            DeclareLaunchArgument("tumbler_top_diameter", default_value="0.075"),
+            DeclareLaunchArgument("tumbler_top_diameter", default_value="0.109"),
             DeclareLaunchArgument("grasp_height", default_value="0.085"),
             DeclareLaunchArgument("side_grasp_approach_offset", default_value="0.10"),
             DeclareLaunchArgument("side_grasp_candidate_count", default_value="16"),
@@ -180,6 +184,7 @@ def generate_launch_description():
             DeclareLaunchArgument("place_approach_height", default_value="0.06"),
             DeclareLaunchArgument("place_mouth_under_outlet", default_value="false"),
             DeclareLaunchArgument("outlet_mouth_clearance", default_value="0.0"),
+            DeclareLaunchArgument("disable_gripper_commands", default_value="false"),
             DeclareLaunchArgument("gripper_open_service", default_value=""),
             DeclareLaunchArgument("gripper_close_service", default_value=""),
             DeclareLaunchArgument("gripper_set_service", default_value="/jarvis/rg2/set_width"),
@@ -189,6 +194,7 @@ def generate_launch_description():
             DeclareLaunchArgument("gripper_preopen_force_n", default_value="8.0"),
             DeclareLaunchArgument("gripper_max_width_m", default_value="0.110"),
             DeclareLaunchArgument("gripper_min_width_m", default_value="0.0"),
+            DeclareLaunchArgument("motion_response_timeout_sec", default_value="45.0"),
             Node(
                 package="azas_motion",
                 executable="tumbler_floor_place_node",

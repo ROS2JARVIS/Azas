@@ -1,7 +1,12 @@
 import pytest
 import cv2
 import numpy as np
+import cv2
 
+from azas_perception.cup_uprighting_vision import (
+    calculate_cup_major_axis_angle_rad,
+    is_red_marker_aligned_with_angle,
+)
 from azas_perception.depth_projection import CameraIntrinsics, pixel_depth_to_camera_point
 from azas_perception.lid_marker import (
     ImageRoi,
@@ -14,6 +19,7 @@ from azas_perception.yolo_tumbler_detector_node import (
     BboxHeightStats,
     Detection2D,
     YoloTumblerDetectorNode,
+    default_yolo_model_path,
 )
 
 
@@ -102,6 +108,53 @@ def test_detect_aruco_marker_uses_configured_dictionary_and_roi():
     assert marker.center_u == pytest.approx(80, abs=1)
     assert marker.center_v == pytest.approx(80, abs=1)
     assert marker.side_px == pytest.approx(59, abs=2)
+
+
+def test_detect_aruco_marker_handles_small_6x6_lid_marker():
+    image = np.full((240, 320, 3), 205, dtype=np.uint8)
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+    marker_image = cv2.aruco.generateImageMarker(dictionary, 0, 28)
+
+    # Simulate the real wrist-camera view: a small marker body with a quiet-zone
+    # margin on a bright lid/table background.
+    marker_with_quiet_zone = np.full((36, 36), 255, dtype=np.uint8)
+    marker_with_quiet_zone[4:32, 4:32] = marker_image
+    marker_bgr = cv2.cvtColor(marker_with_quiet_zone, cv2.COLOR_GRAY2BGR)
+    image[40:76, 230:266] = marker_bgr
+
+    marker = detect_aruco_marker(
+        image,
+        ImageRoi(0, 0, image.shape[1], image.shape[0]),
+        dictionary_name="DICT_6X6_250",
+        marker_id=0,
+    )
+
+    assert marker is not None
+    assert marker.marker_id == 0
+    assert marker.center_u == pytest.approx(248, abs=2)
+    assert marker.center_v == pytest.approx(58, abs=2)
+    assert marker.side_px == pytest.approx(27, abs=3)
+
+
+def test_detect_aruco_marker_handles_legacy_lid_marker_4x4_id14():
+    image = np.full((240, 320, 3), 220, dtype=np.uint8)
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    marker_image = cv2.aruco.generateImageMarker(dictionary, 14, 34)
+    marker_with_quiet_zone = np.full((44, 44), 255, dtype=np.uint8)
+    marker_with_quiet_zone[5:39, 5:39] = marker_image
+    image[35:79, 220:264] = cv2.cvtColor(marker_with_quiet_zone, cv2.COLOR_GRAY2BGR)
+
+    marker = detect_aruco_marker(
+        image,
+        ImageRoi(0, 0, image.shape[1], image.shape[0]),
+        dictionary_name="DICT_4X4_50",
+        marker_id=14,
+    )
+
+    assert marker is not None
+    assert marker.marker_id == 14
+    assert marker.center_u == pytest.approx(242, abs=2)
+    assert marker.center_v == pytest.approx(57, abs=2)
 
 
 def test_lid_normal_quaternion_points_local_z_to_normal():
@@ -290,3 +343,24 @@ def test_height_orientation_can_classify_inverted_when_thresholds_are_configured
         stat_name="p90",
         min_valid_ratio=0.1,
     ) == "inverted"
+
+
+def test_packaged_yolo_cup_uprighting_model_is_default_when_available():
+    assert default_yolo_model_path().endswith("yolo_cup_uprighting_best.pt")
+
+
+def test_cup_uprighting_major_axis_angle_uses_image_only():
+    image = np.zeros((120, 120, 3), dtype=np.uint8)
+    cv2.rectangle(image, (20, 50), (100, 70), (255, 255, 255), thickness=-1)
+
+    theta = calculate_cup_major_axis_angle_rad(image, (0, 0, 120, 120))
+
+    assert abs(theta) < 0.1 or abs(abs(theta) - np.pi) < 0.1
+
+
+def test_red_marker_alignment_reports_direction_without_robot_pose():
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+    cv2.circle(image, (75, 50), 8, (0, 0, 255), thickness=-1)
+
+    assert is_red_marker_aligned_with_angle(image, (0, 0, 100, 100), 0.0)
+    assert not is_red_marker_aligned_with_angle(image, (0, 0, 100, 100), np.pi)

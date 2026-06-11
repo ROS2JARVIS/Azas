@@ -170,29 +170,6 @@ if [[ "${REQUIRE_ROBOT_STANDBY}" == "true" ]]; then
   fi
 fi
 
-if [[ "${SKIP_CUP_HOLDER_PICK}" != "true" ]]; then
-  echo "[Azas] Cup-holder pick is required before shake. Starting measured holder side-grip pickup."
-  echo "[Azas] Cup-holder pick Z offset: ${CUP_HOLDER_PICK_Z_OFFSET_M} m (negative lowers grasp pose; calibration unchanged)."
-  echo "[Azas] Cup-holder grasp: width=${CUP_HOLDER_PICK_WIDTH_M} m force=${CUP_HOLDER_PICK_FORCE_N} N; shake is conservative to reduce drop risk."
-  python3 "${ROOT_DIR}/tools/run/pick_from_cup_holder_side_grip.py" \
-    --service-prefix "${SERVICE_PREFIX}" \
-    --config "${CUP_HOLDER_PICK_CONFIG}" \
-    --approach-velocity 12.0 --approach-acceleration 16.0 \
-    --descend-velocity 6.0 --descend-acceleration 10.0 \
-    --lift-velocity 12.0 --lift-acceleration 16.0 \
-    --place-final-z-offset-m "${CUP_HOLDER_PICK_Z_OFFSET_M}" \
-    --timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 \
-    --ikin-timeout-sec 20.0 --ikin-retries 2 \
-    --gripper-grasp-width-m "${CUP_HOLDER_PICK_WIDTH_M}" \
-    --gripper-force-n "${CUP_HOLDER_PICK_FORCE_N}" \
-    --post-grasp-settle-sec 0.8 \
-    --z-max 0.28 \
-    --execute --confirm ENABLE_CUP_HOLDER_PICK
-  echo "[Azas] Cup-holder pick completed; continuing to shake with grasped cup."
-else
-  echo "[Azas] Cup-holder pick skipped only because SKIP_CUP_HOLDER_PICK=true was set by a wrapper that already completed it."
-fi
-
 parse_first_array() {
   python3 -c '
 import re
@@ -286,6 +263,29 @@ read -r -p "Type ENABLE_REAL_ROBOT_MOTION to continue: " CONFIRM
 if [[ "${CONFIRM}" != "ENABLE_REAL_ROBOT_MOTION" ]]; then
   echo "[Azas] Confirmation did not match. Refusing real robot shake."
   exit 1
+fi
+
+if [[ "${SKIP_CUP_HOLDER_PICK}" != "true" ]]; then
+  echo "[Azas] Cup-holder pick is required before shake. Starting measured holder side-grip pickup."
+  echo "[Azas] Cup-holder pick Z offset: ${CUP_HOLDER_PICK_Z_OFFSET_M} m (negative lowers grasp pose; calibration unchanged)."
+  echo "[Azas] Cup-holder grasp: width=${CUP_HOLDER_PICK_WIDTH_M} m force=${CUP_HOLDER_PICK_FORCE_N} N; shake is conservative to reduce drop risk."
+  python3 "${ROOT_DIR}/tools/run/pick_from_cup_holder_side_grip.py" \
+    --service-prefix "${SERVICE_PREFIX}" \
+    --config "${CUP_HOLDER_PICK_CONFIG}" \
+    --approach-velocity 12.0 --approach-acceleration 16.0 \
+    --descend-velocity 6.0 --descend-acceleration 10.0 \
+    --lift-velocity 12.0 --lift-acceleration 16.0 \
+    --place-final-z-offset-m "${CUP_HOLDER_PICK_Z_OFFSET_M}" \
+    --timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 \
+    --ikin-timeout-sec 20.0 --ikin-retries 2 \
+    --gripper-grasp-width-m "${CUP_HOLDER_PICK_WIDTH_M}" \
+    --gripper-force-n "${CUP_HOLDER_PICK_FORCE_N}" \
+    --post-grasp-settle-sec 0.8 \
+    --z-max 0.28 \
+    --execute --confirm ENABLE_CUP_HOLDER_PICK
+  echo "[Azas] Cup-holder pick completed; continuing to shake with grasped cup."
+else
+  echo "[Azas] Cup-holder pick skipped only because SKIP_CUP_HOLDER_PICK=true was set by a wrapper that already completed it."
 fi
 
 exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \

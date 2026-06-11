@@ -18,6 +18,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 DEFAULT_CONFIG_PATH = (
     "/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml"
 )
+DEFAULT_CALIBRATION_PATH = "/home/ssu/Azas/src/azas_bringup/config/calibration.yaml"
 
 LEGACY_DISPENSER_COLLISION_OBJECT_IDS = (
     "dispenser_body_box",
@@ -26,10 +27,19 @@ LEGACY_DISPENSER_COLLISION_OBJECT_IDS = (
     "dispenser_3_body_box_v2",
     "dispenser_4_body_box_v2",
     "dispenser_head_box",
+    "dispenser_head_nozzle_merged_vertical_box",
+    "dispenser_head_nozzle_merged_horizontal_spout_box",
     "dispenser_1_head_nozzle_box",
     "dispenser_2_head_nozzle_box",
     "dispenser_3_head_nozzle_box",
     "dispenser_4_head_nozzle_box",
+)
+
+COURSE_WORKSPACE_COLLISION_OBJECT_IDS = (
+    "side_grip_workspace_x_min_wall",
+    "side_grip_workspace_x_max_wall",
+    "side_grip_workspace_y_min_wall",
+    "side_grip_workspace_y_max_wall",
 )
 
 
@@ -120,18 +130,25 @@ class MeasuredDispenserCollisionSceneNode(Node):
         super().__init__("measured_dispenser_collision_scene_node")
 
         self.declare_parameter("config_path", DEFAULT_CONFIG_PATH)
+        self.declare_parameter("calibration_path", DEFAULT_CALIBRATION_PATH)
         self.declare_parameter("publish_period_sec", 2.0)
         self.declare_parameter("publish_collision_objects", True)
         self.declare_parameter("publish_markers", True)
         self.declare_parameter("publish_rviz_visual_tools_compat", True)
         self.declare_parameter("publish_debug_labels", True)
         self.declare_parameter("remove_legacy_collision_objects", True)
+        self.declare_parameter("remove_course_workspace_collision_objects", False)
         self.declare_parameter("clear_markers_before_publish", True)
+        self.declare_parameter("collision_object_exclude_ids", "")
 
         config_path = Path(
             self.get_parameter("config_path").get_parameter_value().string_value
         )
         self.config = self._load_config(config_path)
+        calibration_path = Path(
+            self.get_parameter("calibration_path").get_parameter_value().string_value
+        )
+        self.calibration = self._load_optional_calibration(calibration_path)
         self.frame_id = self.config.get("metadata", {}).get("frame_id", "base_link")
 
         self.collision_pub = self.create_publisher(
@@ -165,15 +182,31 @@ class MeasuredDispenserCollisionSceneNode(Node):
             .get_parameter_value()
             .bool_value
         )
+        self.remove_course_workspace_collision_objects = (
+            self.get_parameter("remove_course_workspace_collision_objects")
+            .get_parameter_value()
+            .bool_value
+        )
         self.clear_markers_before_publish = (
             self.get_parameter("clear_markers_before_publish")
             .get_parameter_value()
             .bool_value
         )
+        exclude_raw = (
+            self.get_parameter("collision_object_exclude_ids")
+            .get_parameter_value()
+            .string_value
+        )
+        self.collision_object_exclude_ids = {
+            item.strip()
+            for item in exclude_raw.replace(";", ",").split(",")
+            if item.strip()
+        }
 
         self._warn_about_draft_status()
         self._warn_about_front_hold_overlaps()
         self._legacy_collision_objects_removed = False
+        self._published_ids_logged = False
         self._publish_scene()
 
         period = (
@@ -190,6 +223,24 @@ class MeasuredDispenserCollisionSceneNode(Node):
             raise ValueError(f"collision config is not a YAML map: {config_path}")
         self.get_logger().info(f"Loaded measured dispenser collision config: {config_path}")
         return config
+
+    def _load_optional_calibration(self, calibration_path: Path) -> dict[str, Any]:
+        if not calibration_path.exists():
+            self.get_logger().warning(
+                f"calibration config does not exist; dispenser outlet markers disabled: {calibration_path}"
+            )
+            return {}
+        with calibration_path.open("r", encoding="utf-8") as stream:
+            calibration = yaml.safe_load(stream) or {}
+        if not isinstance(calibration, dict):
+            self.get_logger().warning(
+                f"calibration config is not a YAML map; outlet markers disabled: {calibration_path}"
+            )
+            return {}
+        self.get_logger().info(
+            f"Loaded dispenser outlet/press marker calibration: {calibration_path}"
+        )
+        return calibration
 
     def _warn_about_draft_status(self) -> None:
         metadata = self.config.get("metadata", {})
@@ -232,26 +283,51 @@ class MeasuredDispenserCollisionSceneNode(Node):
 
     def _publish_scene(self) -> None:
         collision_objects = self._collision_objects()
+        if (
+            self.remove_legacy_collision_objects
+            and not self._legacy_collision_objects_removed
+        ):
+            remove_ids = list(LEGACY_DISPENSER_COLLISION_OBJECT_IDS)
+            if self.remove_course_workspace_collision_objects:
+                remove_ids.extend(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
+            for object_id in remove_ids:
+                self.collision_pub.publish(self._make_remove_collision_object(object_id))
+            self._legacy_collision_objects_removed = True
+            if self.remove_course_workspace_collision_objects:
+                self.get_logger().info(
+                    "Requested removal of course workspace wall collision objects: "
+                    + ", ".join(COURSE_WORKSPACE_COLLISION_OBJECT_IDS)
+                )
         if self.publish_collision_objects:
-            if (
-                self.remove_legacy_collision_objects
-                and not self._legacy_collision_objects_removed
-            ):
-                for object_id in LEGACY_DISPENSER_COLLISION_OBJECT_IDS:
-                    self.collision_pub.publish(self._make_remove_collision_object(object_id))
-                self._legacy_collision_objects_removed = True
+            published_ids = []
             for object_id, object_config in collision_objects.items():
+                if object_id in self.collision_object_exclude_ids:
+                    if not self._published_ids_logged:
+                        self.get_logger().info(
+                            f"Skipping PlanningScene collision object {object_id}; "
+                            "it remains visible as an RViz marker only."
+                        )
+                    continue
                 if not object_config.get("publish_to_planning_scene", True):
                     continue
                 self.collision_pub.publish(
                     self._make_collision_object(object_id, object_config)
                 )
+                published_ids.append(object_id)
+            if published_ids and not self._published_ids_logged:
+                self.get_logger().info(
+                    "Publishing measured dispenser collision objects: " + ", ".join(published_ids)
+                )
+                self._published_ids_logged = True
 
         if self.publish_markers:
             markers = self._make_markers(collision_objects)
             self.marker_pub.publish(markers)
             if self.publish_rviz_visual_tools_compat:
-                self.rviz_visual_tools_pub.publish(markers)
+                rviz_markers = MarkerArray(
+                    markers=[m for m in markers.markers if m.action != Marker.DELETEALL]
+                )
+                self.rviz_visual_tools_pub.publish(rviz_markers)
 
     def _make_collision_object(
         self, object_id: str, object_config: dict[str, Any]
@@ -392,6 +468,56 @@ class MeasuredDispenserCollisionSceneNode(Node):
             label.color.a = 0.95
             label.text = hold_name
             markers.append(label)
+
+        outlet_marker_id = 3000
+        outlets = self.calibration.get("dispenser_outlets", {})
+        if isinstance(outlets, dict):
+            for dispenser_id in sorted(outlets.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x)):
+                outlet_config = outlets.get(dispenser_id) or {}
+                if not isinstance(outlet_config, dict):
+                    continue
+                for field_name, namespace, color in (
+                    ("outlet_pose_xyz_m", "measured_dispenser_outlet_points", (0.0, 1.0, 0.0, 0.95)),
+                    ("press_pose_xyz_m", "measured_dispenser_press_points", (1.0, 0.0, 0.9, 0.95)),
+                ):
+                    point = outlet_config.get(field_name)
+                    if point is None:
+                        continue
+                    marker = Marker()
+                    marker.header.frame_id = self.frame_id
+                    marker.header.stamp = stamp
+                    marker.ns = namespace
+                    marker.id = outlet_marker_id
+                    outlet_marker_id += 1
+                    marker.type = Marker.SPHERE
+                    marker.action = Marker.ADD
+                    marker.pose = _pose(point, [0.0, 0.0, 0.0, 1.0])
+                    marker.scale.x = 0.025
+                    marker.scale.y = 0.025
+                    marker.scale.z = 0.025
+                    marker.color.r = color[0]
+                    marker.color.g = color[1]
+                    marker.color.b = color[2]
+                    marker.color.a = color[3]
+                    markers.append(marker)
+
+                    label = Marker()
+                    label.header.frame_id = self.frame_id
+                    label.header.stamp = stamp
+                    label.ns = f"{namespace}_labels"
+                    label.id = outlet_marker_id
+                    outlet_marker_id += 1
+                    label.type = Marker.TEXT_VIEW_FACING
+                    label.action = Marker.ADD
+                    label.pose = _pose(point, [0.0, 0.0, 0.0, 1.0])
+                    label.pose.position.z += 0.045
+                    label.scale.z = 0.03
+                    label.color.r = color[0]
+                    label.color.g = color[1]
+                    label.color.b = color[2]
+                    label.color.a = 1.0
+                    label.text = f"dispenser_{dispenser_id}_{field_name.replace('_xyz_m', '')}"
+                    markers.append(label)
 
         return MarkerArray(markers=markers)
 

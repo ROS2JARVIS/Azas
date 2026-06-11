@@ -85,8 +85,9 @@ def generate_launch_description():
         DeclareLaunchArgument("red_min_area_px", default_value="80.0"),
         DeclareLaunchArgument("red_min_radius_px", default_value="4.0"),
         DeclareLaunchArgument("red_min_circularity", default_value="0.65"),
-        DeclareLaunchArgument("aruco_dictionary", default_value="DICT_4X4_50"),
-        DeclareLaunchArgument("aruco_marker_id", default_value="-1"),
+        DeclareLaunchArgument("aruco_dictionary", default_value="DICT_6X6_250"),
+        DeclareLaunchArgument("aruco_marker_id", default_value="0"),
+        DeclareLaunchArgument("aruco_fallback_markers", default_value="DICT_4X4_50:14"),
         DeclareLaunchArgument("aruco_marker_length_m", default_value="0.03"),
         DeclareLaunchArgument("use_aruco_axis_for_orientation", default_value="true"),
         DeclareLaunchArgument("aruco_finger_axis_quarter_turns", default_value="1"),
@@ -95,6 +96,7 @@ def generate_launch_description():
         DeclareLaunchArgument("max_plane_rmse_m", default_value="0.015"),
         DeclareLaunchArgument("approach_offset_m", default_value="0.08"),
         DeclareLaunchArgument("lift_offset_m", default_value="0.10"),
+        DeclareLaunchArgument("min_approach_z_m", default_value="0.0"),
         DeclareLaunchArgument("surface_offset_m", default_value="0.0"),
         DeclareLaunchArgument("offset_axis", default_value="local_z"),
         DeclareLaunchArgument("tcp_grasp_offset_x_m", default_value="0.0"),
@@ -116,6 +118,11 @@ def generate_launch_description():
         DeclareLaunchArgument("line_velocity", default_value="15.0"),
         DeclareLaunchArgument("line_acceleration", default_value="30.0"),
         DeclareLaunchArgument("move_timeout_sec", default_value="10.0"),
+        DeclareLaunchArgument("approach_lid_with_movej", default_value="false"),
+        DeclareLaunchArgument("approach_movej_velocity", default_value="20.0"),
+        DeclareLaunchArgument("approach_movej_acceleration", default_value="20.0"),
+        DeclareLaunchArgument("lid_overhead_approach_enabled", default_value="false"),
+        DeclareLaunchArgument("lid_overhead_min_z_m", default_value="0.22"),
         DeclareLaunchArgument("precheck_ikin", default_value="true"),
         DeclareLaunchArgument("ikin_sol_space", default_value="2"),
         DeclareLaunchArgument("ikin_timeout_sec", default_value="5.0"),
@@ -277,6 +284,7 @@ def generate_launch_description():
                     LaunchConfiguration("aruco_marker_id"),
                     value_type=int,
                 ),
+                "aruco_fallback_markers": LaunchConfiguration("aruco_fallback_markers"),
                 "aruco_marker_length_m": ParameterValue(
                     LaunchConfiguration("aruco_marker_length_m"),
                     value_type=float,
@@ -374,6 +382,10 @@ def generate_launch_description():
                     value_type=float,
                 ),
                 "lift_offset_m": ParameterValue(LaunchConfiguration("lift_offset_m"), value_type=float),
+                "min_approach_z_m": ParameterValue(
+                    LaunchConfiguration("min_approach_z_m"),
+                    value_type=float,
+                ),
                 "surface_offset_m": ParameterValue(
                     LaunchConfiguration("surface_offset_m"),
                     value_type=float,
@@ -441,6 +453,26 @@ def generate_launch_description():
                 ),
                 "move_timeout_sec": ParameterValue(
                     LaunchConfiguration("move_timeout_sec"),
+                    value_type=float,
+                ),
+                "approach_lid_with_movej": ParameterValue(
+                    LaunchConfiguration("approach_lid_with_movej"),
+                    value_type=bool,
+                ),
+                "approach_movej_velocity": ParameterValue(
+                    LaunchConfiguration("approach_movej_velocity"),
+                    value_type=float,
+                ),
+                "approach_movej_acceleration": ParameterValue(
+                    LaunchConfiguration("approach_movej_acceleration"),
+                    value_type=float,
+                ),
+                "lid_overhead_approach_enabled": ParameterValue(
+                    LaunchConfiguration("lid_overhead_approach_enabled"),
+                    value_type=bool,
+                ),
+                "lid_overhead_min_z_m": ParameterValue(
+                    LaunchConfiguration("lid_overhead_min_z_m"),
                     value_type=float,
                 ),
                 "precheck_ikin": ParameterValue(

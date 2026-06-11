@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path as FsPath
 from typing import List, Sequence, Tuple
 
 import rclpy
+import yaml
 from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion, Vector3
 from nav_msgs.msg import Path
 from rclpy.node import Node
@@ -29,6 +31,7 @@ RGBA = Tuple[float, float, float, float]
 class SequenceStep:
     label: str
     xyz: XYZ
+    cup_base_xyz: XYZ | None = None
 
 
 def point(xyz: XYZ) -> Point:
@@ -60,15 +63,34 @@ class DispenserSequencePreviewNode(Node):
         super().__init__("dispenser_sequence_preview_node")
         self.declare_parameter("cup_pose_topic", "/azas/sim/tumbler_pose")
         self.declare_parameter("frame_id", "base_link")
+        self.declare_parameter(
+            "calibration_path",
+            "/home/ssu/Azas/src/azas_bringup/config/calibration.yaml",
+        )
+        self.declare_parameter(
+            "dispenser_collision_config_path",
+            "/home/ssu/Azas/src/azas_bringup/config/measured_dispenser_collision.yaml",
+        )
         self.declare_parameter("selected_dispenser_id", 2)
         self.declare_parameter("cup_height_m", 0.17)
         self.declare_parameter("grasp_height_m", 0.085)
         self.declare_parameter("side_pre_grasp_offset_m", 0.10)
         self.declare_parameter("lift_height_m", 0.04)
         self.declare_parameter("shake_clearance_m", 0.13)
-        self.declare_parameter("shake_swing_m", 0.075)
+        self.declare_parameter("shake_swing_m", 0.109)
         self.declare_parameter("shake_lift_m", 0.055)
         self.declare_parameter("outlet_mouth_clearance_m", 0.0)
+        self.declare_parameter("move_release_offset_x_m", 0.0)
+        self.declare_parameter("move_release_offset_y_m", 0.0)
+        self.declare_parameter("move_release_offset_z_m", 0.0)
+        self.declare_parameter("press_pre_lift_retreat_x_m", -0.050)
+        self.declare_parameter("press_pre_lift_retreat_y_m", 0.0)
+        self.declare_parameter("regrasp_retreat_x_m", -0.080)
+        self.declare_parameter("regrasp_retreat_y_m", 0.0)
+        self.declare_parameter("regrasp_rear_entry_offset_x_m", -0.080)
+        self.declare_parameter("regrasp_rear_entry_offset_y_m", 0.0)
+        self.declare_parameter("regrasp_min_transit_z_m", 0.500)
+        self.declare_parameter("regrasp_max_transit_z_m", 0.560)
         self.declare_parameter("publish_rate_hz", 4.0)
         self.declare_parameter("show_sequence_markers", True)
         self.declare_parameter("show_dispenser_markers", True)
@@ -95,19 +117,24 @@ class DispenserSequencePreviewNode(Node):
         self.declare_parameter(
             "dispenser_outlet_positions",
             [
-                0.609,
-                0.070,
-                0.087,
-                0.617,
-                0.028,
-                0.082,
-                0.616,
-                -0.026,
-                0.079,
-                0.607,
-                -0.083,
-                0.075,
+                0.555,
+                -0.100,
+                0.093,
+                0.549,
+                -0.150,
+                0.097,
+                0.527,
+                -0.204,
+                0.107,
+                0.517,
+                -0.235,
+                0.109,
             ],
+        )
+        self.calibration = self.load_yaml_config("calibration_path", "measured dispenser sequence calibration")
+        self.dispenser_collision = self.load_yaml_config(
+            "dispenser_collision_config_path",
+            "measured dispenser front-hold collision config",
         )
 
         plan_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -136,6 +163,23 @@ class DispenserSequencePreviewNode(Node):
             "Azas RViz dispenser sequence preview ready; hardware and camera execution are disabled."
         )
 
+    def load_yaml_config(self, parameter_name: str, label: str) -> dict:
+        config_path = FsPath(str(self.get_parameter(parameter_name).value)).expanduser()
+        if not config_path.exists():
+            self.get_logger().warning(
+                f"{parameter_name} does not exist; using launch fallback where available: {config_path}"
+            )
+            return {}
+        with config_path.open("r", encoding="utf-8") as stream:
+            config = yaml.safe_load(stream) or {}
+        if not isinstance(config, dict):
+            self.get_logger().warning(
+                f"{parameter_name} is not a YAML map; using launch fallback where available: {config_path}"
+            )
+            return {}
+        self.get_logger().info(f"Loaded {label}: {config_path}")
+        return config
+
     def on_cup_pose(self, msg: PoseStamped) -> None:
         expected = str(self.get_parameter("frame_id").value)
         if msg.header.frame_id != expected:
@@ -149,7 +193,9 @@ class DispenserSequencePreviewNode(Node):
 
     def dispenser_layout(self) -> tuple[List[XYZ], List[XYZ], int]:
         bottles = triples(self.get_parameter("dispenser_bottle_positions").value)
-        outlets = triples(self.get_parameter("dispenser_outlet_positions").value)
+        outlets = self.measured_points("outlet_pose_xyz_m")
+        if not outlets:
+            outlets = triples(self.get_parameter("dispenser_outlet_positions").value)
         if len(bottles) != len(outlets):
             raise ValueError("bottle/outlet count mismatch")
         selected = min(
@@ -158,24 +204,121 @@ class DispenserSequencePreviewNode(Node):
         )
         return bottles, outlets, selected - 1
 
+    def measured_points(self, field_name: str) -> List[XYZ]:
+        outlets = self.calibration.get("dispenser_outlets", {})
+        if not isinstance(outlets, dict):
+            return []
+        points: List[XYZ] = []
+        for dispenser_id in sorted(outlets.keys(), key=lambda value: int(value)):
+            config = outlets.get(dispenser_id) or {}
+            if not isinstance(config, dict):
+                return []
+            xyz = config.get(field_name)
+            if not isinstance(xyz, list) or len(xyz) != 3:
+                return []
+            points.append((float(xyz[0]), float(xyz[1]), float(xyz[2])))
+        return points
+
+    def measured_front_holds(self) -> List[XYZ]:
+        front_holds = self.dispenser_collision.get("front_hold_poses", {})
+        if not isinstance(front_holds, dict):
+            return []
+        points: List[XYZ] = []
+        for dispenser_id in sorted(
+            front_holds.keys(),
+            key=lambda value: int(str(value).replace("dispenser_", "")),
+        ):
+            config = front_holds.get(dispenser_id) or {}
+            if not isinstance(config, dict):
+                return []
+            xyz = config.get("position_xyz_m")
+            if not isinstance(xyz, list) or len(xyz) != 3:
+                return []
+            points.append((float(xyz[0]), float(xyz[1]), float(xyz[2])))
+        return points
+
     def build_steps(self, cup_pose: PoseStamped) -> List[SequenceStep]:
         _, outlets, selected_index = self.dispenser_layout()
+        press_targets = self.measured_points("press_pose_xyz_m")
+        front_holds = self.measured_front_holds()
         cup = cup_pose.pose.position
         cup_base = (float(cup.x), float(cup.y), float(cup.z))
         outlet = outlets[selected_index]
+        measured_front_hold = front_holds[selected_index] if len(front_holds) == len(outlets) else outlet
         grasp_height = float(self.get_parameter("grasp_height_m").value)
         side_offset = float(self.get_parameter("side_pre_grasp_offset_m").value)
         lift_height = float(self.get_parameter("lift_height_m").value)
         shake_clearance = float(self.get_parameter("shake_clearance_m").value)
         shake_swing = float(self.get_parameter("shake_swing_m").value)
         shake_lift = float(self.get_parameter("shake_lift_m").value)
+        release_dx = float(self.get_parameter("move_release_offset_x_m").value)
+        release_dy = float(self.get_parameter("move_release_offset_y_m").value)
+        release_dz = float(self.get_parameter("move_release_offset_z_m").value)
+        press_retreat_x = float(self.get_parameter("press_pre_lift_retreat_x_m").value)
+        press_retreat_y = float(self.get_parameter("press_pre_lift_retreat_y_m").value)
+        regrasp_retreat_x = float(self.get_parameter("regrasp_retreat_x_m").value)
+        regrasp_retreat_y = float(self.get_parameter("regrasp_retreat_y_m").value)
+        rear_entry_x = float(self.get_parameter("regrasp_rear_entry_offset_x_m").value)
+        rear_entry_y = float(self.get_parameter("regrasp_rear_entry_offset_y_m").value)
+        regrasp_min_z = float(self.get_parameter("regrasp_min_transit_z_m").value)
+        regrasp_max_z = float(self.get_parameter("regrasp_max_transit_z_m").value)
 
         grasp = (cup_base[0], cup_base[1], cup_base[2] + grasp_height)
         side_pre_grasp = (grasp[0], grasp[1] - side_offset, grasp[2])
         low_transfer_z = grasp[2] + lift_height
         lift = (grasp[0], grasp[1], low_transfer_z)
-        front_lane = (outlet[0] - 0.12, grasp[1], low_transfer_z)
-        outlet_front_hold = (outlet[0], outlet[1], low_transfer_z)
+        front_lane = (measured_front_hold[0] - 0.12, grasp[1], low_transfer_z)
+        outlet_front_hold = (
+            measured_front_hold[0] + release_dx,
+            measured_front_hold[1] + release_dy,
+            measured_front_hold[2] + release_dz,
+        )
+        cup_front_base = (
+            outlet_front_hold[0],
+            outlet_front_hold[1],
+            outlet_front_hold[2] - grasp_height,
+        )
+        press_retreat = (
+            outlet_front_hold[0] + press_retreat_x,
+            outlet_front_hold[1] + press_retreat_y,
+            outlet_front_hold[2],
+        )
+        empty_lift = (
+            press_retreat[0],
+            press_retreat[1],
+            max(regrasp_min_z, outlet_front_hold[2] + 0.20),
+        )
+        if len(press_targets) == len(outlets):
+            press_down = press_targets[selected_index]
+        else:
+            press_down = (
+                outlet[0] - 0.03,
+                outlet[1],
+                max(outlet[2] + 0.035, low_transfer_z + 0.12),
+            )
+        press_ready = (
+            press_down[0],
+            press_down[1],
+            min(max(press_down[2] + 0.12, 0.50), 0.56),
+        )
+        regrasp_high_z = min(max(regrasp_min_z, outlet_front_hold[2] + 0.25), regrasp_max_z)
+        post_press_lift = (
+            press_down[0],
+            press_down[1],
+            regrasp_high_z,
+        )
+        regrasp_high = (
+            outlet_front_hold[0] + regrasp_retreat_x,
+            outlet_front_hold[1] + regrasp_retreat_y,
+            regrasp_high_z,
+        )
+        regrasp_rear_low = (
+            outlet_front_hold[0] + rear_entry_x,
+            outlet_front_hold[1] + rear_entry_y,
+            outlet_front_hold[2],
+        )
+        regrasp = outlet_front_hold
+        regrasp_lift = (outlet_front_hold[0], outlet_front_hold[1], low_transfer_z + 0.12)
         shake_z = max(low_transfer_z + shake_clearance, 0.55)
         shake_center = (outlet_front_hold[0] - 0.15, outlet_front_hold[1] - 0.38, shake_z + shake_lift)
         shake_left = (
@@ -204,13 +347,23 @@ class DispenserSequencePreviewNode(Node):
             SequenceStep("2 side_grasp", grasp),
             SequenceStep("3 lift_cup", lift),
             SequenceStep("4 carry_to_front_lane", front_lane),
-            SequenceStep("5 outlet_front_hold", outlet_front_hold),
-            SequenceStep("9 shake_center", shake_center),
-            SequenceStep("10 shake_left", shake_left),
-            SequenceStep("11 shake_right", shake_right),
-            SequenceStep("12 shake_forward", shake_forward),
-            SequenceStep("13 shake_back", shake_back),
-            SequenceStep("14 shake_recenter", shake_center),
+            SequenceStep("5 place_cup_front", outlet_front_hold),
+            SequenceStep("6 release_cup_front", outlet_front_hold, cup_front_base),
+            SequenceStep("7 retreat_back_before_press_lift", press_retreat, cup_front_base),
+            SequenceStep("8 lift_empty_gripper", empty_lift, cup_front_base),
+            SequenceStep("9 press_ready", press_ready, cup_front_base),
+            SequenceStep("10 press_dispenser", press_down, cup_front_base),
+            SequenceStep("11 lift_after_press_open_gripper", post_press_lift, cup_front_base),
+            SequenceStep("12 retreat_back_high_after_press", regrasp_high, cup_front_base),
+            SequenceStep("13 lower_at_rear_entry", regrasp_rear_low, cup_front_base),
+            SequenceStep("14 forward_regrasp_cup", regrasp, cup_front_base),
+            SequenceStep("15 regrasp_lift", regrasp_lift),
+            SequenceStep("16 shake_center", shake_center),
+            SequenceStep("17 shake_left", shake_left),
+            SequenceStep("18 shake_right", shake_right),
+            SequenceStep("19 shake_forward", shake_forward),
+            SequenceStep("20 shake_back", shake_back),
+            SequenceStep("21 shake_recenter", shake_center),
         ]
 
     def publish_preview(self) -> None:
@@ -341,7 +494,7 @@ class DispenserSequencePreviewNode(Node):
                     Marker.TEXT_VIEW_FACING,
                     "sequence_labels",
                     (step.xyz[0], step.xyz[1], step.xyz[2] + 0.04),
-                    Vector3(x=0.0, y=0.0, z=0.028),
+                    Vector3(x=0.0, y=0.0, z=-0.150),
                     (1.0, 1.0, 1.0, 1.0),
                 )
                 label.text = step.label
@@ -355,7 +508,7 @@ class DispenserSequencePreviewNode(Node):
                 Vector3(x=0.0, y=0.0, z=0.033),
                 (0.2, 1.0, 0.35, 1.0),
             )
-            status.text = "Azas RViz preview: pick cup -> carry to dispenser -> shake"
+            status.text = "Azas RViz preview: pick -> place front -> press -> re-grasp -> shake"
             markers.append(status)
 
         for marker in markers:
@@ -374,7 +527,7 @@ class DispenserSequencePreviewNode(Node):
 
     def make_demo_arm_markers(self, active_step: SequenceStep) -> List[Marker]:
         x, y, z = active_step.xyz
-        wrist = (x - 0.075, y, max(z, 0.10))
+        wrist = (x - 0.109, y, max(z, 0.10))
         shoulder = (0.0, 0.0, 0.225)
         elbow = (
             max(0.10, wrist[0] * 0.48),
@@ -421,7 +574,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CUBE,
             "low_side_grasp_rg2",
             (x - 0.035, y, z - 0.012),
-            Vector3(x=0.070, y=0.045, z=0.025),
+            Vector3(x=-0.100, y=0.045, z=0.025),
             (0.16, 0.17, 0.18, 0.92),
         )
         finger_a = self.marker(
@@ -429,7 +582,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CUBE,
             "low_side_grasp_rg2",
             (x + 0.010, y + 0.038, z - 0.030),
-            Vector3(x=0.075, y=0.010, z=0.052),
+            Vector3(x=0.109, y=0.010, z=0.052),
             (0.06, 0.06, 0.07, 0.92),
         )
         finger_b = self.marker(
@@ -437,7 +590,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CUBE,
             "low_side_grasp_rg2",
             (x + 0.010, y - 0.038, z - 0.030),
-            Vector3(x=0.075, y=0.010, z=0.052),
+            Vector3(x=0.109, y=0.010, z=0.052),
             (0.06, 0.06, 0.07, 0.92),
         )
         markers.extend([palm, finger_a, finger_b])
@@ -453,7 +606,9 @@ class DispenserSequencePreviewNode(Node):
         active_index = min(self.preview_step_index, len(steps) - 1)
         active_step = steps[active_index]
 
-        if active_index == 0:
+        if active_step.cup_base_xyz is not None:
+            base = active_step.cup_base_xyz
+        elif active_index == 0:
             base = original_base
         else:
             base = (
@@ -469,7 +624,7 @@ class DispenserSequencePreviewNode(Node):
             Marker.CYLINDER,
             "animated_cup_body",
             body_center,
-            Vector3(x=0.075, y=0.075, z=cup_height),
+            Vector3(x=0.109, y=0.109, z=cup_height),
             (0.1, 0.85, 1.0, 0.72),
         )
         mouth = self.marker(

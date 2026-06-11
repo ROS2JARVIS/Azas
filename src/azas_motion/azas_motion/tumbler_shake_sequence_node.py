@@ -381,7 +381,7 @@ class TumblerShakeSequenceNode(Node):
         ) -> JointSequenceStep:
             return JointSequenceStep(
                 label=label,
-                joints_deg=tuple(value + delta for value, delta in zip(base, deltas)),
+                joints_deg=tuple(float(value + delta) for value, delta in zip(base, deltas)),
                 hold_seconds=hold if phase == "shake" else 0.0,
                 phase=phase,
             )
@@ -795,7 +795,7 @@ class TumblerShakeSequenceNode(Node):
 
         self.get_logger().info(
             f"{step.label}: calling hardware service "
-            f"joints_deg={[round(value, 1) for value in req.pos]} "
+            f"joints_deg={[round(float(value), 1) for value in req.pos]} "
             f"time={req.time:.2f} vel={req.vel:.1f} acc={req.acc:.1f}"
         )
         future = self.move_joint.call_async(req)
@@ -815,7 +815,7 @@ class TumblerShakeSequenceNode(Node):
         if result is None or not result.success:
             self.get_logger().error(
                 f"{step.label} returned success=false for "
-                f"joints_deg={[round(value, 1) for value in req.pos]}. "
+                f"joints_deg={[round(float(value), 1) for value in req.pos]}. "
                 "Check the Doosan controller log for the exact reject reason."
             )
             return False
@@ -1109,7 +1109,7 @@ class TumblerShakeSequenceNode(Node):
             for step in joint_steps:
                 self.get_logger().info(
                     f"plan {step.label}: joints_deg="
-                    f"{[round(value, 1) for value in step.joints_deg]} "
+                    f"{[round(float(value), 1) for value in step.joints_deg]} "
                     f"phase={step.phase} time={self._joint_time_for_step(step):.2f} "
                     f"hold={step.hold_seconds:.2f}"
                 )
