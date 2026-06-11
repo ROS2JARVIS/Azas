@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="m0609_rg2_parametric">
-  <xacro:arg name="rg2_parent_link" default="tool0"/>
+  <xacro:arg name="rg2_parent_link" default="link_6"/>
   <xacro:arg name="rg2_prefix" default="rg2_"/>
   <xacro:arg name="rg2_mount_xyz" default="0 0 0"/>
   <xacro:arg name="rg2_mount_rpy" default="3.141592654 -1.570796327 0"/>
