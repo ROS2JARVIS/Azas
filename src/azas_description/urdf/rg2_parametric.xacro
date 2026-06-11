@@ -1,18 +1,18 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:macro name="azas_box_inertial" params="mass x y z">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="${mass}"/>
-      <inertia
-        ixx="${mass * (y * y + z * z) / 12.0}"
-        ixy="0"
-        ixz="0"
-        iyy="${mass * (x * x + z * z) / 12.0}"
-        iyz="0"
-        izz="${mass * (x * x + y * y) / 12.0}"/>
-    </inertial>
-  </xacro:macro>
+  <!--
+    Azas compatibility wrapper for the mesh-based OnRobot RG2FT description.
+
+    Source model:
+      https://github.com/shining-b-02/OnRobot-RG2FT-ROS
+    The upstream visual/collision meshes are vendored under
+      package://azas_description/meshes/onrobot_rg2ft
+
+    This wrapper keeps the previous azas_rg2_parametric macro signature so the
+    Doosan M0609 overlay can switch from the temporary box model to the mesh
+    model without changing its xacro call sites.
+  -->
+  <xacro:include filename="$(find azas_description)/urdf/onrobot_rg2ft_mesh_macro.xacro"/>
 
   <xacro:macro
     name="azas_rg2_parametric"
@@ -30,201 +30,17 @@
       tcp_link_name:=gripper_tcp
       tcp_z_offset:=0.213">
 
-    <xacro:property name="base_len" value="${body_length * 0.34}"/>
-    <xacro:property name="palm_len" value="${body_length * 0.23}"/>
-    <xacro:property name="finger_len" value="${body_length * 0.43}"/>
-    <xacro:property name="finger_w" value="${body_width * 0.12}"/>
-    <xacro:property name="finger_t" value="${body_thickness * 0.72}"/>
-    <xacro:property name="rail_w" value="${body_width * 0.20}"/>
-    <xacro:property name="rail_t" value="${body_thickness * 0.50}"/>
-    <xacro:property name="finger_z" value="${body_length * 0.08}"/>
-    <xacro:property name="finger_y" value="${total_stroke * 0.50}"/>
-
-    <material name="${prefix}body_gray">
-      <color rgba="0.62 0.65 0.61 1.0"/>
-    </material>
-    <material name="${prefix}dark_pad">
-      <color rgba="0.01 0.01 0.01 1.0"/>
-    </material>
-    <material name="${prefix}mount_black">
-      <color rgba="0.02 0.02 0.02 1.0"/>
-    </material>
-
-    <link name="${prefix}mount">
-      <visual>
-        <origin xyz="0 0 ${base_len * 0.18}" rpy="0 0 0"/>
-        <geometry>
-          <cylinder radius="${body_width * 0.26}" length="${base_len * 0.36}"/>
-        </geometry>
-        <material name="${prefix}mount_black"/>
-      </visual>
-      <collision>
-        <origin xyz="0 0 ${base_len * 0.18}" rpy="0 0 0"/>
-        <geometry>
-          <cylinder radius="${body_width * 0.26}" length="${base_len * 0.36}"/>
-        </geometry>
-      </collision>
-      <xacro:azas_box_inertial mass="${mass * 0.12}" x="${body_width * 0.52}" y="${body_width * 0.52}" z="${base_len * 0.36}"/>
-    </link>
-
-    <joint name="${prefix}mount_joint" type="fixed">
+    <xacro:onrobot_rg2ft
+      prefix="${prefix}"
+      parent="${parent_link}"
+      hw_interface="hardware_interface/PositionJointInterface">
       <origin xyz="${mount_xyz}" rpy="${mount_rpy}"/>
-      <parent link="${parent_link}"/>
-      <child link="${prefix}mount"/>
-    </joint>
-
-    <link name="${prefix}body">
-      <visual>
-        <origin xyz="0 0 ${base_len * 0.65}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${body_thickness} ${body_width * 0.82} ${base_len}"/>
-        </geometry>
-        <material name="${prefix}body_gray"/>
-      </visual>
-      <collision>
-        <origin xyz="0 0 ${base_len * 0.65}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${body_thickness} ${body_width * 0.82} ${base_len}"/>
-        </geometry>
-      </collision>
-      <xacro:azas_box_inertial mass="${mass * 0.44}" x="${body_thickness}" y="${body_width * 0.82}" z="${base_len}"/>
-    </link>
-
-    <joint name="${prefix}body_joint" type="fixed">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <parent link="${prefix}mount"/>
-      <child link="${prefix}body"/>
-    </joint>
-
-    <link name="${prefix}palm">
-      <visual>
-        <origin xyz="0 0 ${base_len + palm_len * 0.50}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${body_thickness * 1.08} ${body_width} ${palm_len}"/>
-        </geometry>
-        <material name="${prefix}body_gray"/>
-      </visual>
-      <collision>
-        <origin xyz="0 0 ${base_len + palm_len * 0.50}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${body_thickness * 1.08} ${body_width} ${palm_len}"/>
-        </geometry>
-      </collision>
-      <xacro:azas_box_inertial mass="${mass * 0.22}" x="${body_thickness * 1.08}" y="${body_width}" z="${palm_len}"/>
-    </link>
-
-    <joint name="${prefix}palm_joint" type="fixed">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <parent link="${prefix}body"/>
-      <child link="${prefix}palm"/>
-    </joint>
-
-    <link name="${prefix}left_rail">
-      <visual>
-        <origin xyz="0 ${finger_y * 0.55} ${base_len + palm_len * 0.78}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${rail_t} ${rail_w} ${palm_len * 0.42}"/>
-        </geometry>
-        <material name="${prefix}body_gray"/>
-      </visual>
-      <xacro:azas_box_inertial mass="${mass * 0.04}" x="${rail_t}" y="${rail_w}" z="${palm_len * 0.42}"/>
-    </link>
-
-    <joint name="${prefix}left_rail_joint" type="fixed">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <parent link="${prefix}palm"/>
-      <child link="${prefix}left_rail"/>
-    </joint>
-
-    <link name="${prefix}right_rail">
-      <visual>
-        <origin xyz="0 ${-finger_y * 0.55} ${base_len + palm_len * 0.78}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${rail_t} ${rail_w} ${palm_len * 0.42}"/>
-        </geometry>
-        <material name="${prefix}body_gray"/>
-      </visual>
-      <xacro:azas_box_inertial mass="${mass * 0.04}" x="${rail_t}" y="${rail_w}" z="${palm_len * 0.42}"/>
-    </link>
-
-    <joint name="${prefix}right_rail_joint" type="fixed">
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <parent link="${prefix}palm"/>
-      <child link="${prefix}right_rail"/>
-    </joint>
-
-    <link name="${prefix}left_finger">
-      <visual>
-        <origin xyz="0 ${finger_y} ${base_len + palm_len + finger_len * 0.50 - finger_z}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${finger_t} ${finger_w} ${finger_len}"/>
-        </geometry>
-        <material name="${prefix}dark_pad"/>
-      </visual>
-      <collision>
-        <origin xyz="0 ${finger_y} ${base_len + palm_len + finger_len * 0.50 - finger_z}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${finger_t} ${finger_w} ${finger_len}"/>
-        </geometry>
-      </collision>
-      <xacro:azas_box_inertial mass="${mass * 0.07}" x="${finger_t}" y="${finger_w}" z="${finger_len}"/>
-    </link>
-
-    <xacro:if value="${finger_joints_fixed}">
-      <joint name="${prefix}left_finger_joint" type="fixed">
-        <origin xyz="0 0 0" rpy="0 0 0"/>
-        <parent link="${prefix}palm"/>
-        <child link="${prefix}left_finger"/>
-      </joint>
-    </xacro:if>
-    <xacro:unless value="${finger_joints_fixed}">
-      <joint name="${prefix}left_finger_joint" type="prismatic">
-        <origin xyz="0 0 0" rpy="0 0 0"/>
-        <parent link="${prefix}palm"/>
-        <child link="${prefix}left_finger"/>
-        <axis xyz="0 1 0"/>
-        <limit lower="0.0" upper="${total_stroke * 0.5}" effort="20.0" velocity="0.05"/>
-      </joint>
-    </xacro:unless>
-
-    <link name="${prefix}right_finger">
-      <visual>
-        <origin xyz="0 ${-finger_y} ${base_len + palm_len + finger_len * 0.50 - finger_z}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${finger_t} ${finger_w} ${finger_len}"/>
-        </geometry>
-        <material name="${prefix}dark_pad"/>
-      </visual>
-      <collision>
-        <origin xyz="0 ${-finger_y} ${base_len + palm_len + finger_len * 0.50 - finger_z}" rpy="0 0 0"/>
-        <geometry>
-          <box size="${finger_t} ${finger_w} ${finger_len}"/>
-        </geometry>
-      </collision>
-      <xacro:azas_box_inertial mass="${mass * 0.07}" x="${finger_t}" y="${finger_w}" z="${finger_len}"/>
-    </link>
-
-    <xacro:if value="${finger_joints_fixed}">
-      <joint name="${prefix}right_finger_joint" type="fixed">
-        <origin xyz="0 0 0" rpy="0 0 0"/>
-        <parent link="${prefix}palm"/>
-        <child link="${prefix}right_finger"/>
-      </joint>
-    </xacro:if>
-    <xacro:unless value="${finger_joints_fixed}">
-      <joint name="${prefix}right_finger_joint" type="prismatic">
-        <origin xyz="0 0 0" rpy="0 0 0"/>
-        <parent link="${prefix}palm"/>
-        <child link="${prefix}right_finger"/>
-        <axis xyz="0 -1 0"/>
-        <limit lower="0.0" upper="${total_stroke * 0.5}" effort="20.0" velocity="0.05"/>
-      </joint>
-    </xacro:unless>
+    </xacro:onrobot_rg2ft>
 
     <link name="${prefix}tcp"/>
     <joint name="${prefix}tcp_joint" type="fixed">
       <origin xyz="0 0 ${tcp_z_offset}" rpy="0 0 0"/>
-      <parent link="${prefix}mount"/>
+      <parent link="${prefix}quick_changer"/>
       <child link="${prefix}tcp"/>
     </joint>
 

@@ -144,6 +144,22 @@ def detect_aruco_marker(
 
     gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
     dictionary = _create_aruco_dictionary(dictionary_id)
+<<<<<<< refactor/rg2_collision2
+    if dictionary is None:
+        return None
+    parameters = _create_aruco_detector_parameters()
+
+    # The lid marker appears small and oblique in the wrist-camera view. Try
+    # conservative contrast/scale variants while keeping dictionary/id strict.
+    best: ArucoMarker | None = None
+    best_score = -1.0
+    for candidate_gray, scale in _aruco_detection_images(gray):
+        corners_list, ids, _rejected = _detect_aruco_markers(
+            candidate_gray,
+            dictionary,
+            parameters,
+        )
+=======
     parameters = _create_aruco_detector_parameters()
 
     # The lid marker appears small and oblique in the wrist-camera view.  Try
@@ -153,6 +169,7 @@ def detect_aruco_marker(
     best_score = -1.0
     for candidate_gray, scale in _aruco_detection_images(gray):
         corners_list, ids, _rejected = _detect_aruco_markers(candidate_gray, dictionary, parameters)
+>>>>>>> develop
         candidate = _select_aruco_marker_from_detections(
             corners_list,
             ids,
@@ -167,11 +184,43 @@ def detect_aruco_marker(
 
 
 def _aruco_dictionary_id(dictionary_name: str) -> int | None:
+<<<<<<< refactor/rg2_collision2
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None:
+        return None
+=======
+>>>>>>> develop
     name = str(dictionary_name).strip().upper()
     if not name:
         return None
     if not name.startswith("DICT_"):
         name = f"DICT_{name}"
+<<<<<<< refactor/rg2_collision2
+    return getattr(aruco, name, None)
+
+
+def _create_aruco_dictionary(dictionary_id: int):
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None:
+        return None
+    if hasattr(aruco, "getPredefinedDictionary"):
+        return aruco.getPredefinedDictionary(dictionary_id)
+    if hasattr(aruco, "Dictionary_get"):
+        return aruco.Dictionary_get(dictionary_id)
+    return None
+
+
+def _create_aruco_detector_parameters():
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None:
+        return None
+    if hasattr(aruco, "DetectorParameters"):
+        parameters = aruco.DetectorParameters()
+    elif hasattr(aruco, "DetectorParameters_create"):
+        parameters = aruco.DetectorParameters_create()
+    else:
+        return None
+=======
     return getattr(cv2.aruco, name, None)
 
 
@@ -186,13 +235,18 @@ def _create_aruco_detector_parameters():
         parameters = cv2.aruco.DetectorParameters()
     else:
         parameters = cv2.aruco.DetectorParameters_create()
+>>>>>>> develop
     return _tune_lid_aruco_detector_parameters(parameters)
 
 
 def _tune_lid_aruco_detector_parameters(parameters):
+<<<<<<< refactor/rg2_collision2
+    aruco = getattr(cv2, "aruco", None)
+=======
     # The lid marker is small in the wrist-camera overview image and often seen
     # at an angle. Keep the expected marker-id filter strict, but make candidate
     # extraction and perspective sampling tolerant enough for the measured setup.
+>>>>>>> develop
     tuned_values = {
         "adaptiveThreshWinSizeMin": 3,
         "adaptiveThreshWinSizeMax": 53,
@@ -204,7 +258,11 @@ def _tune_lid_aruco_detector_parameters(parameters):
         "perspectiveRemovePixelPerCell": 8,
         "perspectiveRemoveIgnoredMarginPerCell": 0.20,
         "errorCorrectionRate": 0.75,
+<<<<<<< refactor/rg2_collision2
+        "cornerRefinementMethod": getattr(aruco, "CORNER_REFINE_SUBPIX", 1),
+=======
         "cornerRefinementMethod": getattr(cv2.aruco, "CORNER_REFINE_SUBPIX", 1),
+>>>>>>> develop
         "cornerRefinementWinSize": 3,
     }
     for name, value in tuned_values.items():
@@ -214,6 +272,9 @@ def _tune_lid_aruco_detector_parameters(parameters):
 
 
 def _aruco_detection_images(gray: np.ndarray) -> list[tuple[np.ndarray, float]]:
+<<<<<<< refactor/rg2_collision2
+    """Return grayscale variants for small/low-contrast lid ArUco detection."""
+=======
     """Return grayscale variants for small/low-contrast lid ArUco detection.
 
     OpenCV returns corners in the coordinate system of the image it receives,
@@ -221,6 +282,7 @@ def _aruco_detection_images(gray: np.ndarray) -> list[tuple[np.ndarray, float]]:
     ROI.  Variants are intentionally limited to deterministic contrast/scale
     transforms; no dictionary or marker-id relaxation is performed.
     """
+>>>>>>> develop
     variants: list[tuple[np.ndarray, float]] = [(gray, 1.0)]
     equalized = cv2.equalizeHist(gray)
     variants.append((equalized, 1.0))
@@ -229,18 +291,39 @@ def _aruco_detection_images(gray: np.ndarray) -> list[tuple[np.ndarray, float]]:
     sharpened = cv2.addWeighted(gray, 1.6, blur, -0.6, 0)
     variants.append((sharpened, 1.0))
 
+<<<<<<< refactor/rg2_collision2
+    for source in (gray, equalized, sharpened):
+        variants.append((
+            cv2.resize(source, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC),
+            2.0,
+        ))
+=======
     # Upscaling materially helps when the marker body is only a few tens of
     # pixels wide in the RealSense overview frame.
     for source in (gray, equalized, sharpened):
         variants.append((cv2.resize(source, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC), 2.0))
+>>>>>>> develop
     return variants
 
 
 def _detect_aruco_markers(gray: np.ndarray, dictionary, parameters):
+<<<<<<< refactor/rg2_collision2
+    aruco = getattr(cv2, "aruco", None)
+    if aruco is None:
+        return [], None, []
+    if hasattr(aruco, "ArucoDetector"):
+        detector = aruco.ArucoDetector(dictionary, parameters)
+        return detector.detectMarkers(gray)
+    if hasattr(aruco, "detectMarkers"):
+        kwargs = {"parameters": parameters} if parameters is not None else {}
+        return aruco.detectMarkers(gray, dictionary, **kwargs)
+    return [], None, []
+=======
     if hasattr(cv2.aruco, "ArucoDetector"):
         detector = cv2.aruco.ArucoDetector(dictionary, parameters)
         return detector.detectMarkers(gray)
     return cv2.aruco.detectMarkers(gray, dictionary, parameters=parameters)
+>>>>>>> develop
 
 
 def _select_aruco_marker_from_detections(
