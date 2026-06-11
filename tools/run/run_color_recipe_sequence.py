@@ -243,18 +243,18 @@ def main() -> int:
     parser.add_argument("--regrasp-reset-joint-velocity", default="80.0")
     parser.add_argument("--regrasp-reset-joint-acceleration", default="35.0")
     parser.add_argument("--press-min-transit-z-m", default="0.500")
-    parser.add_argument("--press-line-velocity", default="80.0")
-    parser.add_argument("--press-line-acceleration", default="25.0")
-    parser.add_argument("--press-travel-velocity", default="80.0")
-    parser.add_argument("--press-travel-acceleration", default="60.0")
-    parser.add_argument("--press-contact-joint-velocity", default="80.0")
-    parser.add_argument("--press-contact-joint-acceleration", default="30.0")
+    parser.add_argument("--press-line-velocity", default="25.0")
+    parser.add_argument("--press-line-acceleration", default="10.0")
+    parser.add_argument("--press-travel-velocity", default="40.0")
+    parser.add_argument("--press-travel-acceleration", default="20.0")
+    parser.add_argument("--press-contact-joint-velocity", default="35.0")
+    parser.add_argument("--press-contact-joint-acceleration", default="15.0")
     parser.add_argument("--press-contact-entry-lift-m", default="0.050")
     parser.add_argument(
         "--press-reset-before-press",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="컵을 놓은 뒤 CONTACT_ENTRY_LIFT 전에 PRESS_COMMON_PRE/HOME joint waypoint를 경유",
+        help="컵을 놓은 뒤 CONTACT_ENTRY_LIFT 전에 PRESS_COMMON_PRE/HOME joint waypoint를 경유. 기본 false",
     )
     parser.add_argument("--press-reset-joints-deg", default="0,0,90,0,90,0")
     parser.add_argument("--press-reset-joint-velocity", default="80.0")
@@ -286,9 +286,15 @@ def main() -> int:
     parser.add_argument("--move-release-offset-x-m", default="-0.020")
     parser.add_argument("--move-release-offset-y-m", default="0.0")
     parser.add_argument("--move-release-offset-z-m", default="0.0")
-    parser.add_argument("--cup-pre-from-place-x-offset-m", default="-0.070")
+    parser.add_argument("--cup-pre-from-place-x-offset-m", default="-0.090")
     parser.add_argument("--cup-pre-from-place-z-offset-m", default="0.030")
     parser.add_argument("--generated-cup-pre-max-joint-delta-deg", default="190.0")
+    parser.add_argument(
+        "--press-contact-use-joint-move",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="measured PRESS_CONTACT movej 사용. 기본 false: PRESS_CONTACT FK까지 Cartesian Z-only 하강",
+    )
     parser.add_argument(
         "--use-cup-common-pre",
         action=argparse.BooleanOptionalAction,
@@ -361,7 +367,7 @@ def main() -> int:
         default=True,
         help="마지막 디스펜서 처리 후 컵홀더에 컵을 놓음",
     )
-    parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.020")
+    parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.030")
     parser.add_argument("--cup-holder-place-final-y-offset-m", default="-0.010")
     parser.add_argument("--cup-holder-approach-velocity", default="80.0")
     parser.add_argument("--cup-holder-approach-acceleration", default="20.0")
@@ -486,6 +492,11 @@ def main() -> int:
             sequence_extra_args += [flag, str(value).strip()]
     sequence_extra_args.append(
         "--press-reset-before-press" if args.press_reset_before_press else "--no-press-reset-before-press"
+    )
+    sequence_extra_args.append(
+        "--press-contact-use-joint-move"
+        if args.press_contact_use_joint_move
+        else "--no-press-contact-use-joint-move"
     )
     sequence_extra_args.append(
         "--regrasp-reset-before-cup" if args.regrasp_reset_before_cup else "--no-regrasp-reset-before-cup"

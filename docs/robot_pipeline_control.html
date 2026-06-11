@@ -847,11 +847,6 @@
         </label>
         <div class="operator-button-grid module-grid">
           <button id="startPrepBtn" class="quick-start-btn" title="검증된 tmux 방식으로 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작">1. tmux 연결 준비<br><small>로봇·그리퍼·카메라</small></button>
-          <button id="connectRobotBtn" type="button" title="검증된 tmux 연결 스택을 시작">tmux 준비<br><small>로봇 포함</small></button>
-          <button id="connectGripperBtn" type="button" title="검증된 tmux 연결 스택을 시작">tmux 준비<br><small>그리퍼 포함</small></button>
-          <button id="connectCameraBtn" type="button" title="검증된 tmux 연결 스택을 시작. RealSense는 640x480x30 저부하 프로파일로 시작">tmux 준비<br><small>카메라 포함</small></button>
-          <button id="cameraViewBtn" type="button" title="rqt_image_view로 /camera/camera/color/image_raw 화면 창을 띄움">카메라 화면</button>
-          <button id="yoloDetectBtn" type="button" title="YOLO 인식 토픽 시작. 화면 창은 띄우지 않음">YOLO 인식</button>
           <button id="sideGripBtn" class="quick-start-btn" title="1단계: PR #20 / dsr_practice yolo_cup_pick_node. tmux 창에서 RealSense 컵 화면 확인 후 p 키로 side-grip 실행">1. 창현 side-grip<br><small>카메라 확인→p로 집기</small></button>
           <button id="cupUprightingBtn" class="quick-start-btn" title="2단계: 소명씨 azas_cup_uprighting. OpenCV 창에서 누운 컵 확인 후 p 키로 직립화 실행, Esc/q로 종료">2. 소명 누운 컵<br><small>창 확인→p 실행</small></button>
           <button id="pickLidBtn" class="quick-start-btn" title="develop 뚜껑 grip pose 계획: 빨간 스티커/YOLO/depth 기반 pose 후보 발행. 실제 모션 아님">뚜껑 grip pose 계획<br><small>빨간스티커→pose 후보</small></button>
@@ -862,10 +857,6 @@
           <button id="recipeCycleBtn" class="quick-start-btn" title="latest_recipe.json과 dispenser_color_map.json을 읽어 컵놓기→프레스→다시잡기 사이클을 레시피대로 반복">3. 레시피 디스펜서 사이클<br><small>컵놓기→프레스→다시잡기 반복</small></button>
           <button id="cupHolderBtn" type="button" title="MoveItPy로 cup_holder.side_grip_place pre_place→place_final→retreat 경로를 계획/실행">4. 컵홀더에 컵 옮기기<br><small>MoveIt 경로계획</small></button>
           <button id="fullCocktailRealBtn" class="quick-start-btn" title="준비, 색상 JSON, 레시피 디스펜서 사이클, 컵홀더 배치를 한 번에 큐에 추가">전체 묶기<br><small>준비→색상JSON→레시피사이클→컵홀더</small></button>
-        </div>
-        <div class="secondary-actions">
-          <button id="oneClickReadyBtn" class="plain-btn" title="현재 real/virtual 세션과 Doosan/RG2 서비스 상태를 확인">준비확인 추가</button>
-          <button id="oneClickResultBtn" class="plain-btn" title="최근 one-click 실제 실행 로그에서 컵놓기→프레스→다시잡기 성공 증거를 판정">결과확인 추가</button>
         </div>
       </div>
 
@@ -891,7 +882,7 @@
             <input id="dispenserTcpName" type="text" value="GripperDA_v1_jarvis" placeholder="Doosan controller TCP 이름">
           </label>
           <label class="field">CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M
-            <input id="cupHolderPlaceFinalZOffsetM" type="text" value="-0.020" placeholder="예: -0.020 (홀더에 놓을 때 최종 Z 20mm 낮춤)">
+            <input id="cupHolderPlaceFinalZOffsetM" type="text" value="-0.030" placeholder="예: -0.030 (홀더에 놓을 때 최종 Z 30mm 낮춤)">
           </label>
           <label class="field">CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M
             <input id="cupHolderPlaceFinalYOffsetM" type="text" value="-0.010" placeholder="예: -0.010 (홀더 최종 Y -10mm)">
@@ -1064,7 +1055,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     </aside>
     </div>
 
-      <section class="camera-panel" aria-label="camera preview">
+      <section class="camera-panel" aria-label="camera preview" hidden>
         <div class="camera-head">
           <div>
             <h2>RealSense 카메라 화면</h2>
@@ -1079,7 +1070,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
           </div>
         </div>
         <div class="camera-frame">
-          <img id="cameraPreview" alt="RealSense color preview" src="/api/camera_snapshot.jpg?init=1">
+          <img id="cameraPreview" alt="RealSense color preview" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
         </div>
         <pre id="colorScanResult" class="camera-result">색상 스캔 결과 대기</pre>
       </section>
@@ -1104,6 +1095,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     const core = new Set(["connect_robot", "status_check", "start_collision_scene", "stop_azas_all"]);
     const hiddenStepKeys = new Set([
       "rviz_color_scan_pose_preview",
+      "rviz_cocktail_collision_preview",
       "shake_rviz_preview",
       "stop_cocktail_motion_preview",
       "check_one_click_cocktail_ready",
@@ -1942,30 +1934,12 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       }
     }
 
-    document.getElementById("oneClickReadyBtn")?.addEventListener("click", () => {
-      queueOnly(["check_one_click_cocktail_ready"], "준비확인을 큐에 추가했습니다.");
-    });
     const PREP_STEPS = ["start_tmux_stack"];
     function queuePrepBundle(message) {
       queueOnly(PREP_STEPS, message || "검증된 tmux 연결 스택 시작을 큐에 추가했습니다. status_check/개별 연결 큐를 반복하지 않습니다.");
     }
     document.getElementById("startPrepBtn")?.addEventListener("click", () => {
       queuePrepBundle();
-    });
-    document.getElementById("connectRobotBtn")?.addEventListener("click", () => {
-      queuePrepBundle("tmux 연결 스택 시작을 큐에 추가했습니다. 로봇/그리퍼/카메라를 azas-logic 세션에 분리 실행합니다.");
-    });
-    document.getElementById("connectGripperBtn")?.addEventListener("click", () => {
-      queuePrepBundle("tmux 연결 스택 시작을 큐에 추가했습니다. 그리퍼도 같은 azas-logic 세션에서 시작합니다.");
-    });
-    document.getElementById("connectCameraBtn")?.addEventListener("click", () => {
-      queuePrepBundle("tmux 연결 스택 시작을 큐에 추가했습니다. RealSense는 검증된 640x480x30 설정으로 시작합니다.");
-    });
-    document.getElementById("cameraViewBtn")?.addEventListener("click", () => {
-      queueOnly(["start_camera_view"], "rqt_image_view 카메라 화면 보기를 큐에 추가했습니다.");
-    });
-    document.getElementById("yoloDetectBtn")?.addEventListener("click", () => {
-      queueOnly(["detect_cup_lid"], "YOLO 컵/뚜껑 인식 토픽 시작을 큐에 추가했습니다. 이 스텝은 화면 창을 띄우지 않습니다.");
     });
     document.getElementById("cupUprightingBtn")?.addEventListener("click", () => {
       queueOnly(["cup_uprighting"], "2단계 소명/누운 컵 직립화 로직만 단독으로 큐에 추가했습니다. 1단계 성공 확인 후 실행하세요. OpenCV 창에서 컵을 확인한 뒤 p 키로 실행합니다.");
@@ -1999,10 +1973,6 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     document.getElementById("fullCocktailRealBtn")?.addEventListener("click", async () => {
       queueOnly([...PREP_STEPS, "side_grip_camera_home", "side_grip", "move_to_color_scan_pose", "color_scan", "run_color_recipe_sequence", "place_cup_holder"], "전체 플로우를 큐에 추가했습니다. (tmux 연결 준비 → 카메라 홈→컵 side-grip → 검증자세 색상 핸들 JSON → 레시피 사이클 → MoveIt 컵홀더 배치)", {clear: true});
     });
-    document.getElementById("oneClickResultBtn")?.addEventListener("click", () => {
-      queueOnly(["check_one_click_cocktail_result"], "결과확인을 큐에 추가했습니다.");
-    });
-
 	    document.getElementById("run").addEventListener("click", async () => {
 	      if (isRunning) {
 	        log.textContent = "이미 실행 중입니다. 준비 중인 로봇/그리퍼/카메라 단계가 끝날 때까지 다음 실행을 막습니다.";
@@ -2137,9 +2107,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       textarea.remove();
     });
 
-    refreshCameraPreview();
     refreshColorScanResult();
-    setInterval(refreshCameraPreview, 2000);
     loadSteps().catch((err) => { log.textContent = String(err); focusLog(); });
   </script>
 </body>

@@ -914,6 +914,32 @@ PANEL_TMUX_STEPS = {
     "lid_grip_close",
     "shake_rviz_preview",
 }
+PANEL_HIDDEN_STEP_KEYS = {
+    "rviz_cocktail_collision_preview",
+    "rviz_color_scan_pose_preview",
+    "shake_rviz_preview",
+    "stop_cocktail_motion_preview",
+    "check_one_click_cocktail_ready",
+    "check_one_click_cocktail_result",
+    "run_cocktail_now_real",
+    "start_camera_view",
+    "detect_cup_lid",
+    "voice_input",
+    "listen_stt_recipe",
+    "run_one_click_cocktail_real",
+    "move_to_dispenser_1",
+    "move_to_dispenser_2",
+    "move_to_dispenser_3",
+    "move_to_dispenser_4",
+    "press_dispenser_1",
+    "press_dispenser_2",
+    "press_dispenser_3",
+    "press_dispenser_4",
+    "pick_from_dispenser_1",
+    "pick_from_dispenser_2",
+    "pick_from_dispenser_3",
+    "pick_from_dispenser_4",
+}
 PANEL_DIRECT_TMUX_STEPS = {
     # Match the successful field workflow: the panel opens the same tmux launch
     # command and does not pre-block on slow ROS graph/service introspection.
@@ -1008,12 +1034,16 @@ CAMERA_STACK_PATTERNS = (
 )
 
 SIDE_GRIP_STACK_PATTERNS = (
+    "run_changhyun_side_grip_direct.sh",
     "yolo_cup_pick_node.launch.py",
     "yolo_cup_pick_node_legacy.launch.py",
     "yolo_cup_pick_legacy_node",
     "dsr_practice/yolo_cup_pick_node",
     "yolo_cup_pick_node --ros-args",
     "yolo_cup_pick_moveit_py",
+    "hand_eye_static_tf_node",
+    "link6_gripper_collision_node",
+    "--frame-id world --child-frame-id base_link",
 )
 
 CUP_UPRIGHTING_STACK_PATTERNS = (
@@ -2234,6 +2264,37 @@ def wait_for_camera_topic_samples(
     )
 
 
+def realsense_usb_visible() -> tuple[bool, str]:
+    """Return whether an Intel RealSense device is visible to the OS."""
+    try:
+        result = subprocess.run(
+            ["lsusb"],
+            cwd=str(ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=3.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"[FAIL] lsusb check failed: {exc}"
+    output = result.stdout.strip()
+    if result.returncode != 0:
+        return False, "[FAIL] lsusb returned non-zero\n" + output
+    visible = any(
+        ("Intel" in line and "RealSense" in line)
+        or "8086:0b" in line.lower()
+        for line in output.splitlines()
+    )
+    if visible:
+        return True, "[OK] RealSense USB device visible\n" + output
+    return (
+        False,
+        "[FAIL] RealSense USB device is not visible to lsusb. "
+        "카메라 ROS 재시작으로는 복구되지 않습니다.\n" + output,
+    )
+
+
 def wait_for_tf_transform(
     *,
     env: dict[str, str],
@@ -2532,6 +2593,12 @@ def side_grip_preflight(env: dict[str, str], service_prefix: str) -> tuple[bool,
             + ", ".join(str(path) for path in calibration_candidates)
         )
 
+    usb_ok, usb_output = realsense_usb_visible()
+    checks.append("--- RealSense USB ---\n" + usb_output)
+    if not usb_ok:
+        ok = False
+        return ok, "\n".join(checks)
+
     camera_ready, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=5.0)
     if not camera_ready:
         # 카메라가 depth 없이 켜져 있을 수 있음 → 자동 재시작
@@ -2601,6 +2668,12 @@ def cup_uprighting_preflight(env: dict[str, str], service_prefix: str) -> tuple[
     else:
         ok = False
         checks.append(f"[FAIL] cup_uprighting YOLO model missing: {CUP_UPRIGHTING_YOLO_MODEL_PATH}")
+
+    usb_ok, usb_output = realsense_usb_visible()
+    checks.append("--- RealSense USB ---\n" + usb_output)
+    if not usb_ok:
+        ok = False
+        return ok, "\n".join(checks)
 
     camera_ready, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=5.0)
     checks.append("--- camera topics ---\n" + camera_output)
@@ -3127,7 +3200,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M"] = str(
         payload.get("cup_holder_place_final_z_offset_m")
         or env.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
-        or "-0.020"
+        or "-0.030"
     )
     env["CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M"] = str(
         payload.get("cup_holder_place_final_y_offset_m")
@@ -3570,7 +3643,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         place_final_z_offset_m = str(
             payload.get("cup_holder_place_final_z_offset_m")
             or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
-            or "-0.020"
+            or "-0.030"
         ).strip()
         place_final_y_offset_m = str(
             payload.get("cup_holder_place_final_y_offset_m")
@@ -3831,9 +3904,19 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
     if step.kind == "background":
         restart_output = ""
         if step.key in {"connect_robot", "start_tmux_stack"}:
-            restart_output = (
-                "[Azas] tmux 통합 재연결: stop_azas_all.sh가 azas-logic tmux 세션을 종료하므로 "
-                "패널 서버가 tmux 밖에서 터미널과 같은 stop -> start 명령을 직접 실행합니다."
+            cleanup_events: list[str] = []
+            cleanup_events.extend(cleanup_side_grip_stack(grace_sec=3.0))
+            cleanup_events.extend(cleanup_camera_stack(grace_sec=3.0))
+            cleanup_events.extend(cleanup_rg2_stack(grace_sec=3.0))
+            restart_output = "\n".join(
+                part
+                for part in (
+                    "[Azas] tmux 통합 재연결: stop_azas_all.sh가 azas-logic tmux 세션을 종료하므로 "
+                    "패널 서버가 tmux 밖에서 터미널과 같은 stop -> start 명령을 직접 실행합니다.",
+                    "[Azas] reconnect pre-cleanup: 이전 side_grip/camera/RG2 잔여 프로세스를 먼저 정리합니다.",
+                    "\n".join(cleanup_events),
+                )
+                if part
             )
         elif step.key == "connect_gripper":
             cleanup_events = cleanup_rg2_stack()
@@ -4189,11 +4272,13 @@ class Handler(BaseHTTPRequestHandler):
                     "CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M", "-0.010"
                 ),
                 "cup_holder_place_final_z_offset_m": os.environ.get(
-                    "CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M", "-0.020"
+                    "CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M", "-0.030"
                 ),
             }
             data = []
             for step in STEPS:
+                if step.key in PANEL_HIDDEN_STEP_KEYS:
+                    continue
                 item = asdict(step)
                 item["resolved_command"] = command_for(step, preview_payload) if step.implemented else ""
                 item["command_saved"] = step.key in command_overrides
@@ -4207,6 +4292,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(dispenser_color_map_status())
             return
         if path == "/api/camera_snapshot.jpg":
+            if os.environ.get("AZAS_PANEL_ENABLE_CAMERA_SNAPSHOT", "0") not in {"1", "true", "TRUE"}:
+                message = b"camera snapshot endpoint disabled in field panel"
+                try:
+                    self.send_response(404)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(message)))
+                    self.end_headers()
+                    self.wfile.write(message)
+                except BrokenPipeError:
+                    pass
+                return
             ok, body, error = camera_snapshot_jpeg()
             if not ok:
                 self.send_response(503)
@@ -4256,6 +4352,15 @@ class Handler(BaseHTTPRequestHandler):
                 steps_by_key = {step.key: step for step in STEPS}
                 results = []
                 for key in selected:
+                    if key in PANEL_HIDDEN_STEP_KEYS:
+                        results.append(
+                            {
+                                "key": key,
+                                "status": "blocked",
+                                "output": "이 단계는 패널에서 제거된 내부/구버전 단계라 실행하지 않았습니다.",
+                            }
+                        )
+                        break
                     step = steps_by_key.get(key)
                     if step is None:
                         continue

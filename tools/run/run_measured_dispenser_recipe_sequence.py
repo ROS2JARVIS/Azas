@@ -2218,7 +2218,8 @@ class IntegratedRecipeMotion:
                 f"(entry_lift={entry_lift_m * 1000.0:.1f}mm) "
                 f"z_overdrive_m={press_drop_m:.3f}"
                 + (
-                    " source=PRESS_CONTACT_FK; measured pre-contact joints skipped"
+                    " source=PRESS_CONTACT_FK; measured pre-contact joints skipped; "
+                    f"press_contact_use_joint_move={str(self.args.press_contact_use_joint_move).lower()}"
                     if skip_measured_press_pre
                     else f" PRESS_PRE={format_joints_deg(pre_joints)}"
                 )
@@ -2228,12 +2229,22 @@ class IntegratedRecipeMotion:
                     contact_entry_posx,
                     label="CONTACT_ENTRY_LIFT above measured PRESS_CONTACT",
                 )
-                self.movej(
-                    contact_joints,
-                    label="PRESS_CONTACT measured contact joints",
-                    velocity=self.args.press_contact_joint_velocity,
-                    acceleration=self.args.press_contact_joint_acceleration,
-                )
+                if self.args.press_contact_use_joint_move:
+                    self.movej(
+                        contact_joints,
+                        label="PRESS_CONTACT measured contact joints",
+                        velocity=self.args.press_contact_joint_velocity,
+                        acceleration=self.args.press_contact_joint_acceleration,
+                    )
+                else:
+                    self.move_posx(
+                        list(contact_fk_posx[:6]),
+                        label="Z-only descend to measured PRESS_CONTACT FK",
+                        velocity=self.args.press_line_velocity,
+                        acceleration=self.args.press_line_acceleration,
+                        timeout_sec=self.args.press_timeout_sec,
+                        verify_tolerance_mm=max(self.args.target_tolerance_mm, 25.0),
+                    )
                 contact_posx = self.current_posx(timeout_sec=self.args.wait_service_sec)
                 for press_index in range(1, max(int(press_count), 1) + 1):
                     suffix = f" {press_index}/{press_count}" if press_count > 1 else ""
@@ -2872,10 +2883,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cup-pre-from-place-x-offset-m",
         type=float,
-        default=-0.070,
+        default=-0.090,
         help=(
             "Generate DISP_PRE from the latest measured cup_place pose by changing only X. "
-            "Default -0.070m."
+            "Default -0.090m."
         ),
     )
     parser.add_argument(
@@ -3187,10 +3198,10 @@ def parse_args() -> argparse.Namespace:
         default=0.500,
         help="Minimum absolute TCP Z before moving from cup release toward dispenser press joints.",
     )
-    parser.add_argument("--press-line-velocity", type=float, default=80.0)
-    parser.add_argument("--press-line-acceleration", type=float, default=25.0)
-    parser.add_argument("--press-travel-velocity", type=float, default=80.0)
-    parser.add_argument("--press-travel-acceleration", type=float, default=60.0)
+    parser.add_argument("--press-line-velocity", type=float, default=25.0)
+    parser.add_argument("--press-line-acceleration", type=float, default=10.0)
+    parser.add_argument("--press-travel-velocity", type=float, default=40.0)
+    parser.add_argument("--press-travel-acceleration", type=float, default=20.0)
     parser.add_argument("--press-timeout-sec", type=float, default=120.0)
     parser.add_argument("--press-hold-seconds", type=float, default=0.25)
     parser.add_argument("--press-gripper-close-width-m", type=float, default=0.0)
@@ -3202,7 +3213,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "After cup release, safe lift, and empty-gripper close, move through "
             "calibration.yaml press_common_pre_joints_deg before CONTACT_ENTRY_LIFT. "
-            "If that key is missing, falls back to --press-reset-joints-deg."
+            "If that key is missing, falls back to --press-reset-joints-deg. "
+            "Default false because the measured common pre/HOME joint waypoint can choose a large wrist branch."
         ),
     )
     parser.add_argument(
@@ -3214,8 +3226,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--press-reset-joint-acceleration", type=float, default=25.0)
     parser.add_argument("--press-pre-joint-velocity", type=float, default=80.0)
     parser.add_argument("--press-pre-joint-acceleration", type=float, default=25.0)
-    parser.add_argument("--press-contact-joint-velocity", type=float, default=80.0)
-    parser.add_argument("--press-contact-joint-acceleration", type=float, default=30.0)
+    parser.add_argument("--press-contact-joint-velocity", type=float, default=35.0)
+    parser.add_argument("--press-contact-joint-acceleration", type=float, default=15.0)
+    parser.add_argument(
+        "--press-contact-use-joint-move",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Use measured PRESS_CONTACT movej after CONTACT_ENTRY_LIFT. Default false: "
+            "PRESS_CONTACT joints are used only for FK, then the robot descends Z-only by Cartesian MoveLine."
+        ),
+    )
     parser.add_argument(
         "--press-contact-entry-lift-m",
         type=float,
@@ -3367,20 +3388,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--press-generated-pre-use-joint",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
-            "Approach the generated high PRESS_PRE pose with IK MoveJoint by default. "
-            "This avoids long Cartesian orientation interpolation from cup-place posture near the dispenser. "
-            "The actual contact/press stroke remains Z-only MoveLine."
+            "Approach the generated CONTACT_ENTRY_LIFT/PRESS_PRE pose with IK MoveJoint. "
+            "Default false: press entry uses Cartesian MoveLine to avoid large wrist/joint branch changes."
         ),
     )
     parser.add_argument(
         "--press-generated-pre-joint-fallback",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "When MoveLine to generated PRESS_PRE returns complete but target verification stalls, "
-            "retry that high approach pose with IK MoveJoint. The actual contact/press stroke remains Z-only MoveLine."
+            "retry that high approach pose with IK MoveJoint. Default false because press entry should not "
+            "fall back to a large joint branch unless explicitly requested."
         ),
     )
     parser.add_argument("--gripper-service", default="/jarvis/rg2/set_width")
@@ -3408,7 +3429,7 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="After the final dispenser re-grasp, place the held cup into calibration.yaml cup_holder.side_grip_place.",
     )
-    parser.add_argument("--cup-holder-place-final-z-offset-m", type=float, default=-0.020)
+    parser.add_argument("--cup-holder-place-final-z-offset-m", type=float, default=-0.030)
     parser.add_argument("--cup-holder-place-final-y-offset-m", type=float, default=-0.010)
     parser.add_argument("--cup-holder-approach-velocity", type=float, default=80.0)
     parser.add_argument("--cup-holder-approach-acceleration", type=float, default=20.0)
@@ -3561,7 +3582,8 @@ def main() -> int:
     if args.skip_measured_press_pre:
         print(
             "[Azas] source=calibration.yaml generated DISP_PRE from DISP_PLACE X/Z offset, measured DISP_PLACE, "
-            "PRESS_COMMON_PRE, and PRESS_CONTACT joint teaching; press_pre_joints_deg ignored by default"
+            "and PRESS_CONTACT FK teaching; press_pre_joints_deg ignored by default; "
+            "PRESS_COMMON_PRE is used only with --press-reset-before-press"
         )
     else:
         print("[Azas] source=calibration.yaml generated DISP_PRE from DISP_PLACE X/Z offset, measured DISP_PLACE and PRESS_PRE/PRESS_CONTACT joint teaching")
