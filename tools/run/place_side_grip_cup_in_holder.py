@@ -87,6 +87,12 @@ def offset_target_z(target: TargetPose, offset_m: float) -> TargetPose:
     return TargetPose(target.label, adjusted_xyz, list(target.rpy_rad))
 
 
+def offset_target_y(target: TargetPose, offset_m: float) -> TargetPose:
+    adjusted_xyz = list(target.xyz_m)
+    adjusted_xyz[1] += float(offset_m)
+    return TargetPose(target.label, adjusted_xyz, list(target.rpy_rad))
+
+
 def print_target(target: TargetPose) -> None:
     rx, ry, rz = target.rpy_deg
     x, y, z = target.xyz_m
@@ -275,11 +281,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--service-prefix", default="dsr01")
-    parser.add_argument("--approach-velocity", type=float, default=15.0)
+    parser.add_argument("--approach-velocity", type=float, default=80.0)
     parser.add_argument("--approach-acceleration", type=float, default=20.0)
-    parser.add_argument("--place-velocity", type=float, default=6.0)
+    parser.add_argument("--place-velocity", type=float, default=80.0)
     parser.add_argument("--place-acceleration", type=float, default=10.0)
-    parser.add_argument("--retreat-velocity", type=float, default=12.0)
+    parser.add_argument("--retreat-velocity", type=float, default=80.0)
     parser.add_argument("--retreat-acceleration", type=float, default=16.0)
     parser.add_argument(
         "--place-final-z-offset-m",
@@ -288,6 +294,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Measured adjustment added only to place_final Z. Use a negative value "
             "to lower the cup into the holder without rewriting calibration.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--place-final-y-offset-m",
+        type=float,
+        default=-0.010,
+        help=(
+            "Measured adjustment added only to place_final Y. Default -0.010m shifts "
+            "the holder placement 10mm in negative Y without rewriting calibration.yaml."
         ),
     )
     parser.add_argument("--timeout-sec", type=float, default=90.0)
@@ -343,6 +358,8 @@ def main() -> int:
 
     try:
         pre_place, place_final, retreat, approach_lift_m = load_sequence(args.config)
+        if abs(args.place_final_y_offset_m) > 1e-9:
+            place_final = offset_target_y(place_final, args.place_final_y_offset_m)
         if abs(args.place_final_z_offset_m) > 1e-9:
             place_final = offset_target_z(place_final, args.place_final_z_offset_m)
     except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -353,6 +370,7 @@ def main() -> int:
     print(f"[Azas] config={args.config}")
     print(f"[Azas] service_prefix={args.service_prefix}")
     print(f"[Azas] approach_lift_m={approach_lift_m:.3f}")
+    print(f"[Azas] place_final_y_offset_m={args.place_final_y_offset_m:.4f}")
     print(f"[Azas] place_final_z_offset_m={args.place_final_z_offset_m:.4f}")
     print_target(pre_place)
     print_target(place_final)

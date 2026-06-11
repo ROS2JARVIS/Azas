@@ -167,6 +167,81 @@ bash tools/run/stop_cocktail_motion_preview.sh
 `run_emulator`, `DRCF M0609`, 관련 RViz까지 확인합니다. 남은 virtual/emulator가
 있으면 실제 one-click은 계속 거부됩니다.
 
+### 측정 조인트 티칭값 기반 RViz preview
+
+`calibration.yaml`의 `cup_pre_place_joints_deg`, `cup_place_joints_deg`,
+`press_pre_joints_deg`, `press_contact_joints_deg`를 읽어서 `/joint_states`만
+publish합니다. 실제 로봇 서비스, MoveJoint, MoveLine, 그리퍼 서비스는 호출하지
+않습니다.
+
+RViz까지 한 번에 띄우려면 이 wrapper를 씁니다.
+
+```bash
+source /opt/ros/humble/setup.bash
+cd /home/ssu/Azas
+source install/setup.bash
+bash tools/run/show_measured_recipe_joint_preview_rviz.sh --dispenser-ids 1 --loop
+```
+
+이 wrapper는 기본적으로 창현 side-grip 로직과 같은 source tree의
+`src/azas_bringup/config/safety.yaml`,
+`src/azas_bringup/config/measured_dispenser_collision.yaml`을 명시적으로 로드합니다.
+`side_grip_table`, `side_grip_workspace_*` 안전영역, measured dispenser collision,
+full collision YAML marker를 RViz에 띄웁니다. 깜빡임이 있으면 남은 preview 노드를
+정리하고 다시 실행합니다.
+
+```bash
+cd /home/ssu/Azas
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+pkill -f 'preview_measured_dispenser_recipe_rviz.py|publish_measured_recipe_joint_rviz_preview.py|joint_state_relay.py|dispenser_sequence_preview_node|workspace_collision_scene_node|measured_dispenser_collision_scene_node|collision_scene_rviz_publisher|link6_gripper_collision_node|__node:=m0609_robot_state_publisher' || true
+pkill -x rviz2 || true
+
+DISPLAY=:20.0 \
+SHOW_WORKSPACE_SAFETY=true \
+SHOW_MEASURED_DISPENSER_COLLISION=true \
+SHOW_FULL_COLLISION_SCENE=true \
+PUBLISH_WORKSPACE_COLLISION_OBJECTS=true \
+PUBLISH_DISPENSER_COLLISION_OBJECTS=true \
+JOINT_VELOCITY_DEG_S=40.0 \
+HOLD_SECONDS=1.0 \
+PUBLISH_RATE=60.0 \
+bash tools/run/show_measured_recipe_joint_preview_rviz.sh \
+  --dispenser-ids 1 \
+  --no-press-reset-before-press \
+  --press-use-recorded-pre-joints \
+  --press-depth-m 0.040 \
+  --press-extra-depth-m 0.0 \
+  --safe-lift-joint-fallback \
+  --press-lock-contact-joints 6 \
+  --loop
+```
+
+첫 번째 터미널에서 RViz demo를 실행합니다.
+
+```bash
+source /opt/ros/humble/setup.bash
+cd /home/ssu/Azas
+source install/setup.bash
+ros2 launch dsr_moveit_config_m0609 demo.launch.py
+```
+
+다른 터미널에서 측정 조인트 preview publisher를 실행합니다. 이 Python 명령만으로는
+RViz 창을 띄우지 않습니다.
+
+```bash
+source /opt/ros/humble/setup.bash
+cd /home/ssu/Azas
+source install/setup.bash
+python3 tools/run/preview_measured_dispenser_recipe_rviz.py --dispenser-ids 1 --loop
+```
+
+예: 1번 디스펜서를 2회, 3번 디스펜서를 1회 순서로 표시
+
+```bash
+python3 tools/run/preview_measured_dispenser_recipe_rviz.py --dispenser-ids 1x2,3
+```
+
 ### 색상 스캔 자세 RViz preview
 
 디스펜서 색상 구분 전에 쓰는 카메라 보기 관절 자세

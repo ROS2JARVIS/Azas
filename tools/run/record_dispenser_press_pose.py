@@ -130,6 +130,22 @@ def update_config(config_path: Path, dispenser_id: str, kind: str, posx: list[fl
             format_list(posj, 2),
             measured_comment,
         )
+    elif kind == "common_pre":
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "press_common_pre_joints_deg",
+            format_list(posj, 2),
+            measured_comment,
+        )
+    elif kind == "cup_common_pre":
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "cup_common_pre_joints_deg",
+            format_list(posj, 2),
+            measured_comment,
+        )
     elif kind == "cup_pre":
         text = replace_block_value(
             text,
@@ -198,7 +214,11 @@ def warn_lane_mismatch(dispenser_id: str, kind: str, posx: list[float], toleranc
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dispenser-id", required=True, choices=["1", "2", "3", "4"])
-    parser.add_argument("--kind", required=True, choices=["pre", "contact", "cup_pre", "cup_place"])
+    parser.add_argument(
+        "--kind",
+        required=True,
+        choices=["pre", "common_pre", "contact", "cup_common_pre", "cup_pre", "cup_place"],
+    )
     parser.add_argument("--service-prefix", default="dsr01")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--timeout-sec", type=float, default=8.0)
@@ -227,6 +247,10 @@ def main() -> int:
         print(f"[Azas] calibration press_contact_joints_deg={format_list(posj, 2)}")
     elif args.kind == "pre":
         print(f"[Azas] calibration press_pre_joints_deg={format_list(posj, 2)}")
+    elif args.kind == "common_pre":
+        print(f"[Azas] calibration press_common_pre_joints_deg={format_list(posj, 2)}")
+    elif args.kind == "cup_common_pre":
+        print(f"[Azas] calibration cup_common_pre_joints_deg={format_list(posj, 2)}")
     elif args.kind == "cup_pre":
         print(f"[Azas] calibration cup_pre_place_joints_deg={format_list(posj, 2)}")
     else:

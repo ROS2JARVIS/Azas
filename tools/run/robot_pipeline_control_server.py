@@ -312,7 +312,7 @@ def _color_recipe_direct_arg(payload: dict[str, Any]) -> str:
     )
     if numeric_dispenser_override:
         return f" --dispenser-ids {shlex.quote(recipe_override)}"
-    direct_color_map = json.dumps(DISPENSER_PRESS_TARGETS, ensure_ascii=False)
+    direct_color_map = json.dumps(_load_dispenser_press_targets(), ensure_ascii=False)
     return (
         f" --colors {shlex.quote(recipe_override)}"
         f" --color-map-json {shlex.quote(direct_color_map)}"
@@ -322,7 +322,7 @@ def _color_recipe_direct_arg(payload: dict[str, Any]) -> str:
 def color_recipe_sequence_command(payload: dict[str, Any]) -> str:
     return (
         f"cd {ROOT} && {ROS_SETUP} && "
-        "python3 tools/run/run_color_recipe_sequence.py --press-depth-m 0.020 --execute --confirm"
+        "python3 tools/run/run_color_recipe_sequence.py --execute --confirm"
         f"{_color_recipe_direct_arg(payload)}"
     )
 
@@ -348,6 +348,33 @@ def hand_eye_static_tf_command(*, compose_timeout_sec: float = 30.0) -> str:
         "ros2 run azas_perception hand_eye_static_tf_node --ros-args "
         f"-p compose_timeout_sec:={compose_timeout_sec:.1f} "
         "-p allow_direct_fallback:=false"
+    )
+
+
+def tmux_stack_start_command(payload: dict[str, Any]) -> str:
+    robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
+    robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
+    rt_host = str(payload.get("rt_host") or os.environ.get("RT_HOST") or DEFAULT_RT_HOST)
+    rg2_ip = str(payload.get("rg2_ip") or os.environ.get("RG2_IP") or "192.168.1.1")
+    ros_domain_id = str(
+        payload.get("ros_domain_id")
+        or os.environ.get("AZAS_PANEL_ROS_DOMAIN_ID")
+        or os.environ.get("ROS_DOMAIN_ID")
+        or DEFAULT_ROS_DOMAIN_ID
+    )
+    ros_localhost_only = str(os.environ.get("ROS_LOCALHOST_ONLY") or "0")
+    return (
+        f"cd {ROOT} && "
+        "bash tools/run/stop_azas_all.sh && "
+        "sleep 2 && "
+        f"SESSION={shlex.quote(PANEL_TMUX_SESSION)} "
+        f"ROS_DOMAIN_ID={shlex.quote(ros_domain_id)} "
+        f"ROS_LOCALHOST_ONLY={shlex.quote(ros_localhost_only)} "
+        f"ROBOT_HOST={shlex.quote(robot_host)} "
+        f"ROBOT_NAME={shlex.quote(robot_name)} "
+        f"RT_HOST={shlex.quote(rt_host)} "
+        f"RG2_IP={shlex.quote(rg2_ip)} "
+        "bash tools/run/start_azas_tmux_stack.sh"
     )
 
 
@@ -519,12 +546,12 @@ class Step:
 STEPS = [
     Step(
         "connect_robot",
-        "로봇 연결 / 스마트 재연결",
+        "로봇 연결 / tmux 통합 재연결",
         "background",
-        "tools/run/run_doosan_real_m0609.sh",
+        "tools/run/stop_azas_all.sh && sleep 2 && tools/run/start_azas_tmux_stack.sh",
         True,
         False,
-        "실제 로봇 real-mode bringup. 준비됨/시작중이면 유지하고, stale 상태일 때만 정리 후 시작",
+        "검증된 현장 명령으로 stop_azas_all 후 azas-logic tmux 스택을 시작",
     ),
     Step(
         "start_tmux_stack",
@@ -533,7 +560,7 @@ STEPS = [
         "tools/run/start_azas_tmux_stack.sh",
         True,
         False,
-        "검증된 tmux 방식으로 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작. status_check/개별 연결 큐를 반복하지 않음",
+        "검증된 tmux 방식으로 stop_azas_all 후 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작",
     ),
     Step(
         "stop_azas_all",
@@ -3005,7 +3032,7 @@ def with_collision_scene_prereq(selected: list[str]) -> list[str]:
     # side-grip, keep it there; otherwise start it before color_scan.
     ensure_before(
         "color_scan",
-        ["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera"],
+        ["start_tmux_stack", "status_check", "move_to_color_scan_pose"],
     )
 
     # The measured dispenser recipe assumes the cup has already been grasped by
@@ -3013,7 +3040,7 @@ def with_collision_scene_prereq(selected: list[str]) -> list[str]:
     # real-motion services and gripper service are available before the cycle.
     ensure_before(
         "run_color_recipe_sequence",
-        ["connect_robot", "status_check", "connect_gripper"],
+        ["start_tmux_stack", "status_check"],
     )
 
     first_collision_index = next(
@@ -3103,6 +3130,11 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         or env.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
         or "-0.020"
     )
+    env["CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M"] = str(
+        payload.get("cup_holder_place_final_y_offset_m")
+        or env.get("CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M")
+        or "-0.010"
+    )
     # Operational-only offset for the pre-shake cup-holder re-grasp.
     # This intentionally does not modify calibration.yaml and is separate from the
     # cup-holder placement offset so lowering the shake pickup does not push the
@@ -3141,56 +3173,9 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
 
     if step.key == "connect_robot":
-        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
-        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
-        rt_host = str(
-            payload.get("rt_host")
-            or os.environ.get("RT_HOST")
-            or DEFAULT_RT_HOST
-        )
-        relay_script_path = ROOT / "src" / "dsr_practice" / "dsr_practice" / "joint_state_relay.py"
-        relay_input = f"/{robot_name.strip('/') or 'dsr01'}/joint_states"
-        relay_script = (
-            "sleep 12; "
-            f"cd {shlex.quote(str(ROOT))} && {ROS_SETUP}; "
-            f"if [ -f {shlex.quote(str(relay_script_path))} ]; then "
-            "echo '[Azas] starting RViz /joint_states relay "
-            f"{relay_input} -> /joint_states'; "
-            f"python3 {shlex.quote(str(relay_script_path))} --ros-args "
-            "-r __node:=azas_joint_state_relay "
-            f"-p input_topic:={shlex.quote(relay_input)} "
-            "-p output_topic:=/joint_states; "
-            "else echo '[WARN] joint_state_relay.py not found; RViz may not mirror real robot joints'; fi"
-        )
-        bringup_script = (
-            f"cd {shlex.quote(str(ROOT))} && "
-            f"ROBOT_HOST={shlex.quote(robot_host)} "
-            f"ROBOT_NAME={shlex.quote(robot_name)} RT_HOST={shlex.quote(rt_host)} "
-            "DOOSAN_REAL_MOTION_CONFIRM=ENABLE_DOOSAN_REAL_MOTION_BRINGUP "
-            f"{step.command} & "
-            "bringup_pid=$!; "
-            f"( {relay_script} ) & "
-            "wait $bringup_pid"
-        )
-        return f"bash -lc {shlex.quote(bringup_script)}"
+        return tmux_stack_start_command(payload)
     if step.key == "start_tmux_stack":
-        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
-        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
-        rt_host = str(payload.get("rt_host") or os.environ.get("RT_HOST") or DEFAULT_RT_HOST)
-        rg2_ip = str(payload.get("rg2_ip") or os.environ.get("RG2_IP") or "192.168.1.1")
-        ros_domain_id = str(payload.get("ros_domain_id") or os.environ.get("AZAS_PANEL_ROS_DOMAIN_ID") or os.environ.get("ROS_DOMAIN_ID") or DEFAULT_ROS_DOMAIN_ID)
-        ros_localhost_only = str(os.environ.get("ROS_LOCALHOST_ONLY") or "0")
-        return (
-            f"cd {ROOT} && "
-            f"SESSION={shlex.quote(PANEL_TMUX_SESSION)} "
-            f"ROS_DOMAIN_ID={shlex.quote(ros_domain_id)} "
-            f"ROS_LOCALHOST_ONLY={shlex.quote(ros_localhost_only)} "
-            f"ROBOT_HOST={shlex.quote(robot_host)} "
-            f"ROBOT_NAME={shlex.quote(robot_name)} "
-            f"RT_HOST={shlex.quote(rt_host)} "
-            f"RG2_IP={shlex.quote(rg2_ip)} "
-            f"bash {shlex.quote(str(ROOT / 'tools' / 'run' / 'start_azas_tmux_stack.sh'))}"
-        )
+        return tmux_stack_start_command(payload)
     if step.key == "status_check":
         clean = service_prefix.strip("/") or "dsr01"
         return (
@@ -3588,6 +3573,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
             or "-0.020"
         ).strip()
+        place_final_y_offset_m = str(
+            payload.get("cup_holder_place_final_y_offset_m")
+            or os.environ.get("CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M")
+            or "-0.010"
+        ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/place_side_grip_cup_in_holder.py "
             f"--service-prefix {service_prefix} "
@@ -3596,10 +3586,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--moveit-planning-pipeline ompl --moveit-planner-id RRTConnectkConfigDefault "
             "--moveit-planning-time-sec 8.0 --moveit-planning-attempts 5 "
             "--moveit-velocity-scaling 0.08 --moveit-acceleration-scaling 0.06 "
-            "--approach-velocity 15.0 --approach-acceleration 20.0 "
+            "--approach-velocity 80.0 --approach-acceleration 20.0 "
+            f"--place-final-y-offset-m {shlex.quote(place_final_y_offset_m)} "
             f"--place-final-z-offset-m {shlex.quote(place_final_z_offset_m)} "
-            "--place-velocity 6.0 --place-acceleration 10.0 "
-            "--retreat-velocity 12.0 --retreat-acceleration 16.0 "
+            "--place-velocity 80.0 --place-acceleration 10.0 "
+            "--retreat-velocity 80.0 --retreat-acceleration 16.0 "
             "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
             "--z-max 0.28 "
             "--execute --confirm ENABLE_CUP_HOLDER_PLACE"
@@ -4361,6 +4352,12 @@ class Handler(BaseHTTPRequestHandler):
                     "DISPENSER_TCP_NAME", DEFAULT_DISPENSER_TCP_NAME
                 ),
                 "selected_dispenser_id": os.environ.get("SELECTED_DISPENSER_ID", "2"),
+                "cup_holder_place_final_y_offset_m": os.environ.get(
+                    "CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M", "-0.010"
+                ),
+                "cup_holder_place_final_z_offset_m": os.environ.get(
+                    "CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M", "-0.020"
+                ),
             }
             data = []
             for step in STEPS:

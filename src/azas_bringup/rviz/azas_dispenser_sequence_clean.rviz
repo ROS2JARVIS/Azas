@@ -68,6 +68,16 @@ Visualization Manager:
       Name: Collision Scene Default Topic
       Value: true
     - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /azas/measured_joint_preview/markers
+      Name: Measured Joint Preview Steps
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
       Enabled: false
       Marker Topic:
         Depth: 5

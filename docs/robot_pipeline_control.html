@@ -843,7 +843,7 @@
       <div class="quick-row operator-actions" aria-label="quick real cocktail controls">
         <div class="quick-note">실험 순서: <b>연결 준비</b> → <b>1 창현 side-grip</b> → 성공 확인 후 <b>2 소명 누운 컵</b> → 성공 확인 후 <b>3 강개발자 뚜껑</b>. 로직 버튼은 한 번에 묶지 말고 단독 실행합니다.</div>
         <label class="direct-dispenser-field">DIRECT / 레시피 override
-          <input id="recipeDispenserIds" type="text" value="" placeholder="비우면 latest_recipe.json + 색상맵 사용 / 색상 예: red1,blue3 / 진단용 번호 예: 1x2,3x2">
+          <input id="recipeDispenserIds" type="text" value="" placeholder="색상:횟수 예: red:2,blue:2,green:2,yellow:2 / 번호 예: 1x2,3x2">
         </label>
         <div class="operator-button-grid module-grid">
           <button id="startPrepBtn" class="quick-start-btn" title="검증된 tmux 방식으로 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작">1. tmux 연결 준비<br><small>로봇·그리퍼·카메라</small></button>
@@ -892,6 +892,9 @@
           </label>
           <label class="field">CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M
             <input id="cupHolderPlaceFinalZOffsetM" type="text" value="-0.020" placeholder="예: -0.020 (홀더에 놓을 때 최종 Z 20mm 낮춤)">
+          </label>
+          <label class="field">CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M
+            <input id="cupHolderPlaceFinalYOffsetM" type="text" value="-0.010" placeholder="예: -0.010 (홀더 최종 Y -10mm)">
           </label>
           <label class="field">CUP_HOLDER_PICK_Z_OFFSET_M
             <input id="cupHolderPickZOffsetM" type="text" value="-0.020" placeholder="예: -0.020 (쉐이킹 전 잡기 Z 20mm 낮춤)">
@@ -976,6 +979,10 @@ python3 tools/run/place_side_grip_cup_in_holder.py \
   --moveit-planning-attempts 5 \
   --moveit-velocity-scaling 0.08 \
   --moveit-acceleration-scaling 0.06 \
+  --approach-velocity 80.0 \
+  --place-velocity 80.0 \
+  --retreat-velocity 80.0 \
+  --place-final-y-offset-m -0.010 \
   --place-final-z-offset-m -0.020 \
   --execute --confirm ENABLE_CUP_HOLDER_PLACE</code></pre>
         </div>
@@ -1214,6 +1221,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
         dispenser_tcp_name: document.getElementById("dispenserTcpName").value.trim(),
         recipe_dispenser_ids: document.getElementById("recipeDispenserIds")?.value.trim() || "",
         cup_holder_place_final_z_offset_m: document.getElementById("cupHolderPlaceFinalZOffsetM").value.trim(),
+        cup_holder_place_final_y_offset_m: document.getElementById("cupHolderPlaceFinalYOffsetM").value.trim(),
         cup_holder_pick_z_offset_m: document.getElementById("cupHolderPickZOffsetM").value.trim(),
         armed: document.getElementById("armed").checked,
         selected: selectedStepKeys()
@@ -1848,7 +1856,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       const res = await fetch("/api/dispenser_color_map");
       const data = await res.json();
       if (data.fallback || !data.map) {
-        throw new Error(`색상맵이 없습니다. 먼저 색상 스캔을 성공시키거나, 진단용 물리 디스펜서 번호(예: 1x1,2x1)를 직접 입력하세요.\n${data.fallback_reason || ""}`);
+        throw new Error(`색상맵이 없습니다. 먼저 색상 스캔을 성공시키거나, 직접 입력하세요. 색상 예: red:2,blue:2 / 번호 예: 1x1,2x1\n${data.fallback_reason || ""}`);
       }
       const order = String(data.sequence_compact || data.sequence_csv || "1x1,2x1,3x1,4x1").trim();
       input.value = order;
