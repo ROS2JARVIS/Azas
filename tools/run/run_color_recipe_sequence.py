@@ -285,7 +285,7 @@ def main() -> int:
     parser.add_argument("--press-pre-lift-retreat-y-m", default="0.0")
     parser.add_argument("--move-release-offset-x-m", default="-0.020")
     parser.add_argument("--move-release-offset-y-m", default="0.0")
-    parser.add_argument("--move-release-offset-z-m", default="0.0")
+    parser.add_argument("--move-release-offset-z-m", default="0.010")
     parser.add_argument("--cup-pre-from-place-x-offset-m", default="-0.090")
     parser.add_argument("--cup-pre-from-place-z-offset-m", default="0.030")
     parser.add_argument("--generated-cup-pre-max-joint-delta-deg", default="190.0")
