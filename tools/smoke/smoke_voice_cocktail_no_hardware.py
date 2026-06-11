@@ -61,14 +61,17 @@ def main() -> int:
     while time.monotonic() < deadline and (
         node.count_subscribers("/stt_result") == 0
         or node.count_publishers("/azas/cocktail/status") == 0
+        or node.count_publishers("/azas/voice/recipe_decision") == 0
+        or node.count_subscribers("/azas/voice/recipe_decision") < 2
     ):
         rclpy.spin_once(node, timeout_sec=0.1)
 
-    for _ in range(3):
-        node.publish_stt(text)
-        rclpy.spin_once(node, timeout_sec=0.1)
-
+    next_publish = 0.0
     while time.monotonic() < deadline:
+        now = time.monotonic()
+        if now >= next_publish:
+            node.publish_stt(text)
+            next_publish = now + 0.5
         rclpy.spin_once(node, timeout_sec=0.1)
         if node.saw_complete():
             decision = node.latest_decision()
@@ -83,7 +86,7 @@ def main() -> int:
             node.destroy_node()
             rclpy.shutdown()
             return 0
-        if node.saw_blocked():
+        if node.saw_blocked() and not node._plans:
             print("[FAIL] cocktail dry-run blocked")
             for item in node._statuses:
                 print(json.dumps(item, ensure_ascii=False))

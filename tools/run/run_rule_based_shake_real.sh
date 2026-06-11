@@ -288,7 +288,22 @@ else
   echo "[Azas] Cup-holder pick skipped only because SKIP_CUP_HOLDER_PICK=true was set by a wrapper that already completed it."
 fi
 
-exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
+# Stale side-grip workspace walls left by earlier pick stages repeatedly fail
+# the shake-ready MoveIt state-validity check (link_2 <-> ..._x_min_wall).
+# workspace_collision_scene_node keeps re-publishing the walls every cycle, so
+# stop it first; a plain scene removal would be overwritten within seconds.
+if pgrep -f "workspace_collision_scene_node" >/dev/null 2>&1; then
+  echo "[Azas] Stopping leftover workspace_collision_scene_node (it re-publishes the side-grip walls)."
+  pkill -f "workspace_collision_scene_node" || true
+  sleep 1.5
+fi
+echo "[Azas] Removing stale side-grip workspace walls from MoveIt scene (best-effort)."
+python3 "${ROOT_DIR}/tools/run/remove_moveit_collision_objects.py" \
+  --ids side_grip_workspace_x_min_wall,side_grip_workspace_x_max_wall,side_grip_workspace_y_min_wall,side_grip_workspace_y_max_wall \
+  || echo "[Azas] workspace wall removal returned non-zero (walls likely absent already); continuing."
+
+SHAKE_RUN_LOG="$(mktemp /tmp/azas_shake_run.XXXXXX.log)"
+ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   enable_hardware:=true \
   hardware_confirm:=ENABLE_REAL_ROBOT_MOTION \
   allow_service_control_without_moveit:=true \
@@ -353,4 +368,13 @@ exec ros2 launch azas_bringup tumbler_shake_sequence.launch.py \
   joint_target_poll_sec:="${JOINT_TARGET_POLL_SEC}" \
   require_state_validity_for_joint_shake:="${REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE}" \
   state_validity_service:="${STATE_VALIDITY_SERVICE}" \
-  planning_group:="${PLANNING_GROUP}"
+  planning_group:="${PLANNING_GROUP}" 2>&1 | tee "${SHAKE_RUN_LOG}"
+
+# ros2 launch exits 0 even when the shake node refused/aborted the motion, so
+# the panel used to report success on a failed shake. Fail closed on the node's
+# own failure markers.
+if grep -q "refusing MoveJoint\|tumbler_shake_sequence_node.*FAILED" "${SHAKE_RUN_LOG}"; then
+  echo "[FAIL] shake sequence reported failure (see log above); exiting non-zero."
+  exit 1
+fi
+echo "[Azas] shake sequence finished without failure markers."

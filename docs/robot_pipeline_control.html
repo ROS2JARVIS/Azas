@@ -841,22 +841,22 @@
       </div>
 
       <div class="quick-row operator-actions" aria-label="quick real cocktail controls">
-        <div class="quick-note">실험 순서: <b>연결 준비</b> → <b>1 창현 side-grip</b> → 성공 확인 후 <b>2 소명 누운 컵</b> → 성공 확인 후 <b>3 강개발자 뚜껑</b>. 로직 버튼은 한 번에 묶지 말고 단독 실행합니다.</div>
+        <div class="quick-note">현재 시험 순서: <b>연결 준비</b> → <b>색상 JSON</b> → <b>창현 side-grip 성공 후 자동 디스펜서</b> → 성공 확인 후 <b>ArUco 뚜껑 체결</b>. 전체 묶기는 창현/소명 선택 확정 전까지 보류합니다.</div>
         <label class="direct-dispenser-field">DIRECT / 레시피 override
           <input id="recipeDispenserIds" type="text" value="" placeholder="색상:횟수 예: red:2,blue:2,green:2,yellow:2 / 번호 예: 1x2,3x2">
         </label>
         <div class="operator-button-grid module-grid">
           <button id="startPrepBtn" class="quick-start-btn" title="검증된 tmux 방식으로 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작">1. tmux 연결 준비<br><small>로봇·그리퍼·카메라</small></button>
-          <button id="sideGripBtn" class="quick-start-btn" title="1단계: PR #20 / dsr_practice yolo_cup_pick_node. tmux 창에서 RealSense 컵 화면 확인 후 p 키로 side-grip 실행">1. 창현 side-grip<br><small>카메라 확인→p로 집기</small></button>
+          <button id="sideGripBtn" class="quick-start-btn" title="PR #20 / dsr_practice yolo_cup_pick_node. 컵 잡기 성공 메시지 후 통합 디스펜서 레시피 자동 실행">1. 창현 side-grip<br><small>성공 후 자동레시피</small></button>
           <button id="cupUprightingBtn" class="quick-start-btn" title="2단계: 소명씨 azas_cup_uprighting. OpenCV 창에서 누운 컵 확인 후 p 키로 직립화 실행, Esc/q로 종료">2. 소명 누운 컵<br><small>창 확인→p 실행</small></button>
           <button id="pickLidBtn" class="quick-start-btn" title="develop 뚜껑 grip pose 계획: 빨간 스티커/YOLO/depth 기반 pose 후보 발행. 실제 모션 아님">뚜껑 grip pose 계획<br><small>빨간스티커→pose 후보</small></button>
-          <button id="lidGripCloseBtn" class="quick-start-btn" title="3단계: 강개발자 lid_grip_close. 뚜껑 보기 자세 이동 → ArUco DICT_6X6_250 id0 뚜껑 pose 인식 → RG2 파지 → 컵 위치 이동 → J6 twist로 뚜껑 닫기">3. 뚜껑 잡고 닫기<br><small>강개발자 · ArUco→grip→J6</small></button>
+          <button id="lidGripCloseBtn" class="quick-start-btn" title="디스펜서 이동/프레스 성공 후 시험: 강개발자 lid_grip_close. 뚜껑 보기 자세 이동 → ArUco pose 인식 → RG2 파지 → 컵 위치 이동 → J6 twist로 뚜껑 닫기">ArUco 뚜껑 체결 시험<br><small>디스펜서 성공 후 실행</small></button>
           <button id="colorScanJsonBtn" class="quick-start-btn" title="이미 tmux 연결/RealSense가 켜진 상태에서 color_scan_pose로 이동한 뒤 visible color handle을 바로 검출하고 JSON/debug 이미지를 저장">2. 빠른 색상구분<br><small>포즈이동→핸들검출→JSON</small></button>
           <button id="colorJsonCheckBtn" type="button" title="outputs/dispenser_color_map.json 또는 failed 상태 확인">JSON 확인</button>
           <button id="manualColorJsonBtn" type="button" title="색상 맵을 직접 확정해 outputs/dispenser_color_map.json 저장">JSON 수동저장</button>
           <button id="recipeCycleBtn" class="quick-start-btn" title="latest_recipe.json과 dispenser_color_map.json을 읽어 컵놓기→프레스→다시잡기 사이클을 레시피대로 반복">3. 레시피 디스펜서 사이클<br><small>컵놓기→프레스→다시잡기 반복</small></button>
           <button id="cupHolderBtn" type="button" title="MoveItPy로 cup_holder.side_grip_place pre_place→place_final→retreat 경로를 계획/실행">4. 컵홀더에 컵 옮기기<br><small>MoveIt 경로계획</small></button>
-          <button id="fullCocktailRealBtn" class="quick-start-btn" title="준비, 색상 JSON, 레시피 디스펜서 사이클, 컵홀더 배치를 한 번에 큐에 추가">전체 묶기<br><small>준비→색상JSON→레시피사이클→컵홀더</small></button>
+          <button id="fullCocktailRealBtn" class="quick-start-btn" title="창현/소명 side-grip 선택이 아직 확정되지 않아 전체 묶기는 실행하지 않음">전체 묶기 보류<br><small>창현/소명 선택 대기</small></button>
         </div>
       </div>
 
@@ -1304,36 +1304,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     }
 
     function withCollisionScenePrereq(queue) {
-      const items = queue.map((item) => ({...item}));
-      function ensureBefore(targetKey, prereqKeys) {
-        let targetIndex = items.findIndex((item) => item.key === targetKey);
-        if (targetIndex < 0) return;
-        for (const prereq of prereqKeys) {
-          const existingIndex = items.findIndex((item) => item.key === prereq);
-          if (existingIndex >= 0) {
-            if (existingIndex < targetIndex) continue;
-            items.splice(existingIndex, 1);
-            if (existingIndex < targetIndex) targetIndex -= 1;
-          }
-        }
-        targetIndex = items.findIndex((item) => item.key === targetKey);
-        const missing = prereqKeys.filter((prereq) => !items.slice(0, targetIndex).some((item) => item.key === prereq));
-        missing.forEach((prereq, offset) => {
-          items.splice(targetIndex + offset, 0, {id: `q${nextQueueId++}`, key: prereq, injected: true});
-        });
-      }
-      // 창현/소명/강개발자 단독 테스트는 이미 열린 tmux/ROS 세션을 재사용한다.
-      // 전체 준비 묶음은 각 통합 플로우 버튼에서 명시적으로 넣는다.
-      ensureBefore("color_scan", ["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera"]);
-      const firstCollisionIndex = items.findIndex((item) => needsCollisionScene(item.key));
-      if (firstCollisionIndex < 0) return items;
-      const existingSceneIndex = items.findIndex((item) => item.key === "start_collision_scene");
-      if (existingSceneIndex >= 0 && existingSceneIndex <= firstCollisionIndex) return items;
-      const withoutScene = items.filter((item) => item.key !== "start_collision_scene");
-      const insertIndex = withoutScene.findIndex((item) => needsCollisionScene(item.key));
-      if (insertIndex < 0) return withoutScene;
-      withoutScene.splice(insertIndex, 0, {id: `q${nextQueueId++}`, key: "start_collision_scene", injected: true});
-      return withoutScene;
+      return queue.map((item) => ({...item}));
     }
 
 	    function renderSummary() {
@@ -1945,13 +1916,13 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       queueOnly(["cup_uprighting"], "2단계 소명/누운 컵 직립화 로직만 단독으로 큐에 추가했습니다. 1단계 성공 확인 후 실행하세요. OpenCV 창에서 컵을 확인한 뒤 p 키로 실행합니다.");
     });
     document.getElementById("sideGripBtn")?.addEventListener("click", () => {
-      queueOnly(["side_grip"], "1단계 창현/PR #20 RealSense side-grip만 단독으로 큐에 추가했습니다. 카메라 화면에서 컵을 확인한 뒤 p 키로 직접 잡습니다. 실패하거나 로봇이 안 움직이면 이 단계만 다시 실행하세요.");
+      queueOnly(["side_grip"], "창현/PR #20 RealSense side-grip을 큐에 추가했습니다. OpenCV 창에서 p 키로 컵 잡기가 성공하면 통합 디스펜서 레시피가 자동 실행됩니다.");
     });
     document.getElementById("pickLidBtn")?.addEventListener("click", () => {
       queueOnly(["start_camera", "pick_lid"], "뚜껑 grip pose 계획 로직을 큐에 추가했습니다. 실제 로봇 모션은 실행하지 않습니다.");
     });
     document.getElementById("lidGripCloseBtn")?.addEventListener("click", () => {
-      queueOnly(["lid_grip_close"], "3단계 강개발자 lid_grip_close만 단독으로 큐에 추가했습니다. 1/2단계 성공 확인 후 실행하세요. ArUco 확인 후 p 키 흐름으로 실행합니다.");
+      queueOnly(["lid_grip_close"], "ArUco 뚜껑 체결 시험을 큐에 추가했습니다. side-grip 후 통합 디스펜서가 성공한 다음 실행하세요. 스크립트가 뚜껑 보기 자세로 이동한 뒤 ArUco 확인/p 키 흐름으로 진행합니다.");
     });
 
     document.getElementById("colorScanJsonBtn")?.addEventListener("click", () => {
@@ -1971,7 +1942,8 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       queueOnly(["place_cup_holder"], "컵홀더 배치를 큐에 추가했습니다. 이 단계는 MoveItPy 경로계획으로 pre_place→place_final→RG2 open→retreat를 실행합니다.");
     });
     document.getElementById("fullCocktailRealBtn")?.addEventListener("click", async () => {
-      queueOnly([...PREP_STEPS, "side_grip_camera_home", "side_grip", "move_to_color_scan_pose", "color_scan", "run_color_recipe_sequence", "place_cup_holder"], "전체 플로우를 큐에 추가했습니다. (tmux 연결 준비 → 카메라 홈→컵 side-grip → 검증자세 색상 핸들 JSON → 레시피 사이클 → MoveIt 컵홀더 배치)", {clear: true});
+      log.textContent = "전체 묶기는 창현/소명 side-grip 선택이 확정될 때까지 보류합니다. 지금 시험은 색상 JSON → 창현 side-grip 성공 후 자동 디스펜서 → ArUco 뚜껑 체결 순서로 단독 버튼을 사용하세요.";
+      focusLog();
     });
 	    document.getElementById("run").addEventListener("click", async () => {
 	      if (isRunning) {
@@ -1979,7 +1951,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
 	        focusLog();
 	        return;
 	      }
-	      const selected = withCollisionScenePrereq(selectedQueue);
+	      const selected = selectedQueue.map((item) => ({...item}));
 	      selectedQueue = selected;
 	      resetResultBadges();
 	      isRunning = Boolean(selected.length);

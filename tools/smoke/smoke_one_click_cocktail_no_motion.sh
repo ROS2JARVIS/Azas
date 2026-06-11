@@ -128,8 +128,8 @@ for dispenser_id in ("1", "2", "3", "4"):
 recipe_source = Path('tools/run/run_measured_dispenser_recipe_sequence.py').read_text()
 assert 'default=False' in recipe_source and '--press-reset-before-press' in recipe_source
 assert 'PRESS_Z_OVERDRIVE -> PRESS_CONTACT -> PRESS_PRE' in recipe_source
-assert 'contact_joints is not None and pre_joints is not None' in recipe_source
-assert 'Fallback-only generated Cartesian PRE' in recipe_source
+assert 'contact_joints is not None and (skip_measured_press_pre or pre_joints is not None)' in recipe_source
+assert 'Fallback-only option for old contact-joint mode' in recipe_source
 print('[Azas smoke] measured PRE/CONTACT joint-first press path OK')
 
 path = Path('tools/run/robot_pipeline_control_server.py')

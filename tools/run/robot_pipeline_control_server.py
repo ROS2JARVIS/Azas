@@ -333,7 +333,8 @@ def chain_recipe_after_manual_command(manual_cmd: str, payload: dict[str, Any], 
         f"( {manual_cmd} ); "
         "manual_rc=$?; "
         "if [ ${manual_rc} -eq 0 ]; then "
-        f"echo '[Azas] {label} 성공 종료 -> 통합 디스펜서 색상 레시피를 즉시 실행합니다.'; "
+        f"echo '[Azas] {label} 성공 메시지 확인 -> 통합 디스펜서 색상 레시피를 자동 실행합니다.'; "
+        "echo '[Azas] auto_integrated_dispenser_recipe=true'; "
         f"{recipe_cmd}; "
         "else "
         f"echo '[Azas] {label} 실패/중단 rc='${{manual_rc}}' -> 디스펜서 레시피 실행을 건너뜁니다.'; "
@@ -887,6 +888,25 @@ STEPS = [
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
     Step("shake_closed_cup", "컵홀더 컵 다시 잡기 후 쉐이킹", "run", "tools/run/pick_from_cup_holder_side_grip.py && tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 측정된 cup_holder.side_grip_place pose로 다시 side-grip 픽업한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행"),
+    Step(
+        "start_hand_detection",
+        "손 검출 시작 / 무모션",
+        "background",
+        "bash tools/run/run_human_hand_detection.sh",
+        True,
+        False,
+        "perception 전용: MediaPipe로 펼친 손바닥을 추적해 /azas/human_hand_detection으로 발행. 로봇 모션 없음",
+    ),
+    Step(
+        "handover_cup_to_palm",
+        "쉐이킹 후 손바닥에 컵 건네기",
+        "run",
+        "tools/run/handover_cup_to_palm.py",
+        True,
+        True,
+        "실제모션 HRI: 손 검출이 먼저 켜져 있어야 함. 손바닥 위로 이동 후 외력 감시하며 저속 하강, 컵 release. "
+        "첫 사용 전 스펀지 테스트로 --release-tcp-above-palm-m 튜닝 필수",
+    ),
 ]
 
 processes: dict[str, subprocess.Popen[str]] = {}
@@ -913,6 +933,7 @@ PANEL_TMUX_STEPS = {
     "cup_uprighting",
     "lid_grip_close",
     "shake_rviz_preview",
+    "start_hand_detection",
 }
 PANEL_HIDDEN_STEP_KEYS = {
     "rviz_cocktail_collision_preview",
@@ -954,6 +975,7 @@ PANEL_FIELD_VERIFIED_DIRECT_TMUX_STEPS = {
     # are not enough for real-motion GUI workflows.
     "side_grip",
     "cup_uprighting",
+    "lid_grip_close",
 }
 
 DOOSAN_STACK_PATTERNS = (
@@ -1043,6 +1065,7 @@ SIDE_GRIP_STACK_PATTERNS = (
     "yolo_cup_pick_moveit_py",
     "hand_eye_static_tf_node",
     "link6_gripper_collision_node",
+    "workspace_collision_scene_node",
     "--frame-id world --child-frame-id base_link",
 )
 
@@ -2056,6 +2079,16 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/system/get_robot_state",
             "/check_state_validity",
         ]
+    if step.key == "handover_cup_to_palm":
+        return [
+            "/jarvis/rg2/set_width",
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/aux_control/get_current_posx",
+            f"/{clean}/aux_control/get_tool_force",
+            f"/{clean}/system/get_robot_state",
+        ]
     return []
 
 
@@ -2077,7 +2110,7 @@ def required_service_wait_timeout(step: Step) -> float:
         or step.key == "lid_grip_close"
     ):
         return 35.0
-    if step.key in {"home_robot", "lift_robot", "side_grip_camera_home", "lid_view_pose", "move_to_color_scan_pose", "side_grip", "shake_closed_cup"}:
+    if step.key in {"home_robot", "lift_robot", "side_grip_camera_home", "lid_view_pose", "move_to_color_scan_pose", "side_grip", "shake_closed_cup", "handover_cup_to_palm"}:
         return 30.0
     if step.key == "gripper_soft_grasp":
         return 12.0
@@ -3072,73 +3105,28 @@ def requires_collision_scene_step(key: str) -> bool:
 
 
 def with_collision_scene_prereq(selected: list[str]) -> list[str]:
-    ordered = list(dict.fromkeys(selected))
+    ordered: list[str] = []
 
-    def ensure_before(target: str, prerequisites: list[str]) -> None:
-        if target not in ordered:
-            return
-        target_index = ordered.index(target)
-        for prereq in prerequisites:
-            if prereq in ordered:
-                prereq_index = ordered.index(prereq)
-                if prereq_index < target_index:
-                    continue
-                ordered.pop(prereq_index)
-                if prereq_index < target_index:
-                    target_index -= 1
-        target_index = ordered.index(target)
-        missing = [
-            prereq
-            for prereq in prerequisites
-            if prereq not in ordered[:target_index]
-        ]
-        for offset, prereq in enumerate(missing):
-            ordered.insert(target_index + offset, prereq)
+    def append_once(key: str) -> None:
+        if key not in ordered:
+            ordered.append(key)
 
-    # 창현/소명/강개발자 수동 OpenCV 로직은 검증된 tmux stack을 사용한 뒤
-    # 단독 버튼으로 실행한다. 서버가 connect/status/camera 단계를 다시 끼워
-    # 넣으면 패널 실행 경로가 수동 tmux 경로와 달라지고 느려진다.
+    for key in selected:
+        if key == "color_scan":
+            for prereq in (
+                "connect_robot",
+                "status_check",
+                "start_collision_scene",
+                "move_to_color_scan_pose",
+                "start_camera",
+            ):
+                append_once(prereq)
+        elif requires_collision_scene_step(key):
+            for prereq in ("connect_robot", "status_check", "start_collision_scene"):
+                append_once(prereq)
+        append_once(key)
 
-    # Color classification must aim the robot at the measured color-scan pose
-    # before sampling the dispenser image.  If the camera is already running from
-    # side-grip, keep it there; otherwise start it before color_scan.
-    ensure_before(
-        "color_scan",
-        ["start_tmux_stack", "status_check", "move_to_color_scan_pose"],
-    )
-
-    # The measured dispenser recipe assumes the cup has already been grasped by
-    # side_grip or an equivalent operator-verified step.  Here we only ensure the
-    # real-motion services and gripper service are available before the cycle.
-    ensure_before(
-        "run_color_recipe_sequence",
-        ["start_tmux_stack", "status_check"],
-    )
-
-    first_collision_index = next(
-        (
-            index
-            for index, key in enumerate(ordered)
-            if requires_collision_scene_step(key)
-        ),
-        -1,
-    )
-    if first_collision_index >= 0:
-        existing_scene_index = (
-            ordered.index("start_collision_scene") if "start_collision_scene" in ordered else -1
-        )
-        if existing_scene_index < 0 or existing_scene_index > first_collision_index:
-            ordered = [key for key in ordered if key != "start_collision_scene"]
-            first_collision_index = next(
-                (
-                    index
-                    for index, key in enumerate(ordered)
-                    if requires_collision_scene_step(key)
-                ),
-                0,
-            )
-            ordered.insert(first_collision_index, "start_collision_scene")
-    return list(dict.fromkeys(ordered))
+    return ordered
 
 
 def configure_manual_recipe_chain(selected: list[str], payload: dict[str, Any]) -> list[str]:
@@ -3499,7 +3487,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             f"bash {shlex.quote(str(direct_script))}"
         )
-        if payload.get("_auto_recipe_after_manual_logic"):
+        if payload.get("_auto_recipe_after_manual_logic", True):
             return chain_recipe_after_manual_command(manual_cmd, payload, "창현 side_grip")
         return manual_cmd
     if step.key == "gripper_soft_grasp":
@@ -3721,6 +3709,28 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
+        )
+    if step.key == "handover_cup_to_palm":
+        release_height_m = str(
+            payload.get("handover_release_tcp_above_palm_m")
+            or os.environ.get("HANDOVER_RELEASE_TCP_ABOVE_PALM_M")
+            or "0.08"
+        ).strip()
+        return (
+            f"cd {ROOT} && "
+            f"{ROS_SETUP} && "
+            "echo '[Azas] HANDOVER START: 펼친 손바닥을 추적해 컵을 손 위에 내려놓습니다.' && "
+            "echo '[Azas] 전제: 손 검출 시작 버튼이 켜져 있고, 받는 사람이 손바닥을 펴고 멈춰 있어야 합니다.' && "
+            "echo '[Azas] 안전: 하강은 2cm 스텝마다 외력을 확인하고, 손이 움직이면 자동 후퇴합니다.' && "
+            "python3 tools/run/handover_cup_to_palm.py "
+            f"--service-prefix {service_prefix} "
+            f"--release-tcp-above-palm-m {shlex.quote(release_height_m)} "
+            "--transit-velocity 10.0 --transit-acceleration 14.0 "
+            "--descent-velocity 4.0 --descent-acceleration 6.0 "
+            "--force-abort-delta-n 10.0 "
+            "--execute --confirm ENABLE_HUMAN_PALM_HANDOVER "
+            "--approve-motion ENABLE_HUMAN_PALM_HANDOVER_MOTION "
+            "--approve-release RELEASE_CUP_NOW"
         )
     if step.command.strip():
         return f"cd {ROOT} && {ROS_SETUP} && {step.command}"

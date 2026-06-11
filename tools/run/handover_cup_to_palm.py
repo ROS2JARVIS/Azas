@@ -208,8 +208,11 @@ def open_gripper(args: argparse.Namespace) -> None:
         raise RuntimeError(f"RG2 open failed (rc={rc})")
 
 
-def require_typed_approval(phrase: str, *, prompt: str) -> None:
+def require_typed_approval(phrase: str, *, prompt: str, preapproved: str = "") -> None:
     print(prompt)
+    if preapproved.strip() == phrase:
+        print(f"[Azas] approval {phrase} supplied non-interactively (panel/wrapper mode)")
+        return
     entered = input(f"Type {phrase} to continue: ").strip()
     if entered != phrase:
         raise RuntimeError(f"operator approval mismatch; expected {phrase}")
@@ -255,6 +258,11 @@ def parse_args() -> argparse.Namespace:
                         help="debug: skip camera sampling and use this base-frame palm 'x,y,z' (meters)")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm", default="", help=f"must equal {CONFIRM_PHRASE} with --execute")
+    parser.add_argument("--approve-motion", default="",
+                        help=f"non-interactive operator approval; must equal {MOTION_APPROVAL_PHRASE} "
+                             "(for panel/wrapper use where stdin is unavailable)")
+    parser.add_argument("--approve-release", default="",
+                        help=f"non-interactive release approval; must equal {RELEASE_APPROVAL_PHRASE}")
     return parser.parse_args()
 
 
@@ -313,6 +321,7 @@ def main() -> int:
                 "  - first run was validated on a foam block, not a person\n"
                 "  - speeds/bounds above were reviewed"
             ),
+            preapproved=args.approve_motion,
         )
         run_movel(args, lift, label="LIFT to transit height (Z-only)",
                   velocity=args.transit_velocity, acceleration=args.transit_acceleration)
@@ -350,6 +359,7 @@ def main() -> int:
             require_typed_approval(
                 RELEASE_APPROVAL_PHRASE,
                 prompt="[Azas] Cup is at release height. Confirm the palm is directly under the cup.",
+                preapproved=args.approve_release,
             )
         open_gripper(args)
         time.sleep(1.0)

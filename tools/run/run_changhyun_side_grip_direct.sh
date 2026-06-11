@@ -105,6 +105,8 @@ if [[ "${should_start_relay}" == "true" ]]; then
   ) &
 fi
 
+side_grip_success_log="$(mktemp /tmp/azas_changhyun_side_grip.XXXXXX.log)"
+set +e
 ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   model_path:="${ROOT}/local_models/best.pt" \
   conf:=0.35 imgsz:=640 device:=cpu target_class:=cup \
@@ -125,4 +127,20 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   workspace_boundary_collision_enabled:=true dispenser_collision_enabled:=true dispenser_collision_publish_objects:=true \
   dispenser_collision_publish_markers:=true link6_gripper_collision_enabled:=false \
   dispenser_collision_config_path:="${ROOT}/src/azas_bringup/config/measured_dispenser_collision.yaml" \
-  moveit_controller_name:=/"${SERVICE_PREFIX}"/dsr_moveit_controller start_joint_state_relay:=false
+  moveit_controller_name:=/"${SERVICE_PREFIX}"/dsr_moveit_controller start_joint_state_relay:=false \
+  2>&1 | tee "${side_grip_success_log}"
+launch_rc="${PIPESTATUS[0]}"
+set -e
+
+if [[ "${launch_rc}" -eq 0 ]] && grep -q "exit_after_pick=true and one pick completed" "${side_grip_success_log}"; then
+  echo "[Azas] CHANGHYUN_SIDE_GRIP_SUCCESS: pick completed; downstream integrated dispenser recipe may start."
+  exit 0
+fi
+
+if [[ "${launch_rc}" -eq 0 ]]; then
+  echo "[Azas] CHANGHYUN_SIDE_GRIP_NO_SUCCESS: node exited without completed-pick success marker; integrated dispenser recipe will not start."
+  exit 3
+fi
+
+echo "[Azas] CHANGHYUN_SIDE_GRIP_FAILED: ros2 launch exited rc=${launch_rc}; integrated dispenser recipe will not start."
+exit "${launch_rc}"
