@@ -18,6 +18,7 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
+            "auto_cup_flow_router = azas_task_manager.auto_cup_flow_router:main",
             "pick_and_align_action_server = azas_task_manager.pick_and_align_action_server:main",
             "cocktail_dryrun_sequence_node = azas_task_manager.cocktail_dryrun_sequence_node:main",
         ],

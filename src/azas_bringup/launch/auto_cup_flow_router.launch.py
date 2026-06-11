@@ -1,0 +1,50 @@
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument("enable_real_motion", default_value="false"),
+        DeclareLaunchArgument("router_confirm", default_value=""),
+        DeclareLaunchArgument("service_prefix", default_value=""),
+        DeclareLaunchArgument("moveit_controller_name", default_value="/dsr_moveit_controller"),
+        DeclareLaunchArgument("controller_action_name", default_value="/dsr_moveit_controller/follow_joint_trajectory"),
+        DeclareLaunchArgument("yolo_model_path", default_value="/home/ssu/Azas/local_models/best.pt"),
+        DeclareLaunchArgument("classifier_path", default_value="/home/ssu/Azas/cup_classifier_best.pth"),
+        DeclareLaunchArgument("classifier_arch", default_value="resnet18"),
+        DeclareLaunchArgument("classifier_min_confidence", default_value="0.70"),
+        DeclareLaunchArgument("route_timeout_sec", default_value="30.0"),
+        DeclareLaunchArgument("route_hold_sec", default_value="3.5"),
+        DeclareLaunchArgument("route_stable_required_samples", default_value="5"),
+        DeclareLaunchArgument("route_stable_min_sec", default_value="0.8"),
+        DeclareLaunchArgument("show_classification_window", default_value="true"),
+        DeclareLaunchArgument("side_extra_args", default_value=""),
+        DeclareLaunchArgument("cup_uprighting_extra_args", default_value=""),
+        Node(
+            package="azas_task_manager",
+            executable="auto_cup_flow_router",
+            name="auto_cup_flow_router",
+            output="screen",
+            parameters=[{
+                "enable_real_motion": ParameterValue(LaunchConfiguration("enable_real_motion"), value_type=bool),
+                "router_confirm": LaunchConfiguration("router_confirm"),
+                "service_prefix": LaunchConfiguration("service_prefix"),
+                "moveit_controller_name": LaunchConfiguration("moveit_controller_name"),
+                "controller_action_name": LaunchConfiguration("controller_action_name"),
+                "yolo_model_path": LaunchConfiguration("yolo_model_path"),
+                "classifier_path": LaunchConfiguration("classifier_path"),
+                "classifier_arch": LaunchConfiguration("classifier_arch"),
+                "classifier_min_confidence": ParameterValue(LaunchConfiguration("classifier_min_confidence"), value_type=float),
+                "route_timeout_sec": ParameterValue(LaunchConfiguration("route_timeout_sec"), value_type=float),
+                "route_hold_sec": ParameterValue(LaunchConfiguration("route_hold_sec"), value_type=float),
+                "route_stable_required_samples": ParameterValue(LaunchConfiguration("route_stable_required_samples"), value_type=int),
+                "route_stable_min_sec": ParameterValue(LaunchConfiguration("route_stable_min_sec"), value_type=float),
+                "show_classification_window": ParameterValue(LaunchConfiguration("show_classification_window"), value_type=bool),
+                "side_extra_args": LaunchConfiguration("side_extra_args"),
+                "cup_uprighting_extra_args": LaunchConfiguration("cup_uprighting_extra_args"),
+            }],
+        ),
+    ])
