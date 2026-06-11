@@ -895,13 +895,12 @@ tmux_jobs: dict[str, dict[str, str]] = {}
 RUN_LOCK = threading.Lock()
 ROS_ENV_LOCK = threading.Lock()
 ROS_ENV_CACHE: dict[str, str] | None = None
-# Use the same tmux session as the field-tested manual workflow.  Keeping the
-# panel and terminal commands in one session avoids split ownership where the
-# panel launches a second robot/camera stack while the operator is watching a
-# different one.
+# Use the same tmux session as the field-tested manual workflow for long-lived
+# panel jobs. The integrated reconnect command is intentionally excluded below:
+# it runs stop_azas_all.sh, which kills azas-logic before recreating it, so that
+# command must be launched by the panel server outside tmux.
 PANEL_TMUX_SESSION = "azas-logic"
 PANEL_TMUX_STEPS = {
-    "connect_robot",
     "connect_gripper",
     "start_camera",
     "start_camera_view",
@@ -3831,109 +3830,11 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
     cmd = command_for(step, payload)
     if step.kind == "background":
         restart_output = ""
-        if step.key == "connect_robot":
-            ready, ready_output, _svc = motion_services_ready(env["SERVICE_PREFIX"])
-            if ready:
-                robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
-                virtual_present, virtual_output = doosan_virtual_nodes_present(env["SERVICE_PREFIX"])
-                if robot_ready:
-                    note = ""
-                    if virtual_present:
-                        note = (
-                            "\n[INFO] /virtual_node 이름이 보이지만 robot_state=STATE_STANDBY(1) "
-                            "및 check_motion success=True라서 real bringup을 유지합니다. "
-                            "Doosan real launch에서도 이 노드명이 보일 수 있어 이름만으로 재시작하지 않습니다.\n"
-                            f"{virtual_output}"
-                        )
-                    return {
-                        "key": step.key,
-                        "status": "running",
-                        "output": (
-                            "이미 Doosan motion 서비스가 보이고 로봇이 STATE_STANDBY(1)입니다. "
-                            "재시작하지 않습니다.\n"
-                            f"{ready_output}\n{robot_ready_output}{note}"
-                        ),
-                    }
-                if virtual_present:
-                    cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
-                    restart_output = (
-                        "기존 Doosan motion 서비스가 보이지만 virtual_node가 감지되어 실제 로봇 연결로 재시작합니다.\n"
-                        f"--- virtual nodes ---\n{virtual_output}\n"
-                        "--- cleanup ---\n"
-                        + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
-                        + "\n"
-                    )
-                else:
-                    return {
-                        "key": step.key,
-                        "status": "blocked",
-                        "output": (
-                            "Doosan motion 서비스는 보이지만 로봇이 motion-ready 상태가 아닙니다. "
-                            "재시작하지 않습니다.\n"
-                            f"{ready_output}\n"
-                            "티치펜던트/컨트롤러에서 빨간 상태(SAFE_OFF/보호정지/서보 상태)를 해제해 "
-                            "STATE_STANDBY(1)로 만든 뒤 다시 확인하세요.\n"
-                            f"{robot_ready_output}"
-                        ),
-                    }
-            old = processes.get(step.key)
-            if old and old.poll() is None:
-                ready, waited_output = wait_for_motion_services_ready(
-                    env["SERVICE_PREFIX"],
-                    timeout_sec=20.0,
-                    proc=old,
-                )
-                if ready:
-                    robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
-                    if robot_ready:
-                        return {
-                            "key": step.key,
-                            "status": "running",
-                            "output": (
-                                "기존 로봇 연결 프로세스가 계속 실행 중이고 motion 서비스가 준비됐습니다.\n"
-                                f"{waited_output}\n{robot_ready_output}"
-                            ),
-                            "pid": old.pid,
-                        }
-                    return {
-                        "key": step.key,
-                        "status": "blocked",
-                        "output": (
-                            "기존 로봇 연결 프로세스가 motion 서비스를 띄웠지만 로봇이 "
-                            "STATE_STANDBY(1)가 아닙니다.\n"
-                            f"{waited_output}\n{robot_ready_output}"
-                        ),
-                        "pid": old.pid,
-                    }
-                log_tail = tail_file(process_logs.get(step.key))
-                cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
-                time.sleep(1.5)
-                restart_output = (
-                    "기존 로봇 연결 프로세스가 motion 서비스를 준비하지 못해 재연결합니다.\n"
-                    f"pid={old.pid}\n"
-                    f"--- readiness ---\n{waited_output}\n"
-                    f"--- previous log tail ---\n{log_tail}\n"
-                    "--- cleanup ---\n"
-                    + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
-                    + "\n"
-                )
-            existing_pid, existing_cmd = find_existing_doosan_launch()
-            if existing_pid is not None and not restart_output:
-                cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
-                time.sleep(1.5)
-                restart_output = (
-                    "기존 Doosan bringup이 있으나 motion 서비스가 준비되지 않아 재연결합니다.\n"
-                    f"pid={existing_pid}\ncmd={existing_cmd[:500]}\n"
-                    f"--- readiness ---\n{ready_output}\n"
-                    "--- cleanup ---\n"
-                    + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
-                    + "\n"
-                )
-            if not restart_output:
-                cleanup_events = cleanup_doosan_stack()
-                # Give DDS/service discovery a short moment to forget killed duplicate nodes.
-                time.sleep(1.5)
-                restart_output = "\n".join(cleanup_events)
+        if step.key in {"connect_robot", "start_tmux_stack"}:
+            restart_output = (
+                "[Azas] tmux 통합 재연결: stop_azas_all.sh가 azas-logic tmux 세션을 종료하므로 "
+                "패널 서버가 tmux 밖에서 터미널과 같은 stop -> start 명령을 직접 실행합니다."
+            )
         elif step.key == "connect_gripper":
             cleanup_events = cleanup_rg2_stack()
             # DDS may keep stale service names briefly after a killed RG2 wrapper.
@@ -3981,17 +3882,21 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         log_handle.close()
         processes[step.key] = proc
         process_logs[step.key] = log_path
-        if step.key == "start_tmux_stack":
+        if step.key in {"start_tmux_stack", "connect_robot"}:
             try:
                 proc.wait(timeout=90.0)
             except subprocess.TimeoutExpired:
                 output = (
                     f"{cmd}\n--- log ---\n{log_path}\n"
-                    "tmux 연결 스택 스크립트가 90초 안에 종료되지 않았습니다.\n"
+                    "tmux 통합 재연결 명령이 90초 안에 종료되지 않았습니다.\n"
                     + tail_file(log_path, max_chars=8000)
                 )
+                if restart_output:
+                    output = f"{restart_output}\n--- start command ---\n{output}"
                 return {"key": step.key, "status": "starting", "pid": proc.pid, "output": output}
             output = f"{cmd}\n--- log ---\n{log_path}\n--- start output ---\n{tail_file(log_path, max_chars=10000)}"
+            if restart_output:
+                output = f"{restart_output}\n--- start command ---\n{output}"
             if proc.returncode != 0:
                 return {"key": step.key, "status": "failed", "returncode": proc.returncode, "output": output}
             return {
@@ -4000,84 +3905,12 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                 "pid": proc.pid,
                 "output": (
                     output
-                    + "\n[Azas] tmux 창 생성 성공. robot/gripper/camera/joint_relay는 각 tmux 창 로그를 기준으로 확인합니다. "
+                    + "\n[Azas] tmux 통합 재연결 명령 완료. robot/gripper/camera/joint_relay는 각 tmux 창 로그를 기준으로 확인합니다. "
                     "ROS CLI daemon/discovery 오류 때문에 이 단계에서 후속 조회로 차단하지 않습니다."
                 ),
             }
 
-            service_prefix = env["SERVICE_PREFIX"]
-            motion_ok, motion_output = real_motion_readiness_gate(
-                service_prefix,
-                motion_timeout_sec=45.0,
-            )
-            gripper_ok, gripper_output = wait_for_required_services(
-                ["/jarvis/rg2/open", "/jarvis/rg2/close", "/jarvis/rg2/set_width"],
-                timeout_sec=10.0,
-            )
-            camera_ok, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=12.0)
-            output += (
-                "\n--- robot readiness ---\n"
-                + motion_output
-                + "\n--- gripper readiness ---\n"
-                + gripper_output
-                + "\n--- camera readiness ---\n"
-                + camera_output
-            )
-            if motion_ok and gripper_ok and camera_ok:
-                return {"key": step.key, "status": "passed", "pid": proc.pid, "output": output}
-            return {
-                "key": step.key,
-                "status": "blocked",
-                "pid": proc.pid,
-                "output": (
-                    "tmux 창은 시작했지만 로봇/그리퍼/카메라 준비 조건이 완성되지 않았습니다. "
-                    "side-grip을 시작하지 않습니다.\n"
-                    + output
-                ),
-            }
-        if step.key == "connect_robot":
-            ready, waited_output = wait_for_motion_services_ready(
-                env["SERVICE_PREFIX"],
-                timeout_sec=35.0,
-                proc=proc,
-            )
-            if ready:
-                robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
-                output = f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}\n{robot_ready_output}"
-                if restart_output:
-                    output = f"{restart_output}\n--- start command ---\n{output}"
-                if robot_ready:
-                    return {
-                        "key": step.key,
-                        "status": "passed",
-                        "pid": proc.pid,
-                        "output": output,
-                    }
-                return {
-                    "key": step.key,
-                    "status": "blocked",
-                    "pid": proc.pid,
-                    "output": (
-                        "로봇 연결 프로세스는 시작됐고 motion 서비스도 보이지만 "
-                        "로봇이 STATE_STANDBY(1)가 아닙니다.\n"
-                        + output
-                    ),
-                }
-            if proc.poll() is None:
-                output = (
-                    f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}\n"
-                    "아직 시작 중입니다. 몇 초 뒤 '연결 확인'만 다시 눌러주세요."
-                )
-                if restart_output:
-                    output = f"{restart_output}\n--- start command ---\n{output}"
-                return {
-                    "key": step.key,
-                    "status": "starting",
-                    "pid": proc.pid,
-                    "output": output,
-                }
-        else:
-            time.sleep(2.0)
+        time.sleep(2.0)
         if proc.poll() is not None:
             output = tail_file(log_path)
             if restart_output:
