@@ -149,7 +149,8 @@ def detect_aruco_marker(
     parameters = _create_aruco_detector_parameters()
 
     # The lid marker appears small and oblique in the wrist-camera view. Try
-    # conservative contrast/scale variants while keeping dictionary/id strict.
+    # conservative contrast/scale variants, but keep the dictionary/id filter
+    # strict so a noisy table feature cannot become a false lid marker.
     best: ArucoMarker | None = None
     best_score = -1.0
     for candidate_gray, scale in _aruco_detection_images(gray):
@@ -212,6 +213,8 @@ def _tune_lid_aruco_detector_parameters(parameters):
     # The lid marker is small in the wrist-camera overview image and often seen
     # at an angle. Keep the expected marker-id filter strict, but make candidate
     # extraction and perspective sampling tolerant enough for the measured setup.
+    if parameters is None:
+        return None
     tuned_values = {
         "adaptiveThreshWinSizeMin": 3,
         "adaptiveThreshWinSizeMax": 53,

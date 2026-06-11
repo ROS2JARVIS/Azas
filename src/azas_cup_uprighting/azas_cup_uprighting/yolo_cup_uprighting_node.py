@@ -169,8 +169,8 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         self.picking = True
         try:
             # feature 브랜치의 핵심 목표인 홈 복귀 시퀀스 직접 호출
-            self._pick_and_return_home(bx, by, bz, cup_theta)
-        诚然:
+            return self._pick_and_return_home(bx, by, bz, cup_theta)
+        finally:
             self.picking = False
 
     def _pick_and_return_home(self, bx, by, bz, cup_theta):
@@ -205,19 +205,19 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
         # 1-1 단계 실패 시 예외 처리 및 탈출
         if not self.plan_pose(bx, by, safe_z, current_ori):
             log.error("[1-1] 상공 진입 실패. 시퀀스 중단.")
-            return
+            return False
         time.sleep(1.0)
 
         log.info("[1-2] 상공에서 파지 방향 정렬")
         if not self.plan_pose(bx, by, safe_z, target_ori):
             log.error("[1-2] 방향 정렬 실패. 시퀀스 중단.")
-            return
+            return False
         time.sleep(1.0)
 
         log.info("[2] 컵 파지 위치 하강")
         if not self.plan_pose(bx, by, pick_z, target_ori):
             log.error("[2] 파지 위치 하강 실패. 시퀀스 중단.")
-            return
+            return False
         
         self.gripper.close_gripper()
         log.info("[2] 그리퍼 클로즈 완료")
@@ -228,14 +228,16 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             log.error("[3] 리프트업 실패. 물체 탈락 위험으로 인한 안전 복구 가동.")
             self.gripper.open_gripper()
             log.info("=> 그리퍼 비상 강제 릴리즈 완료.")
-            return
+            return False
         time.sleep(1.0)
 
         log.info("[4] 홈 위치로 복귀 (파지 유지)")
         if self.go_home_pose():
             log.info("=> 홈 복귀 성공. 전체 구출 시퀀스 완수.")
+            return True
         else:
             log.error("=> [치명적] 파지는 완료했으나 관절 한계 혹은 충돌 궤적으로 인해 홈 복귀 실패.")
+            return False
 
 
 def main(args=None):
