@@ -505,4 +505,7 @@ def run_node(node_cls):
         node.run()
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # exit_after_pick 경로 등에서 컨텍스트가 이미 닫혀 있으면 재호출 시
+        # RuntimeError로 exit code 1이 되어 라우터가 실패로 오인한다.
+        if rclpy.ok():
+            rclpy.shutdown()

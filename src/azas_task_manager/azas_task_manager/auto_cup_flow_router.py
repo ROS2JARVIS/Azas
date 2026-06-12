@@ -98,8 +98,12 @@ class AutoCupFlowRouter(Node):
         )
         # 키오스크/음성 주문(latest_recipe.json) 없이 색을 직접 내릴 때: 예) "red:2,blue:1"
         self.declare_parameter("recipe_colors", "")
-        # 디스펜서 누르기 종료 후 컵홀더에 놓을 때 z를 더 낮추는 실측 보정값
-        self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
+        # 디스펜서 누르기 종료 후 디스펜서 앞의 컵을 마지막으로 재파지할 때 z 실측 보정값
+        self.declare_parameter("final_regrasp_z_offset_m", -0.02)
+        # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
+        self.declare_parameter("cup_holder_place_z_offset_m", -0.03)
+        self.declare_parameter("cup_holder_place_y_offset_m", 0.0)
+        self.declare_parameter("cup_holder_z_min_m", 0.08)
         self.declare_parameter("lid_shake_after_recipe", True)
         self.declare_parameter(
             "lid_shake_command",
@@ -485,8 +489,16 @@ class AutoCupFlowRouter(Node):
         if colors:
             command += f" --colors {shlex.quote(colors)}"
             self.get_logger().info(f"recipe colors given directly: {colors}")
+        regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
-        command += f" --cup-holder-place-final-z-offset-m {place_z}"
+        place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)
+        z_min = float(self.get_parameter("cup_holder_z_min_m").value)
+        command += (
+            f" --final-regrasp-extra-z-offset-m {regrasp_z}"
+            f" --cup-holder-place-final-z-offset-m {place_z}"
+            f" --cup-holder-place-final-y-offset-m {place_y}"
+            f" --cup-holder-z-min-m {z_min}"
+        )
         self.get_logger().info("pick flow succeeded; starting integrated dispenser recipe sequence")
         return self._run_process(["bash", "-c", command], "recipe")
 
@@ -632,18 +644,24 @@ class AutoCupFlowRouter(Node):
     def _forward_output(self, proc: subprocess.Popen[str], label: str) -> None:
         if proc.stdout is None:
             return
+        # 단계별 출력을 파일로도 남겨 실패 시 터미널 스크롤백 없이 진단할 수 있게 한다.
+        log_dir = "/tmp/azas_router_logs"
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"{label}_{time.strftime('%Y%m%d_%H%M%S')}_{proc.pid}.log")
         shutting_down = False
-        for line in proc.stdout:
-            text = line.rstrip()
-            self.get_logger().info(f"{label}> {text}")
-            if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
-                shutting_down = True
-            match = self._NODE_DIED_PATTERN.search(text)
-            # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)과
-            # 음수 exit code(시그널 종료)는 정상 정리 과정이므로 제외
-            if match and int(match.group("code")) > 0 and not shutting_down:
-                self._child_node_failures.setdefault(label, []).append(
-                    f"{match.group('node')} exit code {match.group('code')}")
+        with open(log_path, "w", encoding="utf-8", errors="replace") as log_file:
+            for line in proc.stdout:
+                text = line.rstrip()
+                self.get_logger().info(f"{label}> {text}")
+                log_file.write(text + "\n")
+                if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
+                    shutting_down = True
+                match = self._NODE_DIED_PATTERN.search(text)
+                # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)과
+                # 음수 exit code(시그널 종료)는 정상 정리 과정이므로 제외
+                if match and int(match.group("code")) > 0 and not shutting_down:
+                    self._child_node_failures.setdefault(label, []).append(
+                        f"{match.group('node')} exit code {match.group('code')}")
 
     def _stop_process(self, proc: Optional[subprocess.Popen[str]], label: str) -> None:
         if proc is None or proc.poll() is not None:
