@@ -118,6 +118,22 @@ def xyz_distance_mm(actual: list[float], target: list[float]) -> float:
     return sum((actual[index] - target[index]) ** 2 for index in range(3)) ** 0.5
 
 
+def normalize_deg_180(value: float) -> float:
+    """Return the equivalent angle inside [-180, 180)."""
+    return ((float(value) + 180.0) % 360.0) - 180.0
+
+
+def parse_int_list(value: str) -> list[int]:
+    result: list[int] = []
+    for part in str(value).split(","):
+        item = part.strip()
+        if item:
+            result.append(int(item))
+    if not result:
+        raise ValueError("empty integer list")
+    return result
+
+
 def wait_for_target(
     node: Any,
     prefix: str,
@@ -128,8 +144,15 @@ def wait_for_target(
 ) -> bool:
     deadline = time.monotonic() + max(timeout_sec, 0.1)
     last_line = ""
+    last_error = ""
     while time.monotonic() < deadline:
-        actual = current_posx(node, prefix, timeout_sec=5.0)
+        try:
+            actual = current_posx(node, prefix, timeout_sec=5.0)
+        except RuntimeError as exc:
+            last_error = str(exc)
+            print(f"[WARN] target verification GetCurrentPosx failed: {exc}; retrying")
+            time.sleep(1.0)
+            continue
         distance = xyz_distance_mm(actual, target_pos_mm_deg)
         last_line = (
             "[Azas] verify xyz="
@@ -144,6 +167,8 @@ def wait_for_target(
     print("[FAIL] target verification timeout")
     if last_line:
         print(last_line)
+    if last_error:
+        print(f"[Azas] last verification error: {last_error}")
     print(last_alarm_text(node, prefix, timeout_sec=5.0))
     return False
 
@@ -180,7 +205,12 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="number of /motion/ikin precheck attempts before failing closed",
     )
-    parser.add_argument("--ikin-sol-space", type=int, default=2, help="solution space used by --precheck-ikin")
+    parser.add_argument("--ikin-sol-space", type=int, default=2, help="first solution space used by --precheck-ikin")
+    parser.add_argument(
+        "--ikin-sol-spaces",
+        default="",
+        help="comma-separated solution spaces to try for --precheck-ikin; defaults to --ikin-sol-space only",
+    )
     parser.add_argument("--j5-min-deg", type=float, default=-135.0, help="safe lower limit for joint 5")
     parser.add_argument("--j5-max-deg", type=float, default=135.0, help="safe upper limit for joint 5")
     parser.add_argument("--service-prefix", default="", help="optional namespace before /motion/move_line")
@@ -269,41 +299,72 @@ def main() -> int:
         assert node is not None
 
         if args.precheck_ikin:
-            response = None
             attempts = max(int(args.ikin_retries), 1)
-            for attempt in range(1, attempts + 1):
-                req = Ikin.Request()
-                req.pos = pos_mm_deg
-                req.sol_space = int(args.ikin_sol_space)
-                req.ref = DR_BASE
-                try:
-                    response = call_service(
-                        node,
-                        Ikin,
-                        prefixed_service(args.service_prefix, "motion/ikin"),
-                        req,
-                        timeout_sec=max(args.ikin_timeout_sec, 0.1),
-                        label="Ikin",
-                    )
-                    break
-                except RuntimeError as exc:
-                    if attempt >= attempts:
-                        raise
-                    print(f"[WARN] Ikin attempt {attempt}/{attempts} failed: {exc}; retrying")
-                    time.sleep(1.0)
-            if not response.success:
-                print("[FAIL] Ikin returned success=false")
-                return 1
-            print("[Azas] Ikin precheck success: joints_deg=[" + ", ".join(f"{value:.1f}" for value in response.conv_posj) + "]")
-            if len(response.conv_posj) >= 5:
-                joint5 = float(response.conv_posj[4])
-                if not float(args.j5_min_deg) <= joint5 <= float(args.j5_max_deg):
+            sol_spaces = parse_int_list(args.ikin_sol_spaces) if args.ikin_sol_spaces else [int(args.ikin_sol_space)]
+            accepted_ikin = None
+            last_ikin_error = ""
+            for sol_space in sol_spaces:
+                response = None
+                for attempt in range(1, attempts + 1):
+                    req = Ikin.Request()
+                    req.pos = pos_mm_deg
+                    req.sol_space = int(sol_space)
+                    req.ref = DR_BASE
+                    try:
+                        response = call_service(
+                            node,
+                            Ikin,
+                            prefixed_service(args.service_prefix, "motion/ikin"),
+                            req,
+                            timeout_sec=max(args.ikin_timeout_sec, 0.1),
+                            label=f"Ikin(sol_space={sol_space})",
+                        )
+                        break
+                    except RuntimeError as exc:
+                        last_ikin_error = str(exc)
+                        if attempt >= attempts:
+                            print(f"[WARN] Ikin sol_space={sol_space} failed after {attempts} attempts: {exc}")
+                        else:
+                            print(f"[WARN] Ikin sol_space={sol_space} attempt {attempt}/{attempts} failed: {exc}; retrying")
+                            time.sleep(1.0)
+                if response is None:
+                    continue
+                if not response.success:
+                    print(f"[WARN] Ikin sol_space={sol_space} returned success=false")
+                    continue
+                normalized_joints = [normalize_deg_180(float(value)) for value in response.conv_posj]
+                print(
+                    f"[Azas] Ikin precheck success sol_space={sol_space}: joints_deg=["
+                    + ", ".join(f"{value:.1f}" for value in response.conv_posj)
+                    + "]"
+                )
+                if any(abs(float(raw) - norm) > 180.0 for raw, norm in zip(response.conv_posj, normalized_joints)):
                     print(
-                        f"[BLOCKED] Ikin predicted joint_5={joint5:.3f} deg outside "
-                        f"[{float(args.j5_min_deg):.3f}, {float(args.j5_max_deg):.3f}] deg; "
-                        "refusing MoveLine."
+                        "[Azas] Ikin equivalent joints normalized_deg=["
+                        + ", ".join(f"{value:.1f}" for value in normalized_joints)
+                        + "]"
                     )
+                if len(response.conv_posj) >= 5:
+                    joint5 = normalized_joints[4]
+                    if not float(args.j5_min_deg) <= joint5 <= float(args.j5_max_deg):
+                        last_ikin_error = (
+                            f"Ikin sol_space={sol_space} predicted joint_5={joint5:.3f} deg outside "
+                            f"[{float(args.j5_min_deg):.3f}, {float(args.j5_max_deg):.3f}] deg"
+                        )
+                        print(f"[WARN] {last_ikin_error}; trying next solution space")
+                        continue
+                accepted_ikin = (sol_space, normalized_joints)
+                break
+            if accepted_ikin is None:
+                if last_ikin_error:
+                    print(f"[BLOCKED] {last_ikin_error}; refusing MoveLine.")
                     return 2
+                print("[FAIL] Ikin did not return an acceptable solution")
+                return 1
+            print(
+                f"[PASS] Ikin accepted sol_space={accepted_ikin[0]} "
+                f"normalized_joints_deg=[{', '.join(f'{value:.1f}' for value in accepted_ikin[1])}]"
+            )
 
         client = node.create_client(MoveLine, move_service)
         if not client.wait_for_service(timeout_sec=max(args.wait_service_sec, 0.1)):

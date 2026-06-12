@@ -30,6 +30,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 
@@ -47,8 +48,16 @@ OVERLAY_TOPIC = "/azas/human_hand_detection/overlay"
 
 WRIST = 0
 PALM_LANDMARKS = (0, 5, 9, 13, 17)
+DEPTH_FALLBACK_LANDMARKS = (0, 5, 9, 13, 17, 1, 2)
 FINGER_TIPS = (8, 12, 16, 20)
 FINGER_PIPS = (6, 10, 14, 18)
+
+LOW_LATENCY_IMAGE_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
 
 
 # cv_bridge is avoided on purpose: the ROS humble build is ABI-incompatible
@@ -100,17 +109,21 @@ class HumanHandDetectionNode(Node):
         )
         self.landmarker = mp_vision.HandLandmarker.create_from_options(options)
 
-        self.point_pub = self.create_publisher(PointStamped, OUTPUT_TOPIC, 10)
+        self.point_pub = self.create_publisher(PointStamped, OUTPUT_TOPIC, LOW_LATENCY_IMAGE_QOS)
         self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
-        self.overlay_pub = self.create_publisher(Image, OVERLAY_TOPIC, 2) if args.show_overlay else None
+        self.overlay_pub = (
+            self.create_publisher(Image, OVERLAY_TOPIC, LOW_LATENCY_IMAGE_QOS)
+            if args.show_overlay else None
+        )
 
-        self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self.on_camera_info, 10)
-        self.create_subscription(Image, DEPTH_TOPIC, self.on_depth, 5)
-        self.create_subscription(Image, COLOR_TOPIC, self.on_color, 5)
+        self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self.on_camera_info, LOW_LATENCY_IMAGE_QOS)
+        self.create_subscription(Image, DEPTH_TOPIC, self.on_depth, LOW_LATENCY_IMAGE_QOS)
+        self.create_subscription(Image, COLOR_TOPIC, self.on_color, LOW_LATENCY_IMAGE_QOS)
 
         self.get_logger().info(
             "human hand detection ready (perception-only, no motion commands). "
             f"publishing stable open-hand target on {OUTPUT_TOPIC}; "
+            f"processing width <= {args.process_width_px}px; "
             f"stability: {args.stable_min_samples} samples within {args.stable_radius_m:.3f}m "
             f"over >= {args.stable_min_seconds:.2f}s"
         )
@@ -132,7 +145,8 @@ class HumanHandDetectionNode(Node):
             return
 
         color = image_msg_to_array(msg)
-        rgb = cv2.cvtColor(color, cv2.COLOR_BGR2RGB)
+        inference_bgr = self.resize_for_inference(color)
+        rgb = cv2.cvtColor(inference_bgr, cv2.COLOR_BGR2RGB)
         timestamp_ms = max(int(now * 1000.0), self.last_timestamp_ms + 1)
         self.last_timestamp_ms = timestamp_ms
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -154,7 +168,7 @@ class HumanHandDetectionNode(Node):
                 int(np.clip(np.mean([pixels[i][0] for i in PALM_LANDMARKS]), 0, width - 1)),
                 int(np.clip(np.mean([pixels[i][1] for i in PALM_LANDMARKS]), 0, height - 1)),
             )
-            depth_m = self.median_depth_m(palm_px)
+            depth_m, depth_px, depth_source = self.find_hand_depth_m(palm_px, pixels)
             status.update(
                 {
                     "detected": True,
@@ -162,12 +176,16 @@ class HumanHandDetectionNode(Node):
                     "hand_open": hand_open,
                     "palm_px": list(palm_px),
                     "depth_m": None if depth_m is None else round(depth_m, 4),
+                    "depth_px": None if depth_px is None else list(depth_px),
+                    "depth_source": depth_source,
                 }
             )
             if overlay is not None:
                 for px, py in pixels:
                     cv2.circle(overlay, (int(px), int(py)), 3, (0, 255, 0) if hand_open else (0, 165, 255), -1)
                 cv2.circle(overlay, palm_px, 8, (255, 0, 0), 2)
+                if depth_px is not None and depth_px != palm_px:
+                    cv2.circle(overlay, depth_px, 6, (0, 255, 255), 2)
 
             if not hand_open:
                 self.recent.clear()
@@ -191,15 +209,32 @@ class HumanHandDetectionNode(Node):
             if not stable:
                 return
 
+            self.publish_status(status)
             point = PointStamped()
-            point.header.stamp = msg.header.stamp
+            point.header.stamp = self.get_clock().now().to_msg()
             point.header.frame_id = msg.header.frame_id or "camera_color_optical_frame"
             point.point.x, point.point.y, point.point.z = xyz
             self.point_pub.publish(point)
         finally:
             self.publish_status(status)
             if overlay is not None and self.overlay_pub is not None:
-                self.overlay_pub.publish(bgr_array_to_image_msg(overlay, msg.header))
+                self.overlay_pub.publish(bgr_array_to_image_msg(self.resize_overlay_for_publish(overlay), msg.header))
+
+    def resize_for_inference(self, color: np.ndarray) -> np.ndarray:
+        target_width = int(self.args.process_width_px)
+        height, width = color.shape[:2]
+        if target_width <= 0 or width <= target_width:
+            return color
+        target_height = max(1, int(round(height * (target_width / width))))
+        return cv2.resize(color, (target_width, target_height), interpolation=cv2.INTER_AREA)
+
+    def resize_overlay_for_publish(self, overlay: np.ndarray) -> np.ndarray:
+        target_width = int(self.args.overlay_width_px)
+        height, width = overlay.shape[:2]
+        if target_width <= 0 or width <= target_width:
+            return overlay
+        target_height = max(1, int(round(height * (target_width / width))))
+        return cv2.resize(overlay, (target_width, target_height), interpolation=cv2.INTER_AREA)
 
     def count_extended_fingers(self, pixels: list[tuple[float, float]]) -> int:
         """A finger counts as extended when its tip is farther from the wrist than its PIP joint."""
@@ -212,11 +247,45 @@ class HumanHandDetectionNode(Node):
                 count += 1
         return count
 
-    def median_depth_m(self, palm_px: tuple[int, int]) -> float | None:
+    def find_hand_depth_m(
+        self,
+        palm_px: tuple[int, int],
+        pixels: list[tuple[float, float]],
+    ) -> tuple[float | None, tuple[int, int] | None, str]:
+        height, width = self.latest_depth.shape[:2]
+        candidates: list[tuple[str, tuple[int, int]]] = [("palm", palm_px)]
+        for idx in DEPTH_FALLBACK_LANDMARKS:
+            px = (
+                int(np.clip(pixels[idx][0], 0, width - 1)),
+                int(np.clip(pixels[idx][1], 0, height - 1)),
+            )
+            if px not in [item[1] for item in candidates]:
+                candidates.append((f"landmark_{idx}", px))
+
+        base_window = max(int(self.args.depth_window_px), 3)
+        max_window = max(int(self.args.max_depth_window_px), base_window)
+        window_sizes = []
+        size = base_window
+        while size <= max_window:
+            window_sizes.append(size)
+            size *= 2
+        if window_sizes[-1] != max_window:
+            window_sizes.append(max_window)
+
+        for window_px in window_sizes:
+            for source, px in candidates:
+                depth_m = self.median_depth_m(px, window_px)
+                if depth_m is not None:
+                    return depth_m, px, f"{source}@{window_px}px"
+        return None, None, "none"
+
+    def median_depth_m(self, palm_px: tuple[int, int], window_px: int | None = None) -> float | None:
         depth = self.latest_depth
         if depth is None:
             return None
-        half = max(int(self.args.depth_window_px) // 2, 1)
+        if window_px is None:
+            window_px = int(self.args.depth_window_px)
+        half = max(int(window_px) // 2, 1)
         y0 = max(palm_px[1] - half, 0)
         y1 = min(palm_px[1] + half + 1, depth.shape[0])
         x0 = max(palm_px[0] - half, 0)
@@ -258,11 +327,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model-path", default=DEFAULT_MODEL_PATH)
     parser.add_argument("--max-rate-hz", type=float, default=15.0)
+    parser.add_argument("--process-width-px", type=int, default=640,
+                        help="resize color frames to this width for MediaPipe inference; <=0 disables resizing")
+    parser.add_argument("--overlay-width-px", type=int, default=640,
+                        help="resize published overlay to this width for lower-latency viewing; <=0 keeps original")
     parser.add_argument("--min-detection-confidence", type=float, default=0.6)
     parser.add_argument("--min-tracking-confidence", type=float, default=0.6)
     parser.add_argument("--min-extended-fingers", type=int, default=4,
                         help="open-palm gate: required extended fingers out of 4 (thumb excluded)")
     parser.add_argument("--depth-window-px", type=int, default=7)
+    parser.add_argument("--max-depth-window-px", type=int, default=63,
+                        help="when palm depth is missing, retry larger windows and nearby hand landmarks")
     parser.add_argument("--min-depth-m", type=float, default=0.3)
     parser.add_argument("--max-depth-m", type=float, default=1.5)
     parser.add_argument("--stable-radius-m", type=float, default=0.05,

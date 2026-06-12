@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-# Perception-only human hand detection for the post-shake handover plan.
-# Publishes /azas/human_hand_detection (PointStamped, camera optical frame),
-# /azas/human_hand_detection/status (JSON), and an overlay image.
-# This NEVER sends a robot motion command (gate: no_motion_hri_perception_only).
-# Note: no `set -u`; ROS setup.bash references unset vars.
-set -eo pipefail
+# Run a ROS command with the Azas field defaults.
+# This avoids asking operators to remember ROS_DOMAIN_ID / DDS env exports.
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+set +u
 source /opt/ros/humble/setup.bash
+
+if [[ -f /home/ssu/ws_moveit/install/setup.bash ]]; then
+  source /home/ssu/ws_moveit/install/setup.bash
+fi
+if [[ -f /home/ssu/ros2_ws/install/setup.bash ]]; then
+  source /home/ssu/ros2_ws/install/setup.bash
+fi
 if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
   source "${ROOT_DIR}/install/setup.bash"
 fi
+set -u
 
 export ROS_DOMAIN_ID="${AZAS_ROS_DOMAIN_ID:-9}"
 export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
 export FASTDDS_BUILTIN_TRANSPORTS="${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
 export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/azas_mpl_config}"
 
-exec python3 "${ROOT_DIR}/tools/perception/human_hand_detection_node.py" "$@"
+exec "$@"
