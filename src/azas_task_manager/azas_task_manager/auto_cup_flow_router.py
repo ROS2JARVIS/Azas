@@ -102,6 +102,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("final_regrasp_z_offset_m", -0.02)
         # 잡기 직전 pre 위치(cup_place 기준 X offset) 보정값. 스크립트 기본 -0.09에 -30mm 추가
         self.declare_parameter("cup_pre_from_place_x_offset_m", -0.12)
+        self.declare_parameter("dispenser_3_cup_pre_extra_x_offset_m", -0.01)
         # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
         self.declare_parameter("cup_holder_place_z_offset_m", -0.03)
         self.declare_parameter("cup_holder_place_y_offset_m", 0.0)
@@ -493,6 +494,8 @@ class AutoCupFlowRouter(Node):
             self.get_logger().info(f"recipe colors given directly: {colors}")
         cup_pre_x = float(self.get_parameter("cup_pre_from_place_x_offset_m").value)
         command += f" --cup-pre-from-place-x-offset-m {cup_pre_x}"
+        dispenser_3_pre_x = float(self.get_parameter("dispenser_3_cup_pre_extra_x_offset_m").value)
+        command += f" --dispenser-3-cup-pre-extra-x-offset-m {dispenser_3_pre_x}"
         regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
         place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)

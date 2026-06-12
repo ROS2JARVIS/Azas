@@ -61,6 +61,10 @@ VISIBLE_HANDLE_HSV_RANGES = {
     "green": ((40, 60, 50, 85, 255, 255),),
     "blue": ((85, 80, 60, 130, 255, 255),),
 }
+HANDLE_CENTER_Y_MIN_FRACTION = 0.16
+HANDLE_CENTER_Y_MAX_FRACTION = 0.38
+MIN_HANDLE_HEIGHT_OVER_WIDTH = 0.45
+MAX_HANDLE_ROW_STD_FRACTION = 0.045
 
 
 def write_json_immediately(path: Path, payload: dict[str, str]) -> None:
@@ -206,17 +210,23 @@ def detect_visible_handle_color_map(
         for contour in contours:
             area = float(cv2.contourArea(contour))
             x, y, w, h = cv2.boundingRect(contour)
+            center_x = float(x) + float(w) * 0.5
+            center_y = float(y) + float(h) * 0.5
             # Booth-specific visual gate: handles are vertical colored blobs in
             # the upper/middle image, not the operator clothes, chairs, or cup.
             if area < min_area or w < min_w or h < min_h or w > max_w or h > max_h:
                 continue
-            if not (0.06 * img_h <= y <= 0.42 * img_h):
+            if float(h) / float(max(w, 1)) < MIN_HANDLE_HEIGHT_OVER_WIDTH:
                 continue
-            if not (0.25 * img_w <= x <= 0.90 * img_w):
+            if not (
+                HANDLE_CENTER_Y_MIN_FRACTION * img_h
+                <= center_y
+                <= HANDLE_CENTER_Y_MAX_FRACTION * img_h
+            ):
+                continue
+            if not (0.25 * img_w <= center_x <= 0.90 * img_w):
                 continue
             score = area + float(h) * 10.0
-            center_x = float(x) + float(w) * 0.5
-            center_y = float(y) + float(h) * 0.5
             color_candidates.append((score, color, x, y, w, h, area, center_x, center_y))
         color_candidates.sort(key=lambda item: item[0], reverse=True)
         if color_candidates:
@@ -242,6 +252,8 @@ def detect_visible_handle_color_map(
         centers_y = [item[8] for item in combo]
         mean_y = sum(centers_y) / float(len(centers_y))
         row_std = math.sqrt(sum((y - mean_y) ** 2 for y in centers_y) / float(len(centers_y)))
+        if row_std > max(12.0, MAX_HANDLE_ROW_STD_FRACTION * img_h):
+            continue
         area_score = sum(item[6] for item in combo)
         score = area_score - 200.0 * row_std
         if best_combo is None or score > best_combo[0]:

@@ -105,7 +105,7 @@ launch_args=(
   lid_twist_force_settle_seconds:=0.2 lid_twist_force_release_time:=0.2 \
   lid_twist_preseat_periodic_before_turn:=true lid_twist_preseat_mode:=j6_step_wiggle \
   lid_twist_preseat_periodic_descend_m:=0.02 lid_twist_preseat_step_m:=0.005 \
-  lid_twist_preseat_wiggle_deg:=10.0 lid_twist_preseat_wiggle_velocity:=50.0 lid_twist_preseat_down_velocity:=8.0 \
+  lid_twist_preseat_wiggle_deg:=60.0 lid_twist_preseat_wiggle_velocity:=50.0 lid_twist_preseat_down_velocity:=8.0 \
   lid_twist_rz_delta_deg:=360.0 lid_twist_turn_step_deg:=60.0 \
   lid_twist_release_lift_m:=0.03 lid_twist_min_z_m:=0.140 lid_twist_max_z_m:=0.260 \
   lid_twist_transfer_velocity:=25.0 lid_twist_press_velocity:=10.0 lid_twist_turn_velocity:=40.0 lid_twist_acceleration:=15.0 \
