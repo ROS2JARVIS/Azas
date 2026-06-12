@@ -369,6 +369,8 @@ def main() -> int:
     )
     parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.030")
     parser.add_argument("--cup-holder-place-final-y-offset-m", default="-0.010")
+    parser.add_argument("--cup-holder-z-min-m", default="0.08",
+                        help="컵홀더 place 목표 z 안전 하한. place z offset을 크게 낮출 때 함께 내려야 함")
     parser.add_argument("--cup-holder-approach-velocity", default="80.0")
     parser.add_argument("--cup-holder-approach-acceleration", default="20.0")
     parser.add_argument("--cup-holder-place-velocity", default="80.0")
@@ -450,6 +452,7 @@ def main() -> int:
         "--gripper-settle-seconds", str(args.gripper_settle_seconds),
         "--cup-holder-place-final-z-offset-m", str(args.cup_holder_place_final_z_offset_m),
         "--cup-holder-place-final-y-offset-m", str(args.cup_holder_place_final_y_offset_m),
+        "--cup-holder-z-min-m", str(args.cup_holder_z_min_m),
         "--cup-holder-approach-velocity", str(args.cup_holder_approach_velocity),
         "--cup-holder-approach-acceleration", str(args.cup_holder_approach_acceleration),
         "--cup-holder-place-velocity", str(args.cup_holder_place_velocity),
