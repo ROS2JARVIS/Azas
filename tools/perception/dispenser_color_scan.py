@@ -42,6 +42,13 @@ CAMERA_INFO_TOPIC = "/camera/camera/color/camera_info"
 BASE_FRAME = "base_link"
 EE_LINK = "link_6"
 CROP_HALF_PX = 60  # half-side of crop box around projected pixel
+# Visible-handle detection can transiently miss a handle (operator arm in
+# frame); keep retrying on fresh frames for this long before TF fallback.
+VISIBLE_RETRY_SEC = 6.0
+# TF projection this far outside the frame means stale extrinsics, not a
+# handle "just off-screen"; edge-crop classification there is confidently
+# wrong (e.g. everything "blue" from the chair/arm strip), so report unknown.
+EDGE_CLAMP_MAX_PX = 40
 
 
 # HSV ranges for the physical dispenser handle colors in the current booth.
@@ -54,6 +61,10 @@ VISIBLE_HANDLE_HSV_RANGES = {
     "green": ((40, 60, 50, 85, 255, 255),),
     "blue": ((85, 80, 60, 130, 255, 255),),
 }
+HANDLE_CENTER_Y_MIN_FRACTION = 0.16
+HANDLE_CENTER_Y_MAX_FRACTION = 0.38
+MIN_HANDLE_HEIGHT_OVER_WIDTH = 0.45
+MAX_HANDLE_ROW_STD_FRACTION = 0.045
 
 
 def write_json_immediately(path: Path, payload: dict[str, str]) -> None:
@@ -199,17 +210,23 @@ def detect_visible_handle_color_map(
         for contour in contours:
             area = float(cv2.contourArea(contour))
             x, y, w, h = cv2.boundingRect(contour)
+            center_x = float(x) + float(w) * 0.5
+            center_y = float(y) + float(h) * 0.5
             # Booth-specific visual gate: handles are vertical colored blobs in
             # the upper/middle image, not the operator clothes, chairs, or cup.
             if area < min_area or w < min_w or h < min_h or w > max_w or h > max_h:
                 continue
-            if not (0.06 * img_h <= y <= 0.42 * img_h):
+            if float(h) / float(max(w, 1)) < MIN_HANDLE_HEIGHT_OVER_WIDTH:
                 continue
-            if not (0.25 * img_w <= x <= 0.90 * img_w):
+            if not (
+                HANDLE_CENTER_Y_MIN_FRACTION * img_h
+                <= center_y
+                <= HANDLE_CENTER_Y_MAX_FRACTION * img_h
+            ):
+                continue
+            if not (0.25 * img_w <= center_x <= 0.90 * img_w):
                 continue
             score = area + float(h) * 10.0
-            center_x = float(x) + float(w) * 0.5
-            center_y = float(y) + float(h) * 0.5
             color_candidates.append((score, color, x, y, w, h, area, center_x, center_y))
         color_candidates.sort(key=lambda item: item[0], reverse=True)
         if color_candidates:
@@ -235,6 +252,8 @@ def detect_visible_handle_color_map(
         centers_y = [item[8] for item in combo]
         mean_y = sum(centers_y) / float(len(centers_y))
         row_std = math.sqrt(sum((y - mean_y) ** 2 for y in centers_y) / float(len(centers_y)))
+        if row_std > max(12.0, MAX_HANDLE_ROW_STD_FRACTION * img_h):
+            continue
         area_score = sum(item[6] for item in combo)
         score = area_score - 200.0 * row_std
         if best_combo is None or score > best_combo[0]:
@@ -383,15 +402,31 @@ def scan_from_ros(
         f"settle_sec={settle_sec:.2f} sample_frames={frame_count} size={frame_bgr.shape[1]}x{frame_bgr.shape[0]}"
     )
     if visible_handle_fallback:
-        visible_map = detect_visible_handle_color_map(
-            frame_bgr,
-            dispenser_ids,
-            debug_image_path=debug_image_path,
-        )
-        if visible_map is not None:
-            node.destroy_node()
-            rclpy.shutdown()
-            return visible_map
+        # 한 프레임만 보면 일시적 가림(작업자 팔 등)으로 핸들 하나가 빠져
+        # 4/4 검출 전체가 버려지고 TF 투영으로 떨어진다. 새 프레임을 받아
+        # 잠시 재시도해서 일시적 가림을 흡수한다.
+        retry_deadline = time.time() + VISIBLE_RETRY_SEC
+        seen_count = frame_count
+        while True:
+            visible_map = detect_visible_handle_color_map(
+                frame_bgr,
+                dispenser_ids,
+                debug_image_path=debug_image_path,
+            )
+            if visible_map is not None:
+                node.destroy_node()
+                rclpy.shutdown()
+                return visible_map
+            while rclpy.ok() and time.time() < retry_deadline and frame_count == seen_count:
+                rclpy.spin_once(node, timeout_sec=0.1)
+            if frame_count == seen_count:
+                print(
+                    f"[dispenser_color_scan] visible-handle detection failed for {VISIBLE_RETRY_SEC:.0f}s; "
+                    "using TF projection",
+                    file=sys.stderr,
+                )
+                break
+            seen_count = frame_count
 
     T_gripper2cam = load_hand_eye()
     if T_gripper2cam is None:
@@ -454,6 +489,15 @@ def scan_from_ros(
             if clamp_out_of_frame:
                 clamped_u = min(max(u, 0), img_w - 1)
                 clamped_v = min(max(v, 0), img_h - 1)
+                overshoot = max(abs(u - clamped_u), abs(v - clamped_v))
+                if overshoot > EDGE_CLAMP_MAX_PX:
+                    print(
+                        f"[dispenser_color_scan] dispenser {did}: projected pixel ({u},{v}) is "
+                        f"{overshoot}px outside frame {img_w}x{img_h} (stale extrinsics?); fallback unknown",
+                        file=sys.stderr,
+                    )
+                    color_map[did] = "unknown"
+                    continue
                 x1 = max(0, clamped_u - CROP_HALF_PX)
                 x2 = min(img_w, clamped_u + CROP_HALF_PX)
                 y1 = max(0, clamped_v - CROP_HALF_PX)

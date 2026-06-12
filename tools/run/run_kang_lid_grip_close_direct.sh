@@ -46,7 +46,7 @@ echo "[Azas] OpenCV window: confirm lid ArUco, then press p. Quit with q/Esc."
 echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
 echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS}"
 echo "[Azas] aruco=${ARUCO_DICTIONARY}:${ARUCO_MARKER_ID} fallback=${ARUCO_FALLBACK_MARKERS} length_m=${ARUCO_MARKER_LENGTH_M}"
-echo "[Azas] note: use_j6_yaw_for_pick/pick_j6_* are not supported by this Azas launch; using supported ArUco-axis orientation parameters."
+echo "[Azas] orientation: use_j6_yaw_for_pick=true (pick_j6_yaw_axis=y sign=-1.0 offset=1.2deg), preseat=j6_step_wiggle"
 
 if [[ ! -f "${MODEL_PATH}" ]]; then
   echo "[Azas][WARN] model_path not found: ${MODEL_PATH}"
@@ -79,7 +79,10 @@ launch_args=(
   aruco_dictionary:="${ARUCO_DICTIONARY}" aruco_marker_id:="${ARUCO_MARKER_ID}" \
   aruco_marker_length_m:="${ARUCO_MARKER_LENGTH_M}" \
   use_aruco_axis_for_orientation:=true aruco_finger_axis_quarter_turns:=0 \
-  use_lid_pose_yaw_for_pick:=false lid_pose_yaw_axis:=y lid_pose_yaw_offset_deg:=0.0 lid_pose_yaw_equivalence_deg:=360.0 \
+  use_lid_pose_yaw_for_pick:=false \
+  use_j6_yaw_for_pick:=true pick_j6_yaw_axis:=y pick_j6_yaw_sign:=-1.0 \
+  pick_j6_yaw_offset_deg:=1.2 pick_j6_yaw_equivalence_deg:=360.0 pick_j6_yaw_tolerance_deg:=1.0 \
+  pick_j6_velocity:=30.0 pick_j6_acceleration:=15.0 \
   visual_refine_before_grasp:=true visual_refine_sample_count:=5 visual_refine_timeout_sec:=3.0 visual_refine_max_yaw_std_deg:=5.0 \
   visual_refine_max_position_std_m:=0.005 visual_refine_apply_xy:=true visual_refine_apply_yaw:=true visual_refine_fallback_to_initial_plan:=true \
   enable_hardware:=true hardware_confirm:=ENABLE_REAL_ROBOT_MOTION allow_service_control_without_moveit:=true service_prefix:="${SERVICE_PREFIX}" \
@@ -95,15 +98,15 @@ launch_args=(
   enable_lid_twist_after_grasp:=true \
   lid_twist_target_x_m:=0.422959106 lid_twist_target_y_m:=0.223224869 lid_twist_target_z_m:=0.166827988 \
   lid_twist_rx:=73.901489 lid_twist_ry:=-178.542740 lid_twist_rz:=117.385612 \
-  lid_twist_transfer_clearance_m:=0.20 lid_twist_transfer_max_z_m:=0.60 \
+  lid_twist_transfer_clearance_m:=0.10 lid_twist_transfer_max_z_m:=0.60 \
   lid_twist_use_force_control:=false lid_twist_use_force_spiral:=true lid_twist_force_rotation_mode:=j6 \
+  lid_twist_press_down_m:=0.0 \
   lid_twist_down_force_n:=2.0 lid_twist_force_ref:=base lid_twist_force_service_timeout_sec:=20.0 \
   lid_twist_force_settle_seconds:=0.2 lid_twist_force_release_time:=0.2 \
-  lid_twist_preseat_periodic_before_turn:=true \
-  lid_twist_preseat_periodic_x_amp_mm:=0.0 lid_twist_preseat_periodic_y_amp_mm:=0.0 lid_twist_preseat_periodic_z_amp_mm:=1.0 \
-  lid_twist_preseat_periodic_rx_amp_deg:=0.0 lid_twist_preseat_periodic_ry_amp_deg:=0.0 lid_twist_preseat_periodic_rz_amp_deg:=10.0 \
-  lid_twist_preseat_periodic_period_sec:=3.6 lid_twist_preseat_periodic_acc_time_sec:=1.0 lid_twist_preseat_periodic_repeat:=2 \
-  lid_twist_preseat_periodic_ref:=tool lid_twist_rz_delta_deg:=360.0 lid_twist_turn_step_deg:=60.0 \
+  lid_twist_preseat_periodic_before_turn:=true lid_twist_preseat_mode:=j6_step_wiggle \
+  lid_twist_preseat_periodic_descend_m:=0.02 lid_twist_preseat_step_m:=0.005 \
+  lid_twist_preseat_wiggle_deg:=60.0 lid_twist_preseat_wiggle_velocity:=50.0 lid_twist_preseat_down_velocity:=8.0 \
+  lid_twist_rz_delta_deg:=360.0 lid_twist_turn_step_deg:=60.0 \
   lid_twist_release_lift_m:=0.03 lid_twist_min_z_m:=0.140 lid_twist_max_z_m:=0.260 \
   lid_twist_transfer_velocity:=25.0 lid_twist_press_velocity:=10.0 lid_twist_turn_velocity:=40.0 lid_twist_acceleration:=15.0 \
   lid_twist_hold_seconds_before_turn:=0.2 lid_twist_hold_seconds_after_turn:=0.5 \

@@ -102,6 +102,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("final_regrasp_z_offset_m", -0.02)
         # 잡기 직전 pre 위치(cup_place 기준 X offset) 보정값. 스크립트 기본 -0.09에 -30mm 추가
         self.declare_parameter("cup_pre_from_place_x_offset_m", -0.12)
+        self.declare_parameter("dispenser_3_cup_pre_extra_x_offset_m", -0.01)
         # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
         self.declare_parameter("cup_holder_place_z_offset_m", -0.03)
         self.declare_parameter("cup_holder_place_y_offset_m", 0.0)
@@ -493,6 +494,8 @@ class AutoCupFlowRouter(Node):
             self.get_logger().info(f"recipe colors given directly: {colors}")
         cup_pre_x = float(self.get_parameter("cup_pre_from_place_x_offset_m").value)
         command += f" --cup-pre-from-place-x-offset-m {cup_pre_x}"
+        dispenser_3_pre_x = float(self.get_parameter("dispenser_3_cup_pre_extra_x_offset_m").value)
+        command += f" --dispenser-3-cup-pre-extra-x-offset-m {dispenser_3_pre_x}"
         regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
         place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)
@@ -661,9 +664,9 @@ class AutoCupFlowRouter(Node):
                 if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
                     shutting_down = True
                 match = self._NODE_DIED_PATTERN.search(text)
-                # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)과
-                # 음수 exit code(시그널 종료)는 정상 정리 과정이므로 제외
-                if match and int(match.group("code")) > 0 and not shutting_down:
+                # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)만 정상 정리로
+                # 간주한다. 종료 신호 전이라면 음수 exit code(SIGSEGV -11 등)도 실패다.
+                if match and not shutting_down:
                     self._child_node_failures.setdefault(label, []).append(
                         f"{match.group('node')} exit code {match.group('code')}")
 

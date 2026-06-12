@@ -82,6 +82,7 @@ JOINT_TARGET_POLL_SEC="${JOINT_TARGET_POLL_SEC:-0.05}"
 REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE="${REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE:-true}"
 STATE_VALIDITY_SERVICE="${STATE_VALIDITY_SERVICE:-/check_state_validity}"
 PLANNING_GROUP="${PLANNING_GROUP:-manipulator}"
+REAL_ROBOT_MOTION_CONFIRM="${REAL_ROBOT_MOTION_CONFIRM:-${SHAKE_REAL_MOTION_CONFIRM:-}}"
 
 echo "[Azas] SHAKE START 설명: 컵홀더에 놓인 닫힌 컵을 side grip으로 다시 잡은 뒤 흔드는 단계입니다."
 echo "[Azas] 순서: 컵홀더 place 완료 확인 -> 컵홀더 측정 pose로 RG2 side-grip 픽업 -> 들어 올림 -> 관절 쉐이킹 실행."
@@ -259,7 +260,14 @@ else
   echo "  - lifted shake volume is clear around x=${SHAKE_CENTER_X}, y=${SHAKE_CENTER_Y}, z=${SHAKE_CENTER_Z}"
 fi
 echo
-read -r -p "Type ENABLE_REAL_ROBOT_MOTION to continue: " CONFIRM
+CONFIRM="${REAL_ROBOT_MOTION_CONFIRM}"
+if [[ -n "${CONFIRM}" ]]; then
+  echo "[Azas] Using non-interactive real-motion confirmation from environment."
+else
+  if ! read -r -p "Type ENABLE_REAL_ROBOT_MOTION to continue: " CONFIRM; then
+    CONFIRM=""
+  fi
+fi
 if [[ "${CONFIRM}" != "ENABLE_REAL_ROBOT_MOTION" ]]; then
   echo "[Azas] Confirmation did not match. Refusing real robot shake."
   exit 1

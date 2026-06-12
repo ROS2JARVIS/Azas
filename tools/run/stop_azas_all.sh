@@ -22,9 +22,9 @@ CLEAN_FASTDDS_SHM="${CLEAN_FASTDDS_SHM:-1}"
 SESSIONS="${SESSIONS:-azas-logic azas-rviz-exact}"
 GRACE_SEC="${GRACE_SEC:-6}"
 
-ROS_PATTERN='run_doosan_real_m0609\.sh|dsr_bringup2|run_emulator|/DRCF|ros2_control_node|robot_state_publisher|move_group|rviz2|rg2_trigger|rg2_gripper_node|rs_launch\.py|realsense2_camera_node|joint_state_relay\.py|yolo_cup_pick_node|hand_eye_static_tf_node|static_transform_publisher|link6_gripper_collision_node|measured_dispenser_collision_scene_node|collision_scene_rviz_publisher\.py|publish_color_recipe_sequence_rviz_preview\.py|publish_collision_scene_rviz\.py|lid_sticker_detector_node|lid_grip_planner_node|lid_detection_pose_bridge_node|dispenser_sequence|run_changhyun_side_grip_direct\.sh|run_kang_lid_grip_close_direct\.sh|run_somyeong_cup_uprighting_direct\.sh|run_tmux_logic_sequence\.sh|run_color_recipe_sequence\.py|run_measured_dispenser_recipe_sequence\.py|run_minimal_dispenser_cycle\.py|/opt/ros/humble/bin/ros2 |ros2cli\.daemon'
+ROS_PATTERN='run_doosan_real_m0609\.sh|dsr_bringup2|run_emulator|/DRCF|ros2_control_node|robot_state_publisher|move_group|rviz2|rg2_trigger|rg2_gripper_node|rs_launch\.py|realsense2_camera_node|joint_state_relay\.py|yolo_cup_pick_node|hand_eye_static_tf_node|static_transform_publisher|link6_gripper_collision_node|measured_dispenser_collision_scene_node|workspace_collision_scene_node|yolo_cup_uprighting|collision_scene_rviz_publisher\.py|publish_color_recipe_sequence_rviz_preview\.py|publish_collision_scene_rviz\.py|lid_sticker_detector_node|lid_grip_planner_node|lid_detection_pose_bridge_node|dispenser_sequence|run_changhyun_side_grip_direct\.sh|run_kang_lid_grip_close_direct\.sh|run_somyeong_cup_uprighting_direct\.sh|run_tmux_logic_sequence\.sh|run_color_recipe_sequence\.py|run_measured_dispenser_recipe_sequence\.py|run_minimal_dispenser_cycle\.py|/opt/ros/humble/bin/ros2 |ros2cli\.daemon'
 
-PROTECT_PATTERN='codex|oh-my-codex|omx|claude|bwrap|stop_azas_all\.sh|(^|[ /])tmux( |$|:)'
+PROTECT_PATTERN='codex|oh-my-codex|omx|claude|bwrap|stop_azas_all\.sh|grep -E|(^|[ /])tmux( |$|:)'
 if [[ "${KILL_PANEL}" != "1" && "${KILL_PANEL}" != "true" ]]; then
   PROTECT_PATTERN="${PROTECT_PATTERN}|robot_pipeline_control_server\.py|run_robot_pipeline_control_panel\.sh"
 fi
