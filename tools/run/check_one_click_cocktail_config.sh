@@ -89,6 +89,7 @@ try:
             raise ValueError(f"dispenser_outlets.{dispenser_id} missing in {calibration_path}")
         require_list(outlet, "press_pose_xyz_m", 3, f"dispenser_outlets.{dispenser_id}")
         require_list(outlet, "press_pose_rpy_deg", 3, f"dispenser_outlets.{dispenser_id}")
+        require_list(outlet, "press_pre_joints_deg", 6, f"dispenser_outlets.{dispenser_id}")
         require_list(outlet, "press_contact_joints_deg", 6, f"dispenser_outlets.{dispenser_id}")
 
     grouped: list[tuple[str, int]] = []

@@ -1,10 +1,6 @@
 # Wiki Index
 
-> 6 pages | Last updated: 2026-06-10T16:48:48+09:00
-
-## operation-rules
-
-- [Robot Operation Rules](robot-operation-rules.md) — Real robot motion checks must not be replaced by dry-run commands; D1-D4 press contacts are saved and confirmed.
+> 8 pages | Last updated: 2026-06-11T23:23:12.255Z
 
 ## session-log
 
@@ -13,3 +9,6 @@
 - [Session Log 2026-05-28](session-log-2026-05-28-3-adlm15.md) — # Session Log 2026-05-28
 - [Session Log 2026-06-05](session-log-2026-06-05-8-3rrp4t.md) — # Session Log 2026-06-05
 - [Session Log 2026-06-07](session-log-2026-06-07-9-5l0d8p.md) — # Session Log 2026-06-07
+- [Session Log 2026-06-10](session-log-2026-06-10-7-prx6mu.md) — # Session Log 2026-06-10
+- [Session Log 2026-06-11](session-log-2026-06-11-5-rp8btb.md) — # Session Log 2026-06-11
+- [Session Log 2026-06-11](session-log-2026-06-11-6-dnt3rj.md) — # Session Log 2026-06-11

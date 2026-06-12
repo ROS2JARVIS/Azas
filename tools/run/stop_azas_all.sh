@@ -39,8 +39,11 @@ self_and_ancestors() {
 PROTECTED_PIDS=" $(self_and_ancestors | tr '\n' ' ') "
 
 collect_pids() {
-  ps -eo pid=,args= | grep -E "${ROS_PATTERN}" | grep -Ev "${PROTECT_PATTERN}" \
-    | while read -r pid args; do
+  ps -eo pid=,stat=,args= | grep -E "${ROS_PATTERN}" | grep -Ev "${PROTECT_PATTERN}" \
+    | while read -r pid stat args; do
+        # Defunct children cannot be killed; counting them as live ROS processes
+        # prevents FastDDS SHM cleanup and makes reconnect look stuck.
+        [[ "${stat}" == Z* ]] && continue
         [[ "${PROTECTED_PIDS}" == *" ${pid} "* ]] && continue
         echo "${pid}"
       done

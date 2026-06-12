@@ -1,8 +1,16 @@
 from copy import deepcopy
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    EmitEvent,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    RegisterEventHandler,
+)
 from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -167,16 +175,15 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
         )
     )
 
-    nodes.append(
-        Node(
-            package="dsr_practice",
-            executable="yolo_cup_pick_node",
-            output="screen",
-            parameters=[
-                runtime_moveit_params,
-                moveit_py_params,
-                side_prepose_params,
-                {
+    yolo_node = Node(
+        package="dsr_practice",
+        executable="yolo_cup_pick_node",
+        output="screen",
+        parameters=[
+            runtime_moveit_params,
+            moveit_py_params,
+            side_prepose_params,
+            {
                     "model_path": ParameterValue(
                         LaunchConfiguration("model_path"),
                         value_type=str,
@@ -218,6 +225,9 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     ),
                     "side_stage_y_min": LaunchConfiguration("side_stage_y_min"),
                     "side_stage_y_max": LaunchConfiguration("side_stage_y_max"),
+                    "side_target_x_offset_m": LaunchConfiguration(
+                        "side_target_x_offset_m"
+                    ),
                     "side_grasp_offset": LaunchConfiguration("side_grasp_offset"),
                     "side_grasp_z_offset": LaunchConfiguration("side_grasp_z_offset"),
                     "side_grasp_stop_backoff_m": LaunchConfiguration(
@@ -368,8 +378,22 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "place_y": LaunchConfiguration("place_y"),
                     "place_z": LaunchConfiguration("place_z"),
                     "auto_pick": LaunchConfiguration("auto_pick"),
-                },
-            ],
+            },
+        ],
+    )
+    nodes.append(yolo_node)
+    nodes.append(
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=yolo_node,
+                on_exit=[
+                    EmitEvent(
+                        event=Shutdown(
+                            reason="yolo_cup_pick_node exited; stopping helper nodes"
+                        )
+                    )
+                ],
+            )
         )
     )
     return nodes
@@ -471,6 +495,11 @@ def generate_launch_description():
         default_value="0.35",
         description="Maximum preferred base_link Y for side staging; side direction is flipped if the configured direction leaves this range.",
     )
+    side_target_x_offset_m_arg = DeclareLaunchArgument(
+        "side_target_x_offset_m",
+        default_value="0.0",
+        description="Planning-only base_link X compensation added to side-grip cup targets after vision/refinement.",
+    )
     side_grasp_offset_arg = DeclareLaunchArgument(
         "side_grasp_offset", default_value="0.035"
     )
@@ -571,10 +600,10 @@ def generate_launch_description():
     )
     link6_gripper_collision_enabled_arg = DeclareLaunchArgument(
         "link6_gripper_collision_enabled",
-        default_value="true",
+        default_value="false",
         description=(
-            "Publish the RG2/link_6 attached collision envelope so MoveIt plans "
-            "with the mounted gripper, not only the bare robot flange."
+            "Legacy attached RG2/link_6 box envelope. Keep false when the "
+            "mesh-based RG2 is already in the MoveIt URDF."
         ),
     )
     table_collision_enabled_arg = DeclareLaunchArgument(
@@ -841,6 +870,7 @@ def generate_launch_description():
             side_short_stage_backoff_m_arg,
             side_stage_y_min_arg,
             side_stage_y_max_arg,
+            side_target_x_offset_m_arg,
             side_grasp_offset_arg,
             side_grasp_z_offset_arg,
             side_grasp_stop_backoff_m_arg,

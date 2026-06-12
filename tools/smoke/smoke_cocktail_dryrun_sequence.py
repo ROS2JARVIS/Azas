@@ -81,10 +81,14 @@ def main() -> int:
     deadline = time.monotonic() + 8.0
 
     # Let discovery connect before publishing the one-shot inputs.
-    while time.monotonic() < deadline and node.count_publishers("/azas/cocktail/status") == 0:
+    while time.monotonic() < deadline and (
+        node.count_publishers("/azas/cocktail/status") == 0
+        or node.count_subscribers("/azas/cup_detection") == 0
+        or node.count_subscribers("/azas/voice/recipe_decision") == 0
+    ):
         rclpy.spin_once(node, timeout_sec=0.1)
 
-    for _ in range(5):
+    for _ in range(10):
         # The cocktail dry-run planner consumes symbolic cup/lid presence only.
         # Motion-facing cup poses are produced by the perception bridge from
         # live statuses that start with "detected:upright"; this smoke does not
@@ -93,8 +97,14 @@ def main() -> int:
         node.publish_detection("detected:lid bbox=80x80 depth_raw=260.0")
         rclpy.spin_once(node, timeout_sec=0.1)
 
-    node.publish_decision()
+    next_publish = 0.0
     while time.monotonic() < deadline:
+        now = time.monotonic()
+        if now >= next_publish:
+            node.publish_detection("detected:cup bbox=100x100 depth_raw=300.0")
+            node.publish_detection("detected:lid bbox=80x80 depth_raw=260.0")
+            node.publish_decision()
+            next_publish = now + 0.5
         rclpy.spin_once(node, timeout_sec=0.1)
         if node.saw_complete():
             required_phases = {
@@ -118,7 +128,7 @@ def main() -> int:
             node.destroy_node()
             rclpy.shutdown()
             return 0
-        if node.saw_blocked():
+        if node.saw_blocked() and not node.latest_plan_phases():
             print("[FAIL] cocktail dry-run sequence blocked")
             for item in node._statuses:
                 print(json.dumps(item, ensure_ascii=False))

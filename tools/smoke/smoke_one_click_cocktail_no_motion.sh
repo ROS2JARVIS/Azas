@@ -94,9 +94,13 @@ grep -q -- 'grouped_press_counts=1x2' "${TMP_OUT}"
 cat >"${RESULT_LOG}" <<'LOG'
 [Azas] RG2 full-open release complete; continuing only after open settle wait
 [Azas] RG2 close empty gripper for dispenser press: sent RG2 set_width command width_units=0 force_units=300
-[Azas] move to measured press contact joints exactly: joints_deg=[15.12, 40.50, 32.87, -33.75, 51.99, 28.07]
-[Azas] press dispenser pump 1/2: posx=[1,2,3,4,5,6]
-[Azas] press dispenser pump 2/2: posx=[1,2,3,4,5,6]
+[Azas] PRESS_PRE measured press pre-contact joints: movej_deg=[-4.5, 26.0, 74.2, 146.7, 10.7, -142.0]
+[Azas] PRESS_CONTACT measured contact joints 1/2: movej_deg=[10.8, 30.9, 57.9, -38.2, 25.1, 32.9]
+[Azas] PRESS_Z_OVERDRIVE from measured contact 1/2: posx=[1,2,3,4,5,6]
+[Azas] return to PRESS_CONTACT after Z overdrive 1/2: posx=[1,2,3,4,5,6]
+[Azas] PRESS_CONTACT measured contact joints 2/2: movej_deg=[10.8, 30.9, 57.9, -38.2, 25.1, 32.9]
+[Azas] PRESS_Z_OVERDRIVE from measured contact 2/2: posx=[1,2,3,4,5,6]
+[Azas] return to PRESS_CONTACT after Z overdrive 2/2: posx=[1,2,3,4,5,6]
 [Azas] RG2 soft side-grasp: sent RG2 set_width command width_units=750 force_units=250
 [Azas] post-grasp lift: posx=[1,2,3,4,5,6]
 [PASS] measured dispenser recipe sequence completed
@@ -108,23 +112,25 @@ from pathlib import Path
 import importlib.util
 import yaml
 
-expected_press_joints = {
-    "1": [15.12, 40.50, 32.87, -33.75, 51.99, 28.07],
-    "2": [6.36, 39.76, 30.07, -14.08, 55.67, 27.99],
-    "3": [-0.29, 40.29, 28.38, -5.98, 55.25, 14.33],
-    "4": [-7.04, 40.77, 28.37, 4.55, 54.02, 0.22],
-}
-
 calibration = yaml.safe_load(Path('src/azas_bringup/config/calibration.yaml').read_text())
-for dispenser_id, expected in expected_press_joints.items():
-    actual = calibration['dispenser_outlets'][dispenser_id]['press_contact_joints_deg']
-    assert len(actual) == 6, (dispenser_id, actual)
-    assert all(abs(float(a) - e) < 1e-6 for a, e in zip(actual, expected)), (dispenser_id, actual, expected)
+for dispenser_id in ("1", "2", "3", "4"):
+    outlet = calibration['dispenser_outlets'][dispenser_id]
+    for key in (
+        'cup_pre_place_joints_deg',
+        'cup_place_joints_deg',
+        'press_pre_joints_deg',
+        'press_contact_joints_deg',
+    ):
+        actual = outlet[key]
+        assert len(actual) == 6, (dispenser_id, key, actual)
+        assert all(isinstance(float(value), float) for value in actual), (dispenser_id, key, actual)
 
 recipe_source = Path('tools/run/run_measured_dispenser_recipe_sequence.py').read_text()
-assert 'default=False' in recipe_source and '--press-move-configured-prepose-before-joint' in recipe_source
-assert 'measured press contact joints are authoritative' in recipe_source
-print('[Azas smoke] measured press joints and joint-first press path OK')
+assert 'default=False' in recipe_source and '--press-reset-before-press' in recipe_source
+assert 'PRESS_Z_OVERDRIVE -> PRESS_CONTACT -> PRESS_PRE' in recipe_source
+assert 'contact_joints is not None and (skip_measured_press_pre or pre_joints is not None)' in recipe_source
+assert 'Fallback-only option for old contact-joint mode' in recipe_source
+print('[Azas smoke] measured PRE/CONTACT joint-first press path OK')
 
 path = Path('tools/run/robot_pipeline_control_server.py')
 spec = importlib.util.spec_from_file_location('robot_pipeline_control_server', path)

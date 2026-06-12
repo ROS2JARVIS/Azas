@@ -254,10 +254,12 @@ def _aruco_detection_images(gray: np.ndarray) -> list[tuple[np.ndarray, float]]:
     # Upscaling materially helps when the marker body is only a few tens of
     # pixels wide in the RealSense overview frame.
     for source in (gray, equalized, sharpened):
-        variants.append((
-            cv2.resize(source, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC),
-            2.0,
-        ))
+        variants.append(
+            (
+                cv2.resize(source, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC),
+                2.0,
+            )
+        )
     return variants
 
 

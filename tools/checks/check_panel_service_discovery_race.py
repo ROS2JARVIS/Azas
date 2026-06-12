@@ -104,6 +104,22 @@ def main() -> int:
             print("[FAIL] lid_grip_close command does not use the direct runner")
             print(lid_grip_close_command)
             return 1
+        if "MOVE_TO_LID_VIEW_POSE=true" not in lid_grip_close_command:
+            print("[FAIL] lid_grip_close command must move to lid camera view pose first")
+            print(lid_grip_close_command)
+            return 1
+        if "wait_for_lid_grip_status.py" not in lid_grip_close_command:
+            print("[FAIL] lid_grip_close command must wait for ArUco success status")
+            print(lid_grip_close_command)
+            return 1
+        if "pick_from_cup_holder_side_grip.py" not in lid_grip_close_command:
+            print("[FAIL] lid_grip_close command must chain to cup-holder re-pick")
+            print(lid_grip_close_command)
+            return 1
+        if "run_rule_based_shake_real.sh" not in lid_grip_close_command:
+            print("[FAIL] lid_grip_close command must chain to real shake")
+            print(lid_grip_close_command)
+            return 1
 
         non_tmux_background = [
             step.key

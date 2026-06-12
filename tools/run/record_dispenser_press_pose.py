@@ -130,6 +130,45 @@ def update_config(config_path: Path, dispenser_id: str, kind: str, posx: list[fl
             format_list(posj, 2),
             measured_comment,
         )
+    elif kind == "common_pre":
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "press_common_pre_joints_deg",
+            format_list(posj, 2),
+            measured_comment,
+        )
+    elif kind == "cup_common_pre":
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "cup_common_pre_joints_deg",
+            format_list(posj, 2),
+            measured_comment,
+        )
+    elif kind == "cup_pre":
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "cup_pre_place_joints_deg",
+            format_list(posj, 2),
+            measured_comment,
+        )
+    elif kind == "cup_place":
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "cup_place_joints_deg",
+            format_list(posj, 2),
+            measured_comment,
+        )
+        text = replace_block_value(
+            text,
+            dispenser_id,
+            "cup_place_status",
+            "measured_confirmed",
+            measured_comment,
+        )
     else:
         raise RuntimeError(f"unsupported kind: {kind}")
 
@@ -137,10 +176,49 @@ def update_config(config_path: Path, dispenser_id: str, kind: str, posx: list[fl
     return backup_path
 
 
+def warn_lane_mismatch(dispenser_id: str, kind: str, posx: list[float], tolerance_mm: float = 25.0) -> None:
+    """Warn when the recorded pose sits laterally over a different dispenser lane.
+
+    Guards against the slot mix-ups observed on 2026-06-10 where press teach
+    poses were saved under neighboring dispenser ids. Warning only; the
+    operator decides.
+    """
+    collision_config = ROOT / "src" / "azas_bringup" / "config" / "measured_dispenser_collision.yaml"
+    try:
+        import yaml
+
+        data = yaml.safe_load(collision_config.read_text(encoding="utf-8")) or {}
+        front_holds = data.get("front_hold_poses") or {}
+        lane_y_mm = {
+            key.split("_")[-1]: float(value["position_xyz_m"][1]) * 1000.0
+            for key, value in front_holds.items()
+        }
+    except Exception:
+        return
+    expected = lane_y_mm.get(dispenser_id)
+    if expected is None:
+        return
+    actual = posx[1]
+    delta = actual - expected
+    nearest = min(lane_y_mm.items(), key=lambda kv: abs(kv[1] - actual))
+    if abs(delta) > tolerance_mm:
+        print(
+            f"[WARN] {kind} y={actual:.1f}mm is {abs(delta):.0f}mm away from dispenser "
+            f"{dispenser_id} lane (expected y~{expected:.1f}mm); nearest lane is "
+            f"dispenser {nearest[0]}. Check the dispenser id before trusting this record."
+        )
+    else:
+        print(f"[Azas] lane check OK: y={actual:.1f}mm matches dispenser {dispenser_id} (expected ~{expected:.1f}mm)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dispenser-id", required=True, choices=["1", "2", "3", "4"])
-    parser.add_argument("--kind", required=True, choices=["pre", "contact"])
+    parser.add_argument(
+        "--kind",
+        required=True,
+        choices=["pre", "common_pre", "contact", "cup_common_pre", "cup_pre", "cup_place"],
+    )
     parser.add_argument("--service-prefix", default="dsr01")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--timeout-sec", type=float, default=8.0)
@@ -167,8 +245,17 @@ def main() -> int:
         print(f"[Azas] calibration press_pose_xyz_m={format_list([value / 1000.0 for value in posx[:3]], 6)}")
         print(f"[Azas] calibration press_pose_rpy_deg={format_list(posx[3:6], 3)}")
         print(f"[Azas] calibration press_contact_joints_deg={format_list(posj, 2)}")
-    else:
+    elif args.kind == "pre":
         print(f"[Azas] calibration press_pre_joints_deg={format_list(posj, 2)}")
+    elif args.kind == "common_pre":
+        print(f"[Azas] calibration press_common_pre_joints_deg={format_list(posj, 2)}")
+    elif args.kind == "cup_common_pre":
+        print(f"[Azas] calibration cup_common_pre_joints_deg={format_list(posj, 2)}")
+    elif args.kind == "cup_pre":
+        print(f"[Azas] calibration cup_pre_place_joints_deg={format_list(posj, 2)}")
+    else:
+        print(f"[Azas] calibration cup_place_joints_deg={format_list(posj, 2)}")
+    warn_lane_mismatch(args.dispenser_id, args.kind, posx)
 
     backup_path = update_config(args.config, args.dispenser_id, args.kind, posx, posj)
     print(f"[PASS] updated {args.config}")

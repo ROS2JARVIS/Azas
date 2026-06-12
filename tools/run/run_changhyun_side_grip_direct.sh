@@ -71,19 +71,10 @@ ros2 run tf2_ros static_transform_publisher \
 ros2 run azas_perception hand_eye_static_tf_node \
   --ros-args -p compose_timeout_sec:=30.0 -p allow_direct_fallback:=false &
 
-# Publish only the attached RG2/link_6 collision object before launching the
-# picker. Keep the launch-side include disabled because it also starts an
-# auxiliary robot_state_publisher and can stall MoveItPy initialization in the
-# field tmux workflow.
+# The RG2 mesh is part of the M0609 MoveIt URDF. Remove the older attached
+# link_6 box envelope so it cannot duplicate the mesh in PlanningScene/RViz.
 timeout 12s ros2 run azas_motion link6_gripper_collision_node \
   --ros-args -p operation:=remove -p publish_once:=true -p publish_markers:=false || true
-ros2 run azas_motion link6_gripper_collision_node \
-  --ros-args \
-  -p palm_size_x_m:=0.075 -p palm_size_y_m:=0.115 -p palm_size_z_m:=0.040 -p palm_z_m:=0.070 \
-  -p finger_size_x_m:=0.030 -p finger_size_y_m:=0.014 -p finger_size_z_m:=0.120 \
-  -p finger_y_m:=0.050 -p finger_z_m:=0.125 \
-  -p pad_size_x_m:=0.022 -p pad_size_y_m:=0.010 -p pad_size_z_m:=0.025 \
-  -p pad_y_m:=0.037 -p pad_z_m:=0.180 &
 
 should_start_relay=false
 if [[ "${START_JOINT_STATE_RELAY:-auto}" == "true" ]]; then
@@ -105,6 +96,8 @@ if [[ "${should_start_relay}" == "true" ]]; then
   ) &
 fi
 
+side_grip_success_log="$(mktemp /tmp/azas_changhyun_side_grip.XXXXXX.log)"
+set +e
 ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   model_path:="${ROOT}/local_models/best.pt" \
   conf:=0.35 imgsz:=640 device:=cpu target_class:=cup \
@@ -113,6 +106,7 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   redetect_on_approach:=false redetect_settle_sec:=0.5 \
   grasp_mode:=side side_far_stage_enabled:=false side_approach_offset:=0.18 \
   side_short_stage_backoff_m:=0.08 side_grasp_stop_backoff_m:=0.04 side_close_underreach_m:=0.03 \
+  side_target_x_offset_m:="${SIDE_TARGET_X_OFFSET_M:--0.020}" \
   side_low_retry_lift_m:=0.0 side_low_retry_attempts:=0 \
   side_linear_approach_enabled:=true side_final_slide_enabled:=false \
   side_fixed_grasp_z_enabled:=false side_grasp_z_offset:=0.05 side_project_bbox_center_to_fixed_z:=false \
@@ -125,4 +119,20 @@ ros2 launch dsr_practice yolo_cup_pick_node.launch.py \
   workspace_boundary_collision_enabled:=true dispenser_collision_enabled:=true dispenser_collision_publish_objects:=true \
   dispenser_collision_publish_markers:=true link6_gripper_collision_enabled:=false \
   dispenser_collision_config_path:="${ROOT}/src/azas_bringup/config/measured_dispenser_collision.yaml" \
-  moveit_controller_name:=/"${SERVICE_PREFIX}"/dsr_moveit_controller start_joint_state_relay:=false
+  moveit_controller_name:=/"${SERVICE_PREFIX}"/dsr_moveit_controller start_joint_state_relay:=false \
+  2>&1 | tee "${side_grip_success_log}"
+launch_rc="${PIPESTATUS[0]}"
+set -e
+
+if [[ "${launch_rc}" -eq 0 ]] && grep -q "exit_after_pick=true and one pick completed" "${side_grip_success_log}"; then
+  echo "[Azas] CHANGHYUN_SIDE_GRIP_SUCCESS: pick completed; downstream integrated dispenser recipe may start."
+  exit 0
+fi
+
+if [[ "${launch_rc}" -eq 0 ]]; then
+  echo "[Azas] CHANGHYUN_SIDE_GRIP_NO_SUCCESS: node exited without completed-pick success marker; integrated dispenser recipe will not start."
+  exit 3
+fi
+
+echo "[Azas] CHANGHYUN_SIDE_GRIP_FAILED: ros2 launch exited rc=${launch_rc}; integrated dispenser recipe will not start."
+exit "${launch_rc}"

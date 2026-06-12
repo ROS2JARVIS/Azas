@@ -1,0 +1,129 @@
+[1mdiff --git a/tools/run/check_one_click_cocktail_config.sh b/tools/run/check_one_click_cocktail_config.sh[m
+[1mindex 34ac73a..e45cfba 100755[m
+[1m--- a/tools/run/check_one_click_cocktail_config.sh[m
+[1m+++ b/tools/run/check_one_click_cocktail_config.sh[m
+[36m@@ -89,6 +89,7 @@[m [mtry:[m
+             raise ValueError(f"dispenser_outlets.{dispenser_id} missing in {calibration_path}")[m
+         require_list(outlet, "press_pose_xyz_m", 3, f"dispenser_outlets.{dispenser_id}")[m
+         require_list(outlet, "press_pose_rpy_deg", 3, f"dispenser_outlets.{dispenser_id}")[m
+[32m+[m[32m        require_list(outlet, "press_pre_joints_deg", 6, f"dispenser_outlets.{dispenser_id}")[m
+         require_list(outlet, "press_contact_joints_deg", 6, f"dispenser_outlets.{dispenser_id}")[m
+ [m
+     grouped: list[tuple[str, int]] = [][m
+[1mdiff --git a/tools/run/check_one_click_cocktail_result.sh b/tools/run/check_one_click_cocktail_result.sh[m
+[1mindex 030d95c..51bc4a9 100755[m
+[1m--- a/tools/run/check_one_click_cocktail_result.sh[m
+[1m+++ b/tools/run/check_one_click_cocktail_result.sh[m
+[36m@@ -52,8 +52,10 @@[m [mfi[m
+ for needle in \[m
+   'RG2 full-open release complete; continuing only after open settle wait' \[m
+   'RG2 close empty gripper for dispenser press' \[m
+[31m-  'move to measured press contact joints exactly' \[m
+[31m-  'press dispenser pump' \[m
+[32m+[m[32m  'PRESS_PRE measured press pre-contact joints' \[m
+[32m+[m[32m  'PRESS_CONTACT measured contact joints' \[m
+[32m+[m[32m  'PRESS_Z_OVERDRIVE from measured contact' \[m
+[32m+[m[32m  'return to PRESS_CONTACT after Z overdrive' \[m
+   'RG2 soft side-grasp' \[m
+   'post-grasp lift'; do[m
+   if grep -q "${needle}" "${INTEGRATED_LOG}"; then[m
+[1mdiff --git a/tools/run/run_color_recipe_sequence.py b/tools/run/run_color_recipe_sequence.py[m
+[1mindex 6d17c7f..62085f6 100644[m
+[1m--- a/tools/run/run_color_recipe_sequence.py[m
+[1m+++ b/tools/run/run_color_recipe_sequence.py[m
+[36m@@ -267,10 +267,10 @@[m [mdef main() -> int:[m
+     )[m
+     parser.add_argument([m
+         "--press-lock-contact-joints",[m
+[31m-        default="6",[m
+[32m+[m[32m        default="",[m
+         help=([m
+[31m-            "measured sequence로 전달할 contact 조인트 잠금 축. 기본 6: "[m
+[31m-            "호환 모드에서만 pre 자세 값으로 J6을 유지합니다. 기본 contact-only 경로에서는 사용하지 않습니다."[m
+[32m+[m[32m            "measured sequence로 전달할 contact 조인트 잠금 축. 기본 빈 값: "[m
+[32m+[m[32m            "측정된 PRESS_CONTACT joint를 그대로 사용합니다."[m
+         ),[m
+     )[m
+     parser.add_argument("--press-pre-lift-m", default="0.080")[m
+[1mdiff --git a/tools/run/run_measured_dispenser_recipe_sequence.py b/tools/run/run_measured_dispenser_recipe_sequence.py[m
+[1mindex 8753107..05e0dd7 100755[m
+[1m--- a/tools/run/run_measured_dispenser_recipe_sequence.py[m
+[1m+++ b/tools/run/run_measured_dispenser_recipe_sequence.py[m
+[36m@@ -2,8 +2,8 @@[m
+ """Run an ordered measured-dispenser recipe loop.[m
+ [m
+ For each dispenser ID this composes measured rule-based primitives:[m
+[31m-  move/release cup at DISP_PRE/DISP_PLACE -> measured PRESS_CONTACT FK[m
+[31m-  -> generated Z-only PRESS_PRE -> measured contact -> Z-only pump stroke[m
+[32m+[m[32m  move/release cup at DISP_PRE/DISP_PLACE -> measured PRESS_PRE/PRESS_CONTACT[m
+[32m+[m[32m  -> Z-only pump overdrive -> measured PRESS_CONTACT -> measured PRESS_PRE[m
+   -> re-grasp/lift cup at DISP_PLACE.[m
+ [m
+ All cup/dispenser positions come from measured calibration data.  This runner[m
+[36m@@ -389,18 +389,26 @@[m [mdef print_dry_run_group_detail(args: argparse.Namespace, dispenser_id: str, pres[m
+     cup_pre = load_cup_pre_place_joints_deg(dispenser_id)[m
+     cup_place = load_cup_place_joints_deg(dispenser_id)[m
+     if cup_pre is not None and cup_place is not None:[m
+[31m-        print([m
+[31m-            f"[PLAN] dispenser {dispenser_id}: cup DISP_PRE={format_joints_deg(cup_pre)} "[m
+[31m-            f"-> DISP_PLACE={format_joints_deg(cup_place)}"[m
+[31m-        )[m
+[32m+[m[32m        print(f"[Azas] DISP_PRE={format_joints_deg(cup_pre)}")[m
+[32m+[m[32m        print(f"[Azas] DISP_PLACE={format_joints_deg(cup_place)}")[m
+[32m+[m[32m        print(f"[PLAN] dispenser {dispenser_id}: cup DISP_PRE -> DISP_PLACE -> RELEASE")[m
+     else:[m
+         print(f"[PLAN] dispenser {dispenser_id}: cup placement fallback=front_hold_poses")[m
+ [m
+     press_contact = load_press_ready_joints_deg(dispenser_id)[m
+[32m+[m[32m    press_pre = load_press_pre_joints_deg(dispenser_id) if press_contact is not None else None[m
+     z_overdrive_mm = (max(args.press_depth_m, 0.0) + max(args.press_extra_depth_m, 0.0)) * 1000.0[m
+[31m-    if press_contact is not None:[m
+[32m+[m[32m    if press_contact is not None and press_pre is not None:[m
+[32m+[m[32m        print(f"[Azas] PRESS_PRE={format_joints_deg(press_pre)}")[m
+[32m+[m[32m        print(f"[Azas] PRESS_CONTACT={format_joints_deg(press_contact)}")[m
+[32m+[m[32m        print([m
+[32m+[m[32m            f"[PLAN] dispenser {dispenser_id}: press PRESS_PRE -> PRESS_CONTACT "[m
+[32m+[m[32m            f"-> PRESS_Z_OVERDRIVE {z_overdrive_mm:.1f}mm -> PRESS_CONTACT -> PRESS_PRE x{press_count}"[m
+[32m+[m[32m        )[m
+[32m+[m[32m    elif press_contact is not None:[m
+[32m+[m[32m        print(f"[Azas] PRESS_CONTACT={format_joints_deg(press_contact)}")[m
+         print([m
+[31m-            f"[PLAN] dispenser {dispenser_id}: press CONTACT={format_joints_deg(press_contact)} "[m
+[32m+[m[32m            f"[PLAN] dispenser {dispenser_id}: press contact-only fallback CONTACT "[m
+             f"-> generated PRE=CONTACT+Z{max(args.press_contact_entry_lift_m, 0.0) * 1000.0:.1f}mm "[m
+             f"-> PRESS=CONTACT-Z{z_overdrive_mm:.1f}mm x{press_count}"[m
+         )[m
+[36m@@ -1297,11 +1305,48 @@[m [mclass IntegratedRecipeMotion:[m
+             time.sleep(settle_sec)[m
+ [m
+     def move_and_release(self, dispenser_id: str) -> None:[m
+[32m+[m[32m        cup_pre_joints = load_cup_pre_place_joints_deg(dispenser_id)[m
+         cup_place_joints = load_cup_place_joints_deg(dispenser_id)[m
+[31m-        if cup_place_joints is not None:[m
+[32m+[m[32m        if cup_pre_joints is not None and cup_place_joints is not None:[m
+[32m+[m[32m            print(f"[Azas] DISP_PRE={format_joints_deg(cup_pre_joints)}")[m
+[32m+[m[32m            print(f"[Azas] DISP_PLACE={format_joints_deg(cup_place_joints)}")[m
+             print([m
+                 f"[Azas] cup placement: dispenser={dispenser_id} using measured "[m
+[31m-                "DISP_PLACE with generated high entry; not front_hold_poses"[m
+[32m+[m[32m                "DISP_PRE -> DISP_PLACE joint teaching; not front_hold_poses"[m
+[32m+[m[32m            )[m
+[32m+[m[32m            cup_pre_joints = self.normalize_joints_near_current([m
+[32m+[m[32m                cup_pre_joints,[m
+[32m+[m[32m                label=f"move to measured DISP{dispenser_id}_PRE cup-place joints",[m
+[32m+[m[32m            )[m
+[32m+[m[32m            self.movej([m
+[32m+[m[32m                cup_pre_joints,[m
+[32m+[m[32m                label=f"DISP_PRE measured DISP{dispenser_id} cup-place approach",[m
+[32m+[m[32m                velocity=self.args.move_prehold_velocity,[m
+[32m+[m[32m                acceleration=self.args.move_prehold_acceleration,[m
+[32m+[m[32m            )[m
+[32m+[m[32m            cup_place_joints = self.normalize_joints_near_current([m
+[32m+[m[32m                cup_place_joints,[m
+[32m+[m[32m                label=f"move to measured DISP{dispenser_id}_PLACE cup-place joints",[m
+[32m+[m[32m            )[m
+[32m+[m[32m            self.movej([m
+[32m+[m[32m                cup_place_joints,[m
+[32m+[m[32m                label=f"DISP_PLACE measured DISP{dispenser_id} cup release",[m
+[32m+[m[32m                velocity=self.args.move_velocity,[m
+[32m+[m[32m                accelera

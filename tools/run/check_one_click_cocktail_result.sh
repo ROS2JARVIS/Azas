@@ -52,8 +52,10 @@ fi
 for needle in \
   'RG2 full-open release complete; continuing only after open settle wait' \
   'RG2 close empty gripper for dispenser press' \
-  'move to measured press contact joints exactly' \
-  'press dispenser pump' \
+  'PRESS_PRE measured press pre-contact joints' \
+  'PRESS_CONTACT measured contact joints' \
+  'PRESS_Z_OVERDRIVE from measured contact' \
+  'return to PRESS_CONTACT after Z overdrive' \
   'RG2 soft side-grasp' \
   'post-grasp lift'; do
   if grep -q "${needle}" "${INTEGRATED_LOG}"; then

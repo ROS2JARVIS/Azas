@@ -223,34 +223,43 @@ def main() -> int:
     )
     parser.add_argument("--execute", action="store_true",
                         help="실제 measured dispenser sequence를 실행")
-    parser.add_argument("--move-velocity", default="18.0")
+    parser.add_argument("--move-velocity", default="80.0")
     parser.add_argument("--move-acceleration", default="25.0")
-    parser.add_argument("--move-prehold-velocity", default="16.0")
+    parser.add_argument("--move-prehold-velocity", default="80.0")
     parser.add_argument("--move-prehold-acceleration", default="22.0")
-    parser.add_argument("--pick-approach-velocity", default="10.0")
+    parser.add_argument("--pick-approach-velocity", default="80.0")
     parser.add_argument("--pick-approach-acceleration", default="14.0")
-    parser.add_argument("--pick-lift-velocity", default="18.0")
+    parser.add_argument("--pick-lift-velocity", default="80.0")
     parser.add_argument("--pick-lift-acceleration", default="25.0")
-    parser.add_argument("--regrasp-approach-velocity", default="14.0")
+    parser.add_argument("--regrasp-approach-velocity", default="80.0")
     parser.add_argument("--regrasp-approach-acceleration", default="18.0")
+    parser.add_argument(
+        "--regrasp-reset-before-cup",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="프레스 후 컵 재접근 전에 HOME joint waypoint를 경유",
+    )
+    parser.add_argument("--regrasp-reset-joints-deg", default="0,0,90,0,90,180")
+    parser.add_argument("--regrasp-reset-joint-velocity", default="80.0")
+    parser.add_argument("--regrasp-reset-joint-acceleration", default="35.0")
     parser.add_argument("--press-min-transit-z-m", default="0.500")
-    parser.add_argument("--press-line-velocity", default="18.0")
-    parser.add_argument("--press-line-acceleration", default="25.0")
-    parser.add_argument("--press-travel-velocity", default="45.0")
-    parser.add_argument("--press-travel-acceleration", default="60.0")
-    parser.add_argument("--press-contact-joint-velocity", default="22.0")
-    parser.add_argument("--press-contact-joint-acceleration", default="30.0")
+    parser.add_argument("--press-line-velocity", default="25.0")
+    parser.add_argument("--press-line-acceleration", default="10.0")
+    parser.add_argument("--press-travel-velocity", default="40.0")
+    parser.add_argument("--press-travel-acceleration", default="20.0")
+    parser.add_argument("--press-contact-joint-velocity", default="35.0")
+    parser.add_argument("--press-contact-joint-acceleration", default="15.0")
     parser.add_argument("--press-contact-entry-lift-m", default="0.050")
     parser.add_argument(
         "--press-reset-before-press",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="컵을 놓은 뒤 프레스 PRE로 가기 전에 HOME joint waypoint를 경유",
+        help="컵을 놓은 뒤 CONTACT_ENTRY_LIFT 전에 PRESS_COMMON_PRE/HOME joint waypoint를 경유. 기본 false",
     )
     parser.add_argument("--press-reset-joints-deg", default="0,0,90,0,90,0")
-    parser.add_argument("--press-reset-joint-velocity", default="18.0")
+    parser.add_argument("--press-reset-joint-velocity", default="80.0")
     parser.add_argument("--press-reset-joint-acceleration", default="25.0")
-    parser.add_argument("--press-depth-m", default="0.040")
+    parser.add_argument("--press-depth-m", default="0.070")
     parser.add_argument(
         "--press-extra-depth-m",
         default="0.0",
@@ -258,10 +267,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--press-lock-contact-joints",
-        default="6",
+        default="",
         help=(
-            "measured sequence로 전달할 contact 조인트 잠금 축. 기본 6: "
-            "호환 모드에서만 pre 자세 값으로 J6을 유지합니다. 기본 contact-only 경로에서는 사용하지 않습니다."
+            "measured sequence로 전달할 contact 조인트 잠금 축. 기본 빈 값: "
+            "측정된 PRESS_CONTACT joint를 그대로 사용합니다."
         ),
     )
     parser.add_argument("--press-pre-lift-m", default="0.080")
@@ -276,12 +285,74 @@ def main() -> int:
     parser.add_argument("--press-pre-lift-retreat-y-m", default="0.0")
     parser.add_argument("--move-release-offset-x-m", default="-0.020")
     parser.add_argument("--move-release-offset-y-m", default="0.0")
-    parser.add_argument("--move-release-offset-z-m", default="0.0")
+    parser.add_argument("--move-release-offset-z-m", default="0.010")
+    parser.add_argument("--cup-pre-from-place-x-offset-m", default="-0.090")
+    parser.add_argument("--cup-pre-from-place-z-offset-m", default="0.030")
+    parser.add_argument("--generated-cup-pre-max-joint-delta-deg", default="190.0")
+    parser.add_argument(
+        "--press-contact-use-joint-move",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="measured PRESS_CONTACT movej 사용. 기본 false: PRESS_CONTACT FK까지 Cartesian Z-only 하강",
+    )
+    parser.add_argument(
+        "--use-cup-common-pre",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="저장된 cup_common_pre_joints_deg를 사용. 기본 false: cup_place 기준 X/Z offset pre 생성",
+    )
     parser.add_argument("--regrasp-retreat-x-m", default="-0.080")
     parser.add_argument("--regrasp-retreat-y-m", default="0.0")
     parser.add_argument("--post-press-safe-lift-z-m", default="0.470")
-    parser.add_argument("--regrasp-rear-entry-offset-x-m", default="-0.080")
+    parser.add_argument(
+        "--start-safe-lift-z-m",
+        default="0.15",
+        help="시퀀스 시작 시 현재 TCP pose에서 Z-only로 먼저 올라갈 최소 절대 TCP Z (m)",
+    )
+    parser.add_argument(
+        "--min-allowed-tcp-z-m",
+        default="0.02",
+        help="모든 cartesian target pose의 최소 허용 TCP Z (m). 미달 target은 로봇 명령 전송 전에 차단",
+    )
+    parser.add_argument(
+        "--force-start-safe-lift",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="시작 시 항상 현재 위치에서 safe Z로 lift한 뒤 다음 waypoint로 이동 (기본 켜짐)",
+    )
+    parser.add_argument(
+        "--skip-release-pre",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="cup_place 기준 X/Z offset release-pre 대신 자세 무관 안전 release 구조 사용",
+    )
+    parser.add_argument("--release-approach-lift-m", default="0.100",
+                        help="release final 위에 생성할 release_above pose의 Z lift (m)")
+    parser.add_argument("--release-start-safe-lift-m", default="0.120",
+                        help="release 시작 시 현재 TCP에서 Z-only로 올릴 상대 높이 (m)")
+    parser.add_argument("--release-min-transit-z-m", default="0.300",
+                        help="release XY-transit pose의 최소 절대 TCP Z (m)")
+    parser.add_argument("--post-release-safe-lift-m", default="0.100",
+                        help="gripper open 후 release final에서 수직 상승할 높이 (m)")
+    parser.add_argument("--release-staging-x-m", default="",
+                        help="release staging pose 절대 X (m). 비우면 release final X 사용")
+    parser.add_argument("--release-staging-y-m", default="",
+                        help="release staging pose 절대 Y (m). 비우면 release final Y 사용")
+    parser.add_argument("--release-staging-z-m", default="",
+                        help="release staging pose 절대 Z (m). 비우면 transit 높이 사용")
+    parser.add_argument(
+        "--use-release-staging",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="release_above 진입 전에 staging pose를 경유 (기본 켜짐)",
+    )
+    parser.add_argument("--regrasp-rear-entry-offset-x-m", default="-0.090")
     parser.add_argument("--regrasp-rear-entry-offset-y-m", default="0.0")
+    parser.add_argument("--final-regrasp-extra-x-offset-m", default="0.020")
+    parser.add_argument("--final-regrasp-extra-y-offset-m", default="0.0")
+    parser.add_argument("--final-regrasp-extra-z-offset-m", default="0.0")
+    parser.add_argument("--final-regrasp-grasp-width-m", default="0.068")
+    parser.add_argument("--final-regrasp-force-n", default="35.0")
     parser.add_argument(
         "--allow-tcp-set-failure",
         action="store_true",
@@ -290,6 +361,22 @@ def main() -> int:
     parser.add_argument("--force-cartesian-press", action="store_true")
     parser.add_argument("--gripper-open-settle-seconds", default="1.5")
     parser.add_argument("--gripper-settle-seconds", default="0.8")
+    parser.add_argument(
+        "--place-cup-holder-after-sequence",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="마지막 디스펜서 처리 후 컵홀더에 컵을 놓음",
+    )
+    parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.030")
+    parser.add_argument("--cup-holder-place-final-y-offset-m", default="-0.010")
+    parser.add_argument("--cup-holder-approach-velocity", default="80.0")
+    parser.add_argument("--cup-holder-approach-acceleration", default="20.0")
+    parser.add_argument("--cup-holder-place-velocity", default="80.0")
+    parser.add_argument("--cup-holder-place-acceleration", default="10.0")
+    parser.add_argument("--cup-holder-retreat-velocity", default="80.0")
+    parser.add_argument("--cup-holder-retreat-acceleration", default="16.0")
+    parser.add_argument("--cup-holder-timeout-sec", default="90.0")
+    parser.add_argument("--cup-holder-target-tolerance-mm", default="12.0")
     parser.add_argument("--wait-service-sec", default="15.0")
     parser.add_argument("--pose-read-retries", default="3")
     parser.add_argument("--pose-read-retry-sleep-sec", default="0.5")
@@ -316,6 +403,9 @@ def main() -> int:
         "--pick-lift-acceleration", str(args.pick_lift_acceleration),
         "--regrasp-approach-velocity", str(args.regrasp_approach_velocity),
         "--regrasp-approach-acceleration", str(args.regrasp_approach_acceleration),
+        "--regrasp-reset-joints-deg", str(args.regrasp_reset_joints_deg),
+        "--regrasp-reset-joint-velocity", str(args.regrasp_reset_joint_velocity),
+        "--regrasp-reset-joint-acceleration", str(args.regrasp_reset_joint_acceleration),
         "--press-min-transit-z-m", str(args.press_min_transit_z_m),
         "--press-pre-lift-m", str(args.press_pre_lift_m),
         "--press-transit-height-m", str(args.press_transit_height_m),
@@ -324,11 +414,25 @@ def main() -> int:
         "--move-release-offset-x-m", str(args.move_release_offset_x_m),
         "--move-release-offset-y-m", str(args.move_release_offset_y_m),
         "--move-release-offset-z-m", str(args.move_release_offset_z_m),
+        "--cup-pre-from-place-x-offset-m", str(args.cup_pre_from_place_x_offset_m),
+        "--cup-pre-from-place-z-offset-m", str(args.cup_pre_from_place_z_offset_m),
+        "--generated-cup-pre-max-joint-delta-deg", str(args.generated_cup_pre_max_joint_delta_deg),
         "--regrasp-retreat-x-m", str(args.regrasp_retreat_x_m),
         "--regrasp-retreat-y-m", str(args.regrasp_retreat_y_m),
         "--post-press-safe-lift-z-m", str(args.post_press_safe_lift_z_m),
+        "--start-safe-lift-z-m", str(args.start_safe_lift_z_m),
+        "--min-allowed-tcp-z-m", str(args.min_allowed_tcp_z_m),
+        "--release-approach-lift-m", str(args.release_approach_lift_m),
+        "--release-start-safe-lift-m", str(args.release_start_safe_lift_m),
+        "--release-min-transit-z-m", str(args.release_min_transit_z_m),
+        "--post-release-safe-lift-m", str(args.post_release_safe_lift_m),
         "--regrasp-rear-entry-offset-x-m", str(args.regrasp_rear_entry_offset_x_m),
         "--regrasp-rear-entry-offset-y-m", str(args.regrasp_rear_entry_offset_y_m),
+        "--final-regrasp-extra-x-offset-m", str(args.final_regrasp_extra_x_offset_m),
+        "--final-regrasp-extra-y-offset-m", str(args.final_regrasp_extra_y_offset_m),
+        "--final-regrasp-extra-z-offset-m", str(args.final_regrasp_extra_z_offset_m),
+        "--final-regrasp-grasp-width-m", str(args.final_regrasp_grasp_width_m),
+        "--final-regrasp-force-n", str(args.final_regrasp_force_n),
         "--press-line-velocity", str(args.press_line_velocity),
         "--press-line-acceleration", str(args.press_line_acceleration),
         "--press-travel-velocity", str(args.press_travel_velocity),
@@ -344,6 +448,16 @@ def main() -> int:
         "--press-lock-contact-joints", str(args.press_lock_contact_joints),
         "--gripper-open-settle-seconds", str(args.gripper_open_settle_seconds),
         "--gripper-settle-seconds", str(args.gripper_settle_seconds),
+        "--cup-holder-place-final-z-offset-m", str(args.cup_holder_place_final_z_offset_m),
+        "--cup-holder-place-final-y-offset-m", str(args.cup_holder_place_final_y_offset_m),
+        "--cup-holder-approach-velocity", str(args.cup_holder_approach_velocity),
+        "--cup-holder-approach-acceleration", str(args.cup_holder_approach_acceleration),
+        "--cup-holder-place-velocity", str(args.cup_holder_place_velocity),
+        "--cup-holder-place-acceleration", str(args.cup_holder_place_acceleration),
+        "--cup-holder-retreat-velocity", str(args.cup_holder_retreat_velocity),
+        "--cup-holder-retreat-acceleration", str(args.cup_holder_retreat_acceleration),
+        "--cup-holder-timeout-sec", str(args.cup_holder_timeout_sec),
+        "--cup-holder-target-tolerance-mm", str(args.cup_holder_target_tolerance_mm),
         "--wait-service-sec", str(args.wait_service_sec),
         "--pose-read-retries", str(args.pose_read_retries),
         "--pose-read-retry-sleep-sec", str(args.pose_read_retry_sleep_sec),
@@ -353,7 +467,39 @@ def main() -> int:
         "--no-integrated-regrasp-fallback-subprocess",
     ]
     sequence_extra_args.append(
+        "--force-start-safe-lift" if args.force_start_safe_lift else "--no-force-start-safe-lift"
+    )
+    sequence_extra_args.append(
+        "--skip-release-pre" if args.skip_release_pre else "--no-skip-release-pre"
+    )
+    sequence_extra_args.append(
+        "--use-cup-common-pre" if args.use_cup_common_pre else "--no-use-cup-common-pre"
+    )
+    sequence_extra_args.append(
+        "--use-release-staging" if args.use_release_staging else "--no-use-release-staging"
+    )
+    sequence_extra_args.append(
+        "--place-cup-holder-after-sequence"
+        if args.place_cup_holder_after_sequence
+        else "--no-place-cup-holder-after-sequence"
+    )
+    for flag, value in (
+        ("--release-staging-x-m", args.release_staging_x_m),
+        ("--release-staging-y-m", args.release_staging_y_m),
+        ("--release-staging-z-m", args.release_staging_z_m),
+    ):
+        if str(value).strip():
+            sequence_extra_args += [flag, str(value).strip()]
+    sequence_extra_args.append(
         "--press-reset-before-press" if args.press_reset_before_press else "--no-press-reset-before-press"
+    )
+    sequence_extra_args.append(
+        "--press-contact-use-joint-move"
+        if args.press_contact_use_joint_move
+        else "--no-press-contact-use-joint-move"
+    )
+    sequence_extra_args.append(
+        "--regrasp-reset-before-cup" if args.regrasp_reset_before_cup else "--no-regrasp-reset-before-cup"
     )
     if args.allow_tcp_set_failure:
         sequence_extra_args.append("--allow-tcp-set-failure")

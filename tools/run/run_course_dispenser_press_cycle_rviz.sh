@@ -311,10 +311,10 @@ fi
 
 if [[ "${SHOW_LINK6_GRIPPER}" == "1" || "${SHOW_LINK6_GRIPPER}" == "true" ]]; then
   ros2 launch azas_bringup rg2_link6_tcp.launch.py \
-    publish_gripper_collision:=true \
+    publish_gripper_collision:=false \
     >"${LOG_DIR}/rg2_link6_tcp.log" 2>&1 &
   PIDS+=("$!")
-  echo "[Azas] SHOW_LINK6_GRIPPER=${SHOW_LINK6_GRIPPER}: publishing RG2 link_6 TF/markers on /azas/link6_gripper/markers."
+  echo "[Azas] SHOW_LINK6_GRIPPER=${SHOW_LINK6_GRIPPER}: publishing RG2 link_6 TF only; MoveIt uses the mesh-based RG2 URDF."
 fi
 
 if [[ "${DISPENSER_COLLISION_OBJECTS}" == "0" || "${DISPENSER_COLLISION_OBJECTS}" == "false" ]]; then

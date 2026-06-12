@@ -312,7 +312,7 @@ def _color_recipe_direct_arg(payload: dict[str, Any]) -> str:
     )
     if numeric_dispenser_override:
         return f" --dispenser-ids {shlex.quote(recipe_override)}"
-    direct_color_map = json.dumps(DISPENSER_PRESS_TARGETS, ensure_ascii=False)
+    direct_color_map = json.dumps(_load_dispenser_press_targets(), ensure_ascii=False)
     return (
         f" --colors {shlex.quote(recipe_override)}"
         f" --color-map-json {shlex.quote(direct_color_map)}"
@@ -322,7 +322,7 @@ def _color_recipe_direct_arg(payload: dict[str, Any]) -> str:
 def color_recipe_sequence_command(payload: dict[str, Any]) -> str:
     return (
         f"cd {ROOT} && {ROS_SETUP} && "
-        "python3 tools/run/run_color_recipe_sequence.py --press-depth-m 0.020 --execute --confirm"
+        "python3 tools/run/run_color_recipe_sequence.py --execute --confirm"
         f"{_color_recipe_direct_arg(payload)}"
     )
 
@@ -333,11 +333,65 @@ def chain_recipe_after_manual_command(manual_cmd: str, payload: dict[str, Any], 
         f"( {manual_cmd} ); "
         "manual_rc=$?; "
         "if [ ${manual_rc} -eq 0 ]; then "
-        f"echo '[Azas] {label} 성공 종료 -> 통합 디스펜서 색상 레시피를 즉시 실행합니다.'; "
+        f"echo '[Azas] {label} 성공 메시지 확인 -> 통합 디스펜서 색상 레시피를 자동 실행합니다.'; "
+        "echo '[Azas] auto_integrated_dispenser_recipe=true'; "
         f"{recipe_cmd}; "
         "else "
         f"echo '[Azas] {label} 실패/중단 rc='${{manual_rc}}' -> 디스펜서 레시피 실행을 건너뜁니다.'; "
         "exit ${manual_rc}; "
+        "fi"
+    )
+
+
+def chain_shake_after_lid_command(lid_cmd: str, payload: dict[str, Any]) -> str:
+    """Run holder re-pick + shake immediately after ArUco lid close success.
+
+    The lid-grip launch is an OpenCV/manual ROS launch that stays alive after a
+    successful `p`-triggered sequence.  Waiting for the process to exit would
+    block the next motion indefinitely, so the panel chain watches the planner's
+    `/jarvis/lid_gripper/status` success event, terminates the lid preview
+    launch, then starts the existing measured cup-holder re-pick/shake command.
+    """
+
+    steps_by_key = {step.key: step for step in STEPS}
+    shake_cmd = command_for(steps_by_key["shake_closed_cup"], payload)
+    wait_script = ROOT / "tools" / "run" / "wait_for_lid_grip_status.py"
+    wait_cmd = (
+        f"cd {ROOT} && {ROS_SETUP} && "
+        f"python3 {shlex.quote(str(wait_script))} "
+        "--timeout-sec 900 --success-status motion_sequence_requested"
+    )
+    return (
+        f"( {lid_cmd} ) & "
+        "lid_pid=$!; "
+        f"( {wait_cmd} ) & "
+        "wait_pid=$!; "
+        "while true; do "
+        "if ! kill -0 ${wait_pid} 2>/dev/null; then "
+        "wait ${wait_pid}; wait_rc=$?; break; "
+        "fi; "
+        "if ! kill -0 ${lid_pid} 2>/dev/null; then "
+        "wait ${lid_pid}; lid_rc=$?; "
+        "sleep 1; "
+        "if ! kill -0 ${wait_pid} 2>/dev/null; then "
+        "wait ${wait_pid}; wait_rc=$?; break; "
+        "fi; "
+        "echo '[Azas] lid_grip_close launch exited before ArUco success status; shake chain blocked.'; "
+        "kill -TERM ${wait_pid} 2>/dev/null || true; "
+        "wait ${wait_pid} 2>/dev/null || true; "
+        "if [ ${lid_rc} -eq 0 ]; then exit 1; else exit ${lid_rc}; fi; "
+        "fi; "
+        "sleep 1; "
+        "done; "
+        "kill -TERM ${lid_pid} 2>/dev/null || true; "
+        "wait ${lid_pid} 2>/dev/null || true; "
+        "if [ ${wait_rc} -eq 0 ]; then "
+        "echo '[Azas] ArUco lid_grip_close 성공 status 확인 -> 컵홀더 컵 다시 잡기 후 쉐이킹으로 바로 넘어갑니다.'; "
+        "echo '[Azas] auto_holder_pick_then_shake=true'; "
+        f"{shake_cmd}; "
+        "else "
+        "echo '[Azas] ArUco lid_grip_close 실패/타임아웃 -> 컵홀더 재픽업/쉐이킹을 건너뜁니다.'; "
+        "exit ${wait_rc}; "
         "fi"
     )
 
@@ -348,6 +402,33 @@ def hand_eye_static_tf_command(*, compose_timeout_sec: float = 30.0) -> str:
         "ros2 run azas_perception hand_eye_static_tf_node --ros-args "
         f"-p compose_timeout_sec:={compose_timeout_sec:.1f} "
         "-p allow_direct_fallback:=false"
+    )
+
+
+def tmux_stack_start_command(payload: dict[str, Any]) -> str:
+    robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
+    robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
+    rt_host = str(payload.get("rt_host") or os.environ.get("RT_HOST") or DEFAULT_RT_HOST)
+    rg2_ip = str(payload.get("rg2_ip") or os.environ.get("RG2_IP") or "192.168.1.1")
+    ros_domain_id = str(
+        payload.get("ros_domain_id")
+        or os.environ.get("AZAS_PANEL_ROS_DOMAIN_ID")
+        or os.environ.get("ROS_DOMAIN_ID")
+        or DEFAULT_ROS_DOMAIN_ID
+    )
+    ros_localhost_only = str(os.environ.get("ROS_LOCALHOST_ONLY") or "0")
+    return (
+        f"cd {ROOT} && "
+        "bash tools/run/stop_azas_all.sh && "
+        "sleep 2 && "
+        f"SESSION={shlex.quote(PANEL_TMUX_SESSION)} "
+        f"ROS_DOMAIN_ID={shlex.quote(ros_domain_id)} "
+        f"ROS_LOCALHOST_ONLY={shlex.quote(ros_localhost_only)} "
+        f"ROBOT_HOST={shlex.quote(robot_host)} "
+        f"ROBOT_NAME={shlex.quote(robot_name)} "
+        f"RT_HOST={shlex.quote(rt_host)} "
+        f"RG2_IP={shlex.quote(rg2_ip)} "
+        "bash tools/run/start_azas_tmux_stack.sh"
     )
 
 
@@ -519,12 +600,12 @@ class Step:
 STEPS = [
     Step(
         "connect_robot",
-        "로봇 연결 / 스마트 재연결",
+        "로봇 연결 / tmux 통합 재연결",
         "background",
-        "tools/run/run_doosan_real_m0609.sh",
+        "tools/run/stop_azas_all.sh && sleep 2 && tools/run/start_azas_tmux_stack.sh",
         True,
         False,
-        "실제 로봇 real-mode bringup. 준비됨/시작중이면 유지하고, stale 상태일 때만 정리 후 시작",
+        "검증된 현장 명령으로 stop_azas_all 후 azas-logic tmux 스택을 시작",
     ),
     Step(
         "start_tmux_stack",
@@ -533,7 +614,7 @@ STEPS = [
         "tools/run/start_azas_tmux_stack.sh",
         True,
         False,
-        "검증된 tmux 방식으로 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작. status_check/개별 연결 큐를 반복하지 않음",
+        "검증된 tmux 방식으로 stop_azas_all 후 azas-logic 세션에 로봇, RG2 그리퍼, RealSense, joint relay를 분리 시작",
     ),
     Step(
         "stop_azas_all",
@@ -658,15 +739,15 @@ STEPS = [
         False,
         "카메라 화면의 visible colored handle blob을 직접 검출해 왼쪽→오른쪽을 디스펜서 1~4로 매핑하고 outputs/dispenser_color_map.json 저장. TF 투영은 보조 경로",
     ),
-    Step("voice_input", "음성 입력 (STT+LLM 노드 시작)", "background", "ros2 launch azas_voice azas_voice.launch.py", True, False, "STT → /stt_result → llm_recipe_mapper → /azas/voice/recipe_decision"),
+    Step("voice_input", "수빈 STT/주문 UI 시작", "background", "ros2 launch azas_voice azas_voice.launch.py", True, False, "voice screen(8090) + STT topic(/stt_result) → recipe mapper → conversation manager. 로봇 좌표/모션은 만들지 않음"),
     Step(
         "listen_stt_recipe",
-        "STT 레시피 수신 대기 (60초)",
+        "수빈 STT 레시피 확정 대기 (60초)",
         "run",
         "tools/run/listen_stt_recipe.py --timeout 60",
         True,
         False,
-        "사용자가 말하면 /azas/voice/recipe_decision 수신 → outputs/latest_recipe.json 저장",
+        "사용자가 메뉴를 말하고 '응'으로 확정하면 /azas/voice/confirmed_recipe_decision 수신 → outputs/latest_recipe.json 저장",
     ),
     Step(
         "run_color_recipe_sequence",
@@ -681,10 +762,10 @@ STEPS = [
         "side_grip",
         "PR #20 RealSense 컵 인식 후 side grip",
         "background",
-        "ros2 launch dsr_practice yolo_cup_pick_node.launch.py auto_pick:=false exit_after_pick:=false grasp_mode:=side moveit_controller_name:=/dsr01/dsr_moveit_controller",
+        "SIDE_TARGET_X_OFFSET_M=-0.020 bash tools/run/run_changhyun_side_grip_direct.sh",
         True,
         True,
-        "OpenCV 창에서 컵 확인 후 p 키로 side-grip 실행. 장기 실행 GUI 노드라 패널에서는 tmux 창으로 분리 실행",
+        "OpenCV 창에서 컵 확인 후 p 키로 side-grip 실행. 패널은 direct runner를 tmux로 띄우며 기본 X 보정은 -20mm",
     ),
     Step(
         "cup_uprighting",
@@ -859,7 +940,35 @@ STEPS = [
         False,
         "실제 로봇 미사용: 별도 ROS_DOMAIN_ID에서 쉐이킹 궤적/마커를 RViz로 표시",
     ),
-    Step("shake_closed_cup", "컵홀더 컵 다시 잡기 후 쉐이킹", "run", "tools/run/pick_from_cup_holder_side_grip.py && tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 측정된 cup_holder.side_grip_place pose로 다시 side-grip 픽업한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행"),
+    Step("shake_closed_cup", "컵홀더 컵 다시 잡기 후 쉐이킹", "run", "tools/run/pick_from_cup_holder_side_grip.py && tools/run/run_rule_based_shake_real.sh", True, True, "시작 시 컵홀더에 놓인 닫힌 컵을 측정된 cup_holder.side_grip_place pose로 다시 side-grip 픽업한 뒤, J3 양수 고정 및 J4/J5/J6 트위스트 쉐이킹을 실행. 쉐이킹 성공 시 컵을 든 채 카메라 포즈(J=[3, -12.7, 44, -9, 133, 90])로 복귀해 손 검출/핸드오버 준비"),
+    Step(
+        "start_hand_detection",
+        "손 검출 시작 / 무모션",
+        "background",
+        "bash tools/run/run_human_hand_detection.sh",
+        True,
+        False,
+        "perception 전용: MediaPipe로 펼친 손바닥을 추적해 /azas/human_hand_detection으로 발행. 로봇 모션 없음",
+    ),
+    Step(
+        "start_hand_detection_view",
+        "손 검출 화면 보기",
+        "background",
+        "rqt_image_view /azas/human_hand_detection/overlay",
+        True,
+        False,
+        "손 검출 overlay(랜드마크/STABLE 라벨)를 rqt_image_view 창으로 표시. 손 검출 시작 버튼이 먼저 켜져 있어야 영상이 나옴",
+    ),
+    Step(
+        "handover_cup_to_palm",
+        "쉐이킹 후 손바닥에 컵 건네기",
+        "run",
+        "tools/run/handover_cup_to_palm.py",
+        True,
+        True,
+        "실제모션 HRI: 손 검출이 먼저 켜져 있어야 함. 손바닥 위로 이동 후 외력 감시하며 저속 하강, 컵 release. "
+        "첫 사용 전 스펀지 테스트로 --release-tcp-above-palm-m 튜닝 필수",
+    ),
 ]
 
 processes: dict[str, subprocess.Popen[str]] = {}
@@ -868,13 +977,12 @@ tmux_jobs: dict[str, dict[str, str]] = {}
 RUN_LOCK = threading.Lock()
 ROS_ENV_LOCK = threading.Lock()
 ROS_ENV_CACHE: dict[str, str] | None = None
-# Use the same tmux session as the field-tested manual workflow.  Keeping the
-# panel and terminal commands in one session avoids split ownership where the
-# panel launches a second robot/camera stack while the operator is watching a
-# different one.
+# Use the same tmux session as the field-tested manual workflow for long-lived
+# panel jobs. The integrated reconnect command is intentionally excluded below:
+# it runs stop_azas_all.sh, which kills azas-logic before recreating it, so that
+# command must be launched by the panel server outside tmux.
 PANEL_TMUX_SESSION = "azas-logic"
 PANEL_TMUX_STEPS = {
-    "connect_robot",
     "connect_gripper",
     "start_camera",
     "start_camera_view",
@@ -887,6 +995,32 @@ PANEL_TMUX_STEPS = {
     "cup_uprighting",
     "lid_grip_close",
     "shake_rviz_preview",
+    "start_hand_detection",
+    "start_hand_detection_view",
+}
+PANEL_HIDDEN_STEP_KEYS = {
+    "rviz_cocktail_collision_preview",
+    "rviz_color_scan_pose_preview",
+    "shake_rviz_preview",
+    "stop_cocktail_motion_preview",
+    "check_one_click_cocktail_ready",
+    "check_one_click_cocktail_result",
+    "run_cocktail_now_real",
+    "start_camera_view",
+    "detect_cup_lid",
+    "run_one_click_cocktail_real",
+    "move_to_dispenser_1",
+    "move_to_dispenser_2",
+    "move_to_dispenser_3",
+    "move_to_dispenser_4",
+    "press_dispenser_1",
+    "press_dispenser_2",
+    "press_dispenser_3",
+    "press_dispenser_4",
+    "pick_from_dispenser_1",
+    "pick_from_dispenser_2",
+    "pick_from_dispenser_3",
+    "pick_from_dispenser_4",
 }
 PANEL_DIRECT_TMUX_STEPS = {
     # Match the successful field workflow: the panel opens the same tmux launch
@@ -902,6 +1036,7 @@ PANEL_FIELD_VERIFIED_DIRECT_TMUX_STEPS = {
     # are not enough for real-motion GUI workflows.
     "side_grip",
     "cup_uprighting",
+    "lid_grip_close",
 }
 
 DOOSAN_STACK_PATTERNS = (
@@ -982,12 +1117,17 @@ CAMERA_STACK_PATTERNS = (
 )
 
 SIDE_GRIP_STACK_PATTERNS = (
+    "run_changhyun_side_grip_direct.sh",
     "yolo_cup_pick_node.launch.py",
     "yolo_cup_pick_node_legacy.launch.py",
     "yolo_cup_pick_legacy_node",
     "dsr_practice/yolo_cup_pick_node",
     "yolo_cup_pick_node --ros-args",
     "yolo_cup_pick_moveit_py",
+    "hand_eye_static_tf_node",
+    "link6_gripper_collision_node",
+    "workspace_collision_scene_node",
+    "--frame-id world --child-frame-id base_link",
 )
 
 CUP_UPRIGHTING_STACK_PATTERNS = (
@@ -2000,6 +2140,16 @@ def required_services_for_step(step: Step, service_prefix: str) -> list[str]:
             f"/{clean}/system/get_robot_state",
             "/check_state_validity",
         ]
+    if step.key == "handover_cup_to_palm":
+        return [
+            "/jarvis/rg2/set_width",
+            f"/{clean}/motion/move_line",
+            f"/{clean}/motion/ikin",
+            f"/{clean}/motion/check_motion",
+            f"/{clean}/aux_control/get_current_posx",
+            f"/{clean}/aux_control/get_tool_force",
+            f"/{clean}/system/get_robot_state",
+        ]
     return []
 
 
@@ -2021,7 +2171,7 @@ def required_service_wait_timeout(step: Step) -> float:
         or step.key == "lid_grip_close"
     ):
         return 35.0
-    if step.key in {"home_robot", "lift_robot", "side_grip_camera_home", "lid_view_pose", "move_to_color_scan_pose", "side_grip", "shake_closed_cup"}:
+    if step.key in {"home_robot", "lift_robot", "side_grip_camera_home", "lid_view_pose", "move_to_color_scan_pose", "side_grip", "shake_closed_cup", "handover_cup_to_palm"}:
         return 30.0
     if step.key == "gripper_soft_grasp":
         return 12.0
@@ -2104,12 +2254,10 @@ def wait_for_collision_object_sample(
     timeout_sec: float = 10.0,
     proc: subprocess.Popen[str] | None = None,
 ) -> tuple[bool, str]:
-    """Wait until workspace objects and the link_6 gripper attachment are visible."""
+    """Wait until workspace collision objects are visible."""
     deadline = time.monotonic() + max(timeout_sec, 0.1)
     last_collision_output = ""
-    last_attached_output = ""
     saw_collision = False
-    saw_attached_gripper = False
     while time.monotonic() < deadline:
         if proc is not None and proc.poll() is not None:
             return False, "collision scene process exited while waiting\n" + tail_file(process_logs.get("start_collision_scene"))
@@ -2127,38 +2275,17 @@ def wait_for_collision_object_sample(
         if collision_result.returncode == 0 and "id:" in collision_result.stdout:
             saw_collision = True
 
-        attached_result = subprocess.run(
-            ["bash", "-lc", "timeout 2s ros2 topic echo /attached_collision_object --once"],
-            cwd=str(ROOT),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=3.0,
-            check=False,
-        )
-        last_attached_output = attached_result.stdout[-2000:]
-        if (
-            attached_result.returncode == 0
-            and "azas_rg2_gripper_on_link6" in attached_result.stdout
-            and "link_name: link_6" in attached_result.stdout
-        ):
-            saw_attached_gripper = True
-
-        if saw_collision and saw_attached_gripper:
+        if saw_collision:
             return (
                 True,
                 "collision object sample observed on /collision_object\n"
-                + last_collision_output
-                + "\nattached RG2 gripper envelope observed on /attached_collision_object\n"
-                + last_attached_output,
+                + last_collision_output,
             )
         time.sleep(0.5)
     return False, (
         f"scene readiness incomplete within {timeout_sec:.1f}s "
-        f"(workspace={saw_collision}, link6_gripper={saw_attached_gripper})\n"
-        f"--- last /collision_object ---\n{last_collision_output}\n"
-        f"--- last /attached_collision_object ---\n{last_attached_output}"
+        f"(workspace={saw_collision})\n"
+        f"--- last /collision_object ---\n{last_collision_output}"
     )
 
 
@@ -2205,6 +2332,37 @@ def wait_for_camera_topic_samples(
         f"seen: {', '.join(sorted(seen)) or '<none>'}\n"
         f"missing: {', '.join(missing)}\n"
         f"--- last output ---\n{last_output}"
+    )
+
+
+def realsense_usb_visible() -> tuple[bool, str]:
+    """Return whether an Intel RealSense device is visible to the OS."""
+    try:
+        result = subprocess.run(
+            ["lsusb"],
+            cwd=str(ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=3.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"[FAIL] lsusb check failed: {exc}"
+    output = result.stdout.strip()
+    if result.returncode != 0:
+        return False, "[FAIL] lsusb returned non-zero\n" + output
+    visible = any(
+        ("Intel" in line and "RealSense" in line)
+        or "8086:0b" in line.lower()
+        for line in output.splitlines()
+    )
+    if visible:
+        return True, "[OK] RealSense USB device visible\n" + output
+    return (
+        False,
+        "[FAIL] RealSense USB device is not visible to lsusb. "
+        "카메라 ROS 재시작으로는 복구되지 않습니다.\n" + output,
     )
 
 
@@ -2506,6 +2664,12 @@ def side_grip_preflight(env: dict[str, str], service_prefix: str) -> tuple[bool,
             + ", ".join(str(path) for path in calibration_candidates)
         )
 
+    usb_ok, usb_output = realsense_usb_visible()
+    checks.append("--- RealSense USB ---\n" + usb_output)
+    if not usb_ok:
+        ok = False
+        return ok, "\n".join(checks)
+
     camera_ready, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=5.0)
     if not camera_ready:
         # 카메라가 depth 없이 켜져 있을 수 있음 → 자동 재시작
@@ -2575,6 +2739,12 @@ def cup_uprighting_preflight(env: dict[str, str], service_prefix: str) -> tuple[
     else:
         ok = False
         checks.append(f"[FAIL] cup_uprighting YOLO model missing: {CUP_UPRIGHTING_YOLO_MODEL_PATH}")
+
+    usb_ok, usb_output = realsense_usb_visible()
+    checks.append("--- RealSense USB ---\n" + usb_output)
+    if not usb_ok:
+        ok = False
+        return ok, "\n".join(checks)
 
     camera_ready, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=5.0)
     checks.append("--- camera topics ---\n" + camera_output)
@@ -2973,73 +3143,28 @@ def requires_collision_scene_step(key: str) -> bool:
 
 
 def with_collision_scene_prereq(selected: list[str]) -> list[str]:
-    ordered = list(dict.fromkeys(selected))
+    ordered: list[str] = []
 
-    def ensure_before(target: str, prerequisites: list[str]) -> None:
-        if target not in ordered:
-            return
-        target_index = ordered.index(target)
-        for prereq in prerequisites:
-            if prereq in ordered:
-                prereq_index = ordered.index(prereq)
-                if prereq_index < target_index:
-                    continue
-                ordered.pop(prereq_index)
-                if prereq_index < target_index:
-                    target_index -= 1
-        target_index = ordered.index(target)
-        missing = [
-            prereq
-            for prereq in prerequisites
-            if prereq not in ordered[:target_index]
-        ]
-        for offset, prereq in enumerate(missing):
-            ordered.insert(target_index + offset, prereq)
+    def append_once(key: str) -> None:
+        if key not in ordered:
+            ordered.append(key)
 
-    # 창현/소명/강개발자 수동 OpenCV 로직은 검증된 tmux stack을 사용한 뒤
-    # 단독 버튼으로 실행한다. 서버가 connect/status/camera 단계를 다시 끼워
-    # 넣으면 패널 실행 경로가 수동 tmux 경로와 달라지고 느려진다.
+    for key in selected:
+        if key == "color_scan":
+            for prereq in (
+                "connect_robot",
+                "status_check",
+                "start_collision_scene",
+                "move_to_color_scan_pose",
+                "start_camera",
+            ):
+                append_once(prereq)
+        elif requires_collision_scene_step(key):
+            for prereq in ("connect_robot", "status_check", "start_collision_scene"):
+                append_once(prereq)
+        append_once(key)
 
-    # Color classification must aim the robot at the measured color-scan pose
-    # before sampling the dispenser image.  If the camera is already running from
-    # side-grip, keep it there; otherwise start it before color_scan.
-    ensure_before(
-        "color_scan",
-        ["connect_robot", "status_check", "move_to_color_scan_pose", "start_camera"],
-    )
-
-    # The measured dispenser recipe assumes the cup has already been grasped by
-    # side_grip or an equivalent operator-verified step.  Here we only ensure the
-    # real-motion services and gripper service are available before the cycle.
-    ensure_before(
-        "run_color_recipe_sequence",
-        ["connect_robot", "status_check", "connect_gripper"],
-    )
-
-    first_collision_index = next(
-        (
-            index
-            for index, key in enumerate(ordered)
-            if requires_collision_scene_step(key)
-        ),
-        -1,
-    )
-    if first_collision_index >= 0:
-        existing_scene_index = (
-            ordered.index("start_collision_scene") if "start_collision_scene" in ordered else -1
-        )
-        if existing_scene_index < 0 or existing_scene_index > first_collision_index:
-            ordered = [key for key in ordered if key != "start_collision_scene"]
-            first_collision_index = next(
-                (
-                    index
-                    for index, key in enumerate(ordered)
-                    if requires_collision_scene_step(key)
-                ),
-                0,
-            )
-            ordered.insert(first_collision_index, "start_collision_scene")
-    return list(dict.fromkeys(ordered))
+    return ordered
 
 
 def configure_manual_recipe_chain(selected: list[str], payload: dict[str, Any]) -> list[str]:
@@ -3101,7 +3226,12 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M"] = str(
         payload.get("cup_holder_place_final_z_offset_m")
         or env.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
-        or "-0.020"
+        or "-0.030"
+    )
+    env["CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M"] = str(
+        payload.get("cup_holder_place_final_y_offset_m")
+        or env.get("CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M")
+        or "-0.010"
     )
     # Operational-only offset for the pre-shake cup-holder re-grasp.
     # This intentionally does not modify calibration.yaml and is separate from the
@@ -3141,56 +3271,9 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
 
     if step.key == "connect_robot":
-        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
-        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
-        rt_host = str(
-            payload.get("rt_host")
-            or os.environ.get("RT_HOST")
-            or DEFAULT_RT_HOST
-        )
-        relay_script_path = ROOT / "src" / "dsr_practice" / "dsr_practice" / "joint_state_relay.py"
-        relay_input = f"/{robot_name.strip('/') or 'dsr01'}/joint_states"
-        relay_script = (
-            "sleep 12; "
-            f"cd {shlex.quote(str(ROOT))} && {ROS_SETUP}; "
-            f"if [ -f {shlex.quote(str(relay_script_path))} ]; then "
-            "echo '[Azas] starting RViz /joint_states relay "
-            f"{relay_input} -> /joint_states'; "
-            f"python3 {shlex.quote(str(relay_script_path))} --ros-args "
-            "-r __node:=azas_joint_state_relay "
-            f"-p input_topic:={shlex.quote(relay_input)} "
-            "-p output_topic:=/joint_states; "
-            "else echo '[WARN] joint_state_relay.py not found; RViz may not mirror real robot joints'; fi"
-        )
-        bringup_script = (
-            f"cd {shlex.quote(str(ROOT))} && "
-            f"ROBOT_HOST={shlex.quote(robot_host)} "
-            f"ROBOT_NAME={shlex.quote(robot_name)} RT_HOST={shlex.quote(rt_host)} "
-            "DOOSAN_REAL_MOTION_CONFIRM=ENABLE_DOOSAN_REAL_MOTION_BRINGUP "
-            f"{step.command} & "
-            "bringup_pid=$!; "
-            f"( {relay_script} ) & "
-            "wait $bringup_pid"
-        )
-        return f"bash -lc {shlex.quote(bringup_script)}"
+        return tmux_stack_start_command(payload)
     if step.key == "start_tmux_stack":
-        robot_host = str(payload.get("robot_host") or os.environ.get("ROBOT_HOST") or DEFAULT_ROBOT_HOST)
-        robot_name = str(payload.get("robot_name") or os.environ.get("ROBOT_NAME") or "dsr01")
-        rt_host = str(payload.get("rt_host") or os.environ.get("RT_HOST") or DEFAULT_RT_HOST)
-        rg2_ip = str(payload.get("rg2_ip") or os.environ.get("RG2_IP") or "192.168.1.1")
-        ros_domain_id = str(payload.get("ros_domain_id") or os.environ.get("AZAS_PANEL_ROS_DOMAIN_ID") or os.environ.get("ROS_DOMAIN_ID") or DEFAULT_ROS_DOMAIN_ID)
-        ros_localhost_only = str(os.environ.get("ROS_LOCALHOST_ONLY") or "0")
-        return (
-            f"cd {ROOT} && "
-            f"SESSION={shlex.quote(PANEL_TMUX_SESSION)} "
-            f"ROS_DOMAIN_ID={shlex.quote(ros_domain_id)} "
-            f"ROS_LOCALHOST_ONLY={shlex.quote(ros_localhost_only)} "
-            f"ROBOT_HOST={shlex.quote(robot_host)} "
-            f"ROBOT_NAME={shlex.quote(robot_name)} "
-            f"RT_HOST={shlex.quote(rt_host)} "
-            f"RG2_IP={shlex.quote(rg2_ip)} "
-            f"bash {shlex.quote(str(ROOT / 'tools' / 'run' / 'start_azas_tmux_stack.sh'))}"
-        )
+        return tmux_stack_start_command(payload)
     if step.key == "status_check":
         clean = service_prefix.strip("/") or "dsr01"
         return (
@@ -3359,15 +3442,8 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "dispenser_collision_publish_markers:=true & "
             "ros2 launch azas_bringup rg2_link6_tcp.launch.py "
             "publish_gripper_collision:=false & "
-            "(timeout 12s ros2 run azas_motion link6_gripper_collision_node "
+            "timeout 12s ros2 run azas_motion link6_gripper_collision_node "
             "--ros-args -p operation:=remove -p publish_once:=true -p publish_markers:=false || true; "
-            "ros2 run azas_motion link6_gripper_collision_node "
-            "--ros-args "
-            "-p palm_size_x_m:=0.075 -p palm_size_y_m:=0.115 -p palm_size_z_m:=0.040 -p palm_z_m:=0.070 "
-            "-p finger_size_x_m:=0.030 -p finger_size_y_m:=0.014 -p finger_size_z_m:=0.120 "
-            "-p finger_y_m:=0.050 -p finger_z_m:=0.125 "
-            "-p pad_size_x_m:=0.022 -p pad_size_y_m:=0.010 -p pad_size_z_m:=0.025 "
-            "-p pad_y_m:=0.037 -p pad_z_m:=0.180) & "
             "ros2 run tf2_ros static_transform_publisher "
             "--x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 "
             "--frame-id world --child-frame-id base_link & "
@@ -3401,6 +3477,13 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             "ros2 run rqt_image_view rqt_image_view /camera/camera/color/image_raw"
         )
+    if step.key == "start_hand_detection_view":
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "DISPLAY=${DISPLAY:-:0} "
+            "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
+            "ros2 run rqt_image_view rqt_image_view /azas/human_hand_detection/overlay"
+        )
     if step.key == "detect_cup_lid":
         return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_bringup yolo_perception.launch.py"
     if step.key == "pick_lid":
@@ -3410,13 +3493,17 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         )
     if step.key == "lid_grip_close":
         direct_script = ROOT / "tools" / "run" / "run_kang_lid_grip_close_direct.sh"
-        return (
+        manual_cmd = (
             f"cd {ROOT} && "
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
+            "MOVE_TO_LID_VIEW_POSE=true "
             f"bash {shlex.quote(str(direct_script))}"
         )
+        if payload.get("_auto_shake_after_lid_grip_close", True):
+            return chain_shake_after_lid_command(manual_cmd, payload)
+        return manual_cmd
     if step.key == "cup_uprighting":
         direct_script = ROOT / "tools" / "run" / "run_somyeong_cup_uprighting_direct.sh"
         manual_cmd = (
@@ -3432,17 +3519,28 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             return chain_recipe_after_manual_command(manual_cmd, payload, "소명 cup_uprighting")
         return manual_cmd
     if step.key == "voice_input":
-        return f"cd {ROOT} && {ROS_SETUP} && ros2 launch azas_voice azas_voice.launch.py"
+        return (
+            f"cd {ROOT} && {ROS_SETUP} && "
+            "echo '[Azas] 수빈 STT/주문 UI: voice screen http://localhost:8090' && "
+            "echo '[Azas] 메뉴를 말하거나 테스트 발화 입력 후, 응/시작으로 확정하면 listen_stt_recipe가 latest_recipe.json을 저장합니다.' && "
+            "ros2 launch azas_voice azas_voice.launch.py run_voice_screen:=true"
+        )
     if step.key == "side_grip":
         direct_script = ROOT / "tools" / "run" / "run_changhyun_side_grip_direct.sh"
+        side_target_x_offset_m = str(
+            payload.get("side_target_x_offset_m")
+            or os.environ.get("SIDE_TARGET_X_OFFSET_M")
+            or "-0.020"
+        )
         manual_cmd = (
             f"cd {ROOT} && "
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
+            f"SIDE_TARGET_X_OFFSET_M={shlex.quote(side_target_x_offset_m)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             f"bash {shlex.quote(str(direct_script))}"
         )
-        if payload.get("_auto_recipe_after_manual_logic"):
+        if payload.get("_auto_recipe_after_manual_logic", True):
             return chain_recipe_after_manual_command(manual_cmd, payload, "창현 side_grip")
         return manual_cmd
     if step.key == "gripper_soft_grasp":
@@ -3586,7 +3684,12 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         place_final_z_offset_m = str(
             payload.get("cup_holder_place_final_z_offset_m")
             or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
-            or "-0.020"
+            or "-0.030"
+        ).strip()
+        place_final_y_offset_m = str(
+            payload.get("cup_holder_place_final_y_offset_m")
+            or os.environ.get("CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M")
+            or "-0.010"
         ).strip()
         return (
             f"cd {ROOT} && {ROS_SETUP} && python3 tools/run/place_side_grip_cup_in_holder.py "
@@ -3596,10 +3699,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--moveit-planning-pipeline ompl --moveit-planner-id RRTConnectkConfigDefault "
             "--moveit-planning-time-sec 8.0 --moveit-planning-attempts 5 "
             "--moveit-velocity-scaling 0.08 --moveit-acceleration-scaling 0.06 "
-            "--approach-velocity 15.0 --approach-acceleration 20.0 "
+            "--approach-velocity 80.0 --approach-acceleration 20.0 "
+            f"--place-final-y-offset-m {shlex.quote(place_final_y_offset_m)} "
             f"--place-final-z-offset-m {shlex.quote(place_final_z_offset_m)} "
-            "--place-velocity 6.0 --place-acceleration 10.0 "
-            "--retreat-velocity 12.0 --retreat-acceleration 16.0 "
+            "--place-velocity 80.0 --place-acceleration 10.0 "
+            "--retreat-velocity 80.0 --retreat-acceleration 16.0 "
             "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
             "--z-max 0.28 "
             "--execute --confirm ENABLE_CUP_HOLDER_PLACE"
@@ -3658,6 +3762,35 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
             "tools/run/run_rule_based_shake_real.sh"
+            " && echo '[Azas] SHAKE DONE: 손 검출/핸드오버를 위해 카메라 포즈로 복귀합니다 (컵 파지 유지).' && "
+            "python3 tools/run/direct_movej_joints.py "
+            f"--service-prefix {service_prefix} "
+            "--j1 3.0 --j2 -12.7 --j3 44.0 --j4 -9.0 --j5 133.0 --j6 90.0 "
+            "--velocity 15 --acceleration 15 "
+            "--j5-min-deg -150 --j5-max-deg 150 --timeout-sec 60 --motion-timeout-sec 120 "
+            "--execute --confirm ENABLE_DIRECT_MOVEJ"
+        )
+    if step.key == "handover_cup_to_palm":
+        release_height_m = str(
+            payload.get("handover_release_tcp_above_palm_m")
+            or os.environ.get("HANDOVER_RELEASE_TCP_ABOVE_PALM_M")
+            or "0.08"
+        ).strip()
+        return (
+            f"cd {ROOT} && "
+            f"{ROS_SETUP} && "
+            "echo '[Azas] HANDOVER START: 펼친 손바닥을 추적해 컵을 손 위에 내려놓습니다.' && "
+            "echo '[Azas] 전제: 손 검출 시작 버튼이 켜져 있고, 받는 사람이 손바닥을 펴고 멈춰 있어야 합니다.' && "
+            "echo '[Azas] 안전: 하강은 2cm 스텝마다 외력을 확인하고, 손이 움직이면 자동 후퇴합니다.' && "
+            "python3 tools/run/handover_cup_to_palm.py "
+            f"--service-prefix {service_prefix} "
+            f"--release-tcp-above-palm-m {shlex.quote(release_height_m)} "
+            "--transit-velocity 10.0 --transit-acceleration 14.0 "
+            "--descent-velocity 4.0 --descent-acceleration 6.0 "
+            "--force-abort-delta-n 10.0 "
+            "--execute --confirm ENABLE_HUMAN_PALM_HANDOVER "
+            "--approve-motion ENABLE_HUMAN_PALM_HANDOVER_MOTION "
+            "--approve-release RELEASE_CUP_NOW"
         )
     if step.command.strip():
         return f"cd {ROOT} && {ROS_SETUP} && {step.command}"
@@ -3840,109 +3973,21 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
     cmd = command_for(step, payload)
     if step.kind == "background":
         restart_output = ""
-        if step.key == "connect_robot":
-            ready, ready_output, _svc = motion_services_ready(env["SERVICE_PREFIX"])
-            if ready:
-                robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
-                virtual_present, virtual_output = doosan_virtual_nodes_present(env["SERVICE_PREFIX"])
-                if robot_ready:
-                    note = ""
-                    if virtual_present:
-                        note = (
-                            "\n[INFO] /virtual_node 이름이 보이지만 robot_state=STATE_STANDBY(1) "
-                            "및 check_motion success=True라서 real bringup을 유지합니다. "
-                            "Doosan real launch에서도 이 노드명이 보일 수 있어 이름만으로 재시작하지 않습니다.\n"
-                            f"{virtual_output}"
-                        )
-                    return {
-                        "key": step.key,
-                        "status": "running",
-                        "output": (
-                            "이미 Doosan motion 서비스가 보이고 로봇이 STATE_STANDBY(1)입니다. "
-                            "재시작하지 않습니다.\n"
-                            f"{ready_output}\n{robot_ready_output}{note}"
-                        ),
-                    }
-                if virtual_present:
-                    cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
-                    restart_output = (
-                        "기존 Doosan motion 서비스가 보이지만 virtual_node가 감지되어 실제 로봇 연결로 재시작합니다.\n"
-                        f"--- virtual nodes ---\n{virtual_output}\n"
-                        "--- cleanup ---\n"
-                        + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
-                        + "\n"
-                    )
-                else:
-                    return {
-                        "key": step.key,
-                        "status": "blocked",
-                        "output": (
-                            "Doosan motion 서비스는 보이지만 로봇이 motion-ready 상태가 아닙니다. "
-                            "재시작하지 않습니다.\n"
-                            f"{ready_output}\n"
-                            "티치펜던트/컨트롤러에서 빨간 상태(SAFE_OFF/보호정지/서보 상태)를 해제해 "
-                            "STATE_STANDBY(1)로 만든 뒤 다시 확인하세요.\n"
-                            f"{robot_ready_output}"
-                        ),
-                    }
-            old = processes.get(step.key)
-            if old and old.poll() is None:
-                ready, waited_output = wait_for_motion_services_ready(
-                    env["SERVICE_PREFIX"],
-                    timeout_sec=20.0,
-                    proc=old,
+        if step.key in {"connect_robot", "start_tmux_stack"}:
+            cleanup_events: list[str] = []
+            cleanup_events.extend(cleanup_side_grip_stack(grace_sec=3.0))
+            cleanup_events.extend(cleanup_camera_stack(grace_sec=3.0))
+            cleanup_events.extend(cleanup_rg2_stack(grace_sec=3.0))
+            restart_output = "\n".join(
+                part
+                for part in (
+                    "[Azas] tmux 통합 재연결: stop_azas_all.sh가 azas-logic tmux 세션을 종료하므로 "
+                    "패널 서버가 tmux 밖에서 터미널과 같은 stop -> start 명령을 직접 실행합니다.",
+                    "[Azas] reconnect pre-cleanup: 이전 side_grip/camera/RG2 잔여 프로세스를 먼저 정리합니다.",
+                    "\n".join(cleanup_events),
                 )
-                if ready:
-                    robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
-                    if robot_ready:
-                        return {
-                            "key": step.key,
-                            "status": "running",
-                            "output": (
-                                "기존 로봇 연결 프로세스가 계속 실행 중이고 motion 서비스가 준비됐습니다.\n"
-                                f"{waited_output}\n{robot_ready_output}"
-                            ),
-                            "pid": old.pid,
-                        }
-                    return {
-                        "key": step.key,
-                        "status": "blocked",
-                        "output": (
-                            "기존 로봇 연결 프로세스가 motion 서비스를 띄웠지만 로봇이 "
-                            "STATE_STANDBY(1)가 아닙니다.\n"
-                            f"{waited_output}\n{robot_ready_output}"
-                        ),
-                        "pid": old.pid,
-                    }
-                log_tail = tail_file(process_logs.get(step.key))
-                cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
-                time.sleep(1.5)
-                restart_output = (
-                    "기존 로봇 연결 프로세스가 motion 서비스를 준비하지 못해 재연결합니다.\n"
-                    f"pid={old.pid}\n"
-                    f"--- readiness ---\n{waited_output}\n"
-                    f"--- previous log tail ---\n{log_tail}\n"
-                    "--- cleanup ---\n"
-                    + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
-                    + "\n"
-                )
-            existing_pid, existing_cmd = find_existing_doosan_launch()
-            if existing_pid is not None and not restart_output:
-                cleanup_events = cleanup_doosan_stack(grace_sec=3.0)
-                time.sleep(1.5)
-                restart_output = (
-                    "기존 Doosan bringup이 있으나 motion 서비스가 준비되지 않아 재연결합니다.\n"
-                    f"pid={existing_pid}\ncmd={existing_cmd[:500]}\n"
-                    f"--- readiness ---\n{ready_output}\n"
-                    "--- cleanup ---\n"
-                    + ("\n".join(cleanup_events) if cleanup_events else "no cleanup events")
-                    + "\n"
-                )
-            if not restart_output:
-                cleanup_events = cleanup_doosan_stack()
-                # Give DDS/service discovery a short moment to forget killed duplicate nodes.
-                time.sleep(1.5)
-                restart_output = "\n".join(cleanup_events)
+                if part
+            )
         elif step.key == "connect_gripper":
             cleanup_events = cleanup_rg2_stack()
             # DDS may keep stale service names briefly after a killed RG2 wrapper.
@@ -3990,17 +4035,21 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
         log_handle.close()
         processes[step.key] = proc
         process_logs[step.key] = log_path
-        if step.key == "start_tmux_stack":
+        if step.key in {"start_tmux_stack", "connect_robot"}:
             try:
                 proc.wait(timeout=90.0)
             except subprocess.TimeoutExpired:
                 output = (
                     f"{cmd}\n--- log ---\n{log_path}\n"
-                    "tmux 연결 스택 스크립트가 90초 안에 종료되지 않았습니다.\n"
+                    "tmux 통합 재연결 명령이 90초 안에 종료되지 않았습니다.\n"
                     + tail_file(log_path, max_chars=8000)
                 )
+                if restart_output:
+                    output = f"{restart_output}\n--- start command ---\n{output}"
                 return {"key": step.key, "status": "starting", "pid": proc.pid, "output": output}
             output = f"{cmd}\n--- log ---\n{log_path}\n--- start output ---\n{tail_file(log_path, max_chars=10000)}"
+            if restart_output:
+                output = f"{restart_output}\n--- start command ---\n{output}"
             if proc.returncode != 0:
                 return {"key": step.key, "status": "failed", "returncode": proc.returncode, "output": output}
             return {
@@ -4009,84 +4058,12 @@ def run_step(step: Step, payload: dict[str, Any]) -> dict[str, Any]:
                 "pid": proc.pid,
                 "output": (
                     output
-                    + "\n[Azas] tmux 창 생성 성공. robot/gripper/camera/joint_relay는 각 tmux 창 로그를 기준으로 확인합니다. "
+                    + "\n[Azas] tmux 통합 재연결 명령 완료. robot/gripper/camera/joint_relay는 각 tmux 창 로그를 기준으로 확인합니다. "
                     "ROS CLI daemon/discovery 오류 때문에 이 단계에서 후속 조회로 차단하지 않습니다."
                 ),
             }
 
-            service_prefix = env["SERVICE_PREFIX"]
-            motion_ok, motion_output = real_motion_readiness_gate(
-                service_prefix,
-                motion_timeout_sec=45.0,
-            )
-            gripper_ok, gripper_output = wait_for_required_services(
-                ["/jarvis/rg2/open", "/jarvis/rg2/close", "/jarvis/rg2/set_width"],
-                timeout_sec=10.0,
-            )
-            camera_ok, camera_output = wait_for_camera_topic_samples(env=env, timeout_sec=12.0)
-            output += (
-                "\n--- robot readiness ---\n"
-                + motion_output
-                + "\n--- gripper readiness ---\n"
-                + gripper_output
-                + "\n--- camera readiness ---\n"
-                + camera_output
-            )
-            if motion_ok and gripper_ok and camera_ok:
-                return {"key": step.key, "status": "passed", "pid": proc.pid, "output": output}
-            return {
-                "key": step.key,
-                "status": "blocked",
-                "pid": proc.pid,
-                "output": (
-                    "tmux 창은 시작했지만 로봇/그리퍼/카메라 준비 조건이 완성되지 않았습니다. "
-                    "side-grip을 시작하지 않습니다.\n"
-                    + output
-                ),
-            }
-        if step.key == "connect_robot":
-            ready, waited_output = wait_for_motion_services_ready(
-                env["SERVICE_PREFIX"],
-                timeout_sec=35.0,
-                proc=proc,
-            )
-            if ready:
-                robot_ready, robot_ready_output = doosan_robot_ready(env["SERVICE_PREFIX"])
-                output = f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}\n{robot_ready_output}"
-                if restart_output:
-                    output = f"{restart_output}\n--- start command ---\n{output}"
-                if robot_ready:
-                    return {
-                        "key": step.key,
-                        "status": "passed",
-                        "pid": proc.pid,
-                        "output": output,
-                    }
-                return {
-                    "key": step.key,
-                    "status": "blocked",
-                    "pid": proc.pid,
-                    "output": (
-                        "로봇 연결 프로세스는 시작됐고 motion 서비스도 보이지만 "
-                        "로봇이 STATE_STANDBY(1)가 아닙니다.\n"
-                        + output
-                    ),
-                }
-            if proc.poll() is None:
-                output = (
-                    f"{cmd}\n--- log ---\n{log_path}\n--- readiness ---\n{waited_output}\n"
-                    "아직 시작 중입니다. 몇 초 뒤 '연결 확인'만 다시 눌러주세요."
-                )
-                if restart_output:
-                    output = f"{restart_output}\n--- start command ---\n{output}"
-                return {
-                    "key": step.key,
-                    "status": "starting",
-                    "pid": proc.pid,
-                    "output": output,
-                }
-        else:
-            time.sleep(2.0)
+        time.sleep(2.0)
         if proc.poll() is not None:
             output = tail_file(log_path)
             if restart_output:
@@ -4361,9 +4338,17 @@ class Handler(BaseHTTPRequestHandler):
                     "DISPENSER_TCP_NAME", DEFAULT_DISPENSER_TCP_NAME
                 ),
                 "selected_dispenser_id": os.environ.get("SELECTED_DISPENSER_ID", "2"),
+                "cup_holder_place_final_y_offset_m": os.environ.get(
+                    "CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M", "-0.010"
+                ),
+                "cup_holder_place_final_z_offset_m": os.environ.get(
+                    "CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M", "-0.030"
+                ),
             }
             data = []
             for step in STEPS:
+                if step.key in PANEL_HIDDEN_STEP_KEYS:
+                    continue
                 item = asdict(step)
                 item["resolved_command"] = command_for(step, preview_payload) if step.implemented else ""
                 item["command_saved"] = step.key in command_overrides
@@ -4377,6 +4362,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(dispenser_color_map_status())
             return
         if path == "/api/camera_snapshot.jpg":
+            if os.environ.get("AZAS_PANEL_ENABLE_CAMERA_SNAPSHOT", "0") not in {"1", "true", "TRUE"}:
+                message = b"camera snapshot endpoint disabled in field panel"
+                try:
+                    self.send_response(404)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(message)))
+                    self.end_headers()
+                    self.wfile.write(message)
+                except BrokenPipeError:
+                    pass
+                return
             ok, body, error = camera_snapshot_jpeg()
             if not ok:
                 self.send_response(503)
@@ -4426,6 +4422,15 @@ class Handler(BaseHTTPRequestHandler):
                 steps_by_key = {step.key: step for step in STEPS}
                 results = []
                 for key in selected:
+                    if key in PANEL_HIDDEN_STEP_KEYS:
+                        results.append(
+                            {
+                                "key": key,
+                                "status": "blocked",
+                                "output": "이 단계는 패널에서 제거된 내부/구버전 단계라 실행하지 않았습니다.",
+                            }
+                        )
+                        break
                     step = steps_by_key.get(key)
                     if step is None:
                         continue

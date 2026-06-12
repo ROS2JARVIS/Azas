@@ -10,10 +10,10 @@ ARUCO_DICTIONARY="${ARUCO_DICTIONARY:-DICT_4X4_50}"
 ARUCO_MARKER_ID="${ARUCO_MARKER_ID:-14}"
 ARUCO_FALLBACK_MARKERS="${ARUCO_FALLBACK_MARKERS:-}"
 ARUCO_MARKER_LENGTH_M="${ARUCO_MARKER_LENGTH_M:-0.03}"
-ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
+ROS_DOMAIN_ID="${LID_ROS_DOMAIN_ID:-${ROS_DOMAIN_ID:-9}}"
 ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
 FASTDDS_BUILTIN_TRANSPORTS="${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
-MOVE_TO_LID_VIEW_POSE="${MOVE_TO_LID_VIEW_POSE:-true}"
+MOVE_TO_LID_VIEW_POSE="${MOVE_TO_LID_VIEW_POSE:-false}"
 
 cd "${ROOT}"
 
@@ -46,6 +46,7 @@ echo "[Azas] OpenCV window: confirm lid ArUco, then press p. Quit with q/Esc."
 echo "[Azas] service_prefix=${SERVICE_PREFIX} DISPLAY=${DISPLAY} XAUTHORITY=${XAUTHORITY}"
 echo "[Azas] ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS}"
 echo "[Azas] aruco=${ARUCO_DICTIONARY}:${ARUCO_MARKER_ID} fallback=${ARUCO_FALLBACK_MARKERS} length_m=${ARUCO_MARKER_LENGTH_M}"
+echo "[Azas] note: use_j6_yaw_for_pick/pick_j6_* are not supported by this Azas launch; using supported ArUco-axis orientation parameters."
 
 if [[ ! -f "${MODEL_PATH}" ]]; then
   echo "[Azas][WARN] model_path not found: ${MODEL_PATH}"
@@ -78,32 +79,36 @@ launch_args=(
   aruco_dictionary:="${ARUCO_DICTIONARY}" aruco_marker_id:="${ARUCO_MARKER_ID}" \
   aruco_marker_length_m:="${ARUCO_MARKER_LENGTH_M}" \
   use_aruco_axis_for_orientation:=true aruco_finger_axis_quarter_turns:=0 \
-  use_lid_pose_yaw_for_pick:=true lid_pose_yaw_axis:=y lid_pose_yaw_offset_deg:=0.0 lid_pose_yaw_equivalence_deg:=180.0 \
-  visual_refine_before_grasp:=true visual_refine_sample_count:=5 visual_refine_timeout_sec:=3.0 visual_refine_max_yaw_std_deg:=3.0 \
+  use_lid_pose_yaw_for_pick:=false lid_pose_yaw_axis:=y lid_pose_yaw_offset_deg:=0.0 lid_pose_yaw_equivalence_deg:=360.0 \
+  visual_refine_before_grasp:=true visual_refine_sample_count:=5 visual_refine_timeout_sec:=3.0 visual_refine_max_yaw_std_deg:=5.0 \
   visual_refine_max_position_std_m:=0.005 visual_refine_apply_xy:=true visual_refine_apply_yaw:=true visual_refine_fallback_to_initial_plan:=true \
   enable_hardware:=true hardware_confirm:=ENABLE_REAL_ROBOT_MOTION allow_service_control_without_moveit:=true service_prefix:="${SERVICE_PREFIX}" \
-  approach_lid_with_movej:=true approach_movej_velocity:=20.0 approach_movej_acceleration:=20.0 \
-  lid_overhead_approach_enabled:=true lid_overhead_min_z_m:=0.260 \
+  approach_lid_with_movej:=false approach_movej_velocity:=20.0 approach_movej_acceleration:=20.0 \
+  lid_overhead_approach_enabled:=false lid_overhead_min_z_m:=0.260 \
   rx:=108.41 ry:=-176.32 rz:=175.98 offset_axis:=base_z surface_offset_m:=0.0 \
-  tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:=0.160 min_grasp_z_m:=0.180 \
-  approach_offset_m:=0.08 min_approach_z_m:=0.260 lift_offset_m:=0.10 settle_seconds_before_grasp:=0.5 hold_seconds_after_grasp:=3.0 \
-  line_velocity:=15.0 line_acceleration:=8.0 move_timeout_sec:=90.0 \
+  tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:=-0.040 min_grasp_z_m:=0.025 \
+  approach_offset_m:=0.08 min_approach_z_m:=0.0 lift_offset_m:=0.10 settle_seconds_before_grasp:=0.5 hold_seconds_after_grasp:=3.0 \
+  line_velocity:=30.0 line_acceleration:=10.0 move_timeout_sec:=90.0 \
   enable_gripper_service_calls:=true gripper_set_service:=/jarvis/rg2/set_width \
   gripper_preopen_width_m:=0.110 gripper_grasp_width_m:=0.020 gripper_force_n:=12.0 \
   continue_after_gripper_grasp_failure:=true gripper_grasp_failure_wait_sec:=2.0 \
   enable_lid_twist_after_grasp:=true \
   lid_twist_target_x_m:=0.422959106 lid_twist_target_y_m:=0.223224869 lid_twist_target_z_m:=0.166827988 \
   lid_twist_rx:=73.901489 lid_twist_ry:=-178.542740 lid_twist_rz:=117.385612 \
-  lid_twist_transfer_clearance_m:=0.12 lid_twist_transfer_max_z_m:=0.60 \
-  lid_twist_use_force_control:=false lid_twist_force_rotation_mode:=j6 \
+  lid_twist_transfer_clearance_m:=0.20 lid_twist_transfer_max_z_m:=0.60 \
+  lid_twist_use_force_control:=false lid_twist_use_force_spiral:=true lid_twist_force_rotation_mode:=j6 \
+  lid_twist_down_force_n:=2.0 lid_twist_force_ref:=base lid_twist_force_service_timeout_sec:=20.0 \
+  lid_twist_force_settle_seconds:=0.2 lid_twist_force_release_time:=0.2 \
   lid_twist_preseat_periodic_before_turn:=true \
   lid_twist_preseat_periodic_x_amp_mm:=0.0 lid_twist_preseat_periodic_y_amp_mm:=0.0 lid_twist_preseat_periodic_z_amp_mm:=1.0 \
   lid_twist_preseat_periodic_rx_amp_deg:=0.0 lid_twist_preseat_periodic_ry_amp_deg:=0.0 lid_twist_preseat_periodic_rz_amp_deg:=10.0 \
   lid_twist_preseat_periodic_period_sec:=3.6 lid_twist_preseat_periodic_acc_time_sec:=1.0 lid_twist_preseat_periodic_repeat:=2 \
-  lid_twist_preseat_periodic_ref:=tool lid_twist_rz_delta_deg:=300.0 lid_twist_turn_step_deg:=50.0 \
-  lid_twist_release_lift_m:=0.03 lid_twist_min_z_m:=0.140 lid_twist_max_z_m:=0.220 \
-  lid_twist_transfer_velocity:=25.0 lid_twist_press_velocity:=5.0 lid_twist_turn_velocity:=30.0 lid_twist_acceleration:=15.0 \
-  lid_twist_hold_seconds_before_turn:=0.0 lid_twist_hold_seconds_after_turn:=0.5
+  lid_twist_preseat_periodic_ref:=tool lid_twist_rz_delta_deg:=360.0 lid_twist_turn_step_deg:=60.0 \
+  lid_twist_release_lift_m:=0.03 lid_twist_min_z_m:=0.140 lid_twist_max_z_m:=0.260 \
+  lid_twist_transfer_velocity:=25.0 lid_twist_press_velocity:=10.0 lid_twist_turn_velocity:=40.0 lid_twist_acceleration:=15.0 \
+  lid_twist_hold_seconds_before_turn:=0.2 lid_twist_hold_seconds_after_turn:=0.5 \
+  lid_twist_compliance_x_stiffness:=3000.0 lid_twist_compliance_y_stiffness:=3000.0 lid_twist_compliance_z_stiffness:=300.0 \
+  lid_twist_compliance_rx_stiffness:=200.0 lid_twist_compliance_ry_stiffness:=200.0 lid_twist_compliance_rz_stiffness:=200.0
 )
 
 if [[ -n "${ARUCO_FALLBACK_MARKERS}" ]]; then

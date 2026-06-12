@@ -225,6 +225,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_short_stage_backoff_m", 0.06)
         self.declare_parameter("side_stage_y_min", SAFE_Y_MIN)
         self.declare_parameter("side_stage_y_max", SAFE_Y_MAX)
+        self.declare_parameter("side_target_x_offset_m", 0.0)
         self.declare_parameter("side_grasp_offset", 0.035)
         self.declare_parameter("side_grasp_z_offset", 0.05)
         self.declare_parameter("side_grasp_stop_backoff_m", 0.04)
@@ -405,6 +406,9 @@ class YoloCupPickNode(Node):
         )
         self.side_stage_y_min = float(self.get_parameter("side_stage_y_min").value)
         self.side_stage_y_max = float(self.get_parameter("side_stage_y_max").value)
+        self.side_target_x_offset_m = float(
+            self.get_parameter("side_target_x_offset_m").value
+        )
         self.side_grasp_offset = float(self.get_parameter("side_grasp_offset").value)
         self.side_grasp_z_offset = float(
             self.get_parameter("side_grasp_z_offset").value
@@ -639,6 +643,11 @@ class YoloCupPickNode(Node):
             self.get_logger().info(
                 "side_fixed_grasp_z is interpreted as a base_link Z target for "
                 f"{EE_LINK}; table/cup/lid geometry is not inferred from it."
+            )
+        if abs(self.side_target_x_offset_m) > 1e-6:
+            self.get_logger().warning(
+                "side_target_x_offset_m applies only to side-grip motion planning; "
+                f"detected cup poses are left unchanged (offset={self.side_target_x_offset_m:.3f} m)."
             )
         if not self.table_collision_enabled:
             self.get_logger().warning(
@@ -1839,6 +1848,20 @@ class YoloCupPickNode(Node):
     def side_final_approach_params(self):
         return self.pilz_lin_params if self.side_linear_approach_enabled else self.pilz_params
 
+    def apply_side_target_offset(self, cup_base_xyz):
+        adjusted = np.array([float(v) for v in cup_base_xyz], dtype=float)
+        if abs(self.side_target_x_offset_m) <= 1e-6:
+            return adjusted
+        raw_x = float(adjusted[0])
+        adjusted[0] = raw_x + self.side_target_x_offset_m
+        self.get_logger().info(
+            "Side target X compensation: "
+            f"detected_x={raw_x:.3f} m, "
+            f"offset={self.side_target_x_offset_m:.3f} m, "
+            f"planning_x={adjusted[0]:.3f} m"
+        )
+        return adjusted
+
     def spin_for_camera_update(self, duration_sec):
         end_time = time.time() + max(0.0, duration_sec)
         while rclpy.ok() and time.time() < end_time:
@@ -2031,7 +2054,8 @@ class YoloCupPickNode(Node):
 
         refined_base = self.center_check_redetect(initial_base)
         cup_base = initial_base if refined_base is None else np.array(refined_base, dtype=float)
-        candidates = self.build_side_grasp_candidates(cup_base)
+        planning_cup_base = self.apply_side_target_offset(cup_base)
+        candidates = self.build_side_grasp_candidates(planning_cup_base)
         if not candidates:
             log.error("No side-grasp candidates generated")
             return False
@@ -2044,7 +2068,7 @@ class YoloCupPickNode(Node):
                 f"close=({candidate.guarded_grasp_xy[0]:.3f}, {candidate.guarded_grasp_xy[1]:.3f}, {candidate.pre_z:.3f})"
             )
 
-        if not self.move_to_side_prepose_if_configured(cup_base):
+        if not self.move_to_side_prepose_if_configured(planning_cup_base):
             return False
         if not self.move_joint1_clearance_before_side_grip():
             return False
