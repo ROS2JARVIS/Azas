@@ -7,56 +7,157 @@
     <link rel="stylesheet" href="/voice.css" />
   </head>
   <body>
-    <main class="voice-shell">
-      <header class="voice-header">
-        <div>
-          <p class="eyebrow">Azas Voice</p>
-          <h1>대화 상태</h1>
-        </div>
-        <span id="state-pill" class="state-pill">대기 중</span>
-      </header>
+    <div class="app-shell">
+      <main class="voice-shell">
+        <header class="voice-header">
+          <div>
+            <p class="eyebrow">Azas Voice</p>
+            <h1>대화 상태</h1>
+          </div>
+          <span id="state-pill" class="state-pill">대기 중</span>
+        </header>
 
-      <section class="visual-stage" aria-label="음성 시각화">
-        <div id="voice-orb" class="voice-orb">
-          <span class="orb-ring ring-one"></span>
-          <span class="orb-ring ring-two"></span>
-          <span class="orb-core"></span>
-        </div>
-        <canvas id="waveform" width="720" height="160" aria-hidden="true"></canvas>
-        <button id="mic-button" class="mic-button" type="button">마이크/음성 인식 켜기</button>
-      </section>
+        <section class="visual-stage" aria-label="음성 시각화">
+          <div id="voice-orb" class="voice-orb">
+            <span class="orb-ring ring-one"></span>
+            <span class="orb-ring ring-two"></span>
+            <span class="orb-core"></span>
+          </div>
+          <canvas id="waveform" width="720" height="160" aria-hidden="true"></canvas>
+          <button id="mic-button" class="mic-button" type="button">마이크/음성 인식 켜기</button>
+        </section>
 
-      <section class="dialogue" aria-label="대화">
-        <article class="bubble user">
-          <span>사용자</span>
-          <p id="user-text">아직 인식된 발화가 없습니다.</p>
-        </article>
-        <article class="bubble azas">
-          <span>Azas</span>
-          <p id="azas-text">말씀해주시면 주문을 도와드릴게요.</p>
-        </article>
-      </section>
+        <section class="dialogue" aria-label="대화">
+          <article class="bubble user">
+            <span>사용자</span>
+            <p id="user-text">아직 인식된 발화가 없습니다.</p>
+          </article>
+          <article class="bubble azas">
+            <span>Azas</span>
+            <p id="azas-text">말씀해주시면 주문을 도와드릴게요.</p>
+          </article>
+        </section>
 
-      <section class="status-grid" aria-label="음성 처리 상태">
-        <div>
-          <span>선택 메뉴</span>
-          <strong id="recipe-id">-</strong>
-        </div>
-        <div>
-          <span>의도</span>
-          <strong id="intent">대기</strong>
-        </div>
-        <div>
-          <span>확정</span>
-          <strong id="confirmed">대기</strong>
-        </div>
-      </section>
+        <section class="status-grid" aria-label="음성 처리 상태">
+          <div>
+            <span>선택 메뉴</span>
+            <strong id="recipe-id">-</strong>
+          </div>
+          <div>
+            <span>의도</span>
+            <strong id="intent">대기</strong>
+          </div>
+          <div>
+            <span>확정</span>
+            <strong id="confirmed">대기</strong>
+          </div>
+        </section>
 
-      <form id="test-form" class="test-form">
-        <input id="test-utterance" type="text" placeholder="테스트 발화 입력" />
-        <button type="submit">전송</button>
-      </form>
-    </main>
+        <form id="test-form" class="test-form">
+          <input id="test-utterance" type="text" placeholder="테스트 발화 입력" />
+          <button type="submit">전송</button>
+        </form>
+      </main>
+
+      <aside class="menu-stage" aria-label="추천 메뉴">
+        <header class="menu-header">
+          <div>
+            <p class="eyebrow">Azas Menu</p>
+            <h1>오늘의 한 잔</h1>
+          </div>
+          <div class="menu-header-status">
+            <span id="catalog-count" class="catalog-count">메뉴 0개</span>
+            <span id="menu-badge" class="menu-badge idle">대기 중</span>
+          </div>
+        </header>
+
+        <section id="menu-empty" class="menu-empty">
+          <div class="empty-glass" aria-hidden="true">
+            <svg viewBox="0 0 160 200">
+              <path class="glass-line" d="M30 26 L130 26 L121 158 Q120 170 108 170 L52 170 Q40 170 39 158 Z" />
+              <ellipse class="glass-line" cx="80" cy="26" rx="50" ry="7" />
+              <text x="80" y="110" text-anchor="middle" class="empty-mark">?</text>
+            </svg>
+          </div>
+          <p>"달달한 거 한 잔 줘" 처럼 말씀해주시면<br />어울리는 메뉴를 그려드릴게요.</p>
+        </section>
+
+        <section id="menu-card" class="menu-card" hidden>
+          <div class="glass-wrap">
+            <span class="preview-label">완제품 미리보기</span>
+            <svg id="glass-svg" viewBox="0 0 160 200" role="img" aria-label="칵테일 미리보기">
+              <defs>
+                <clipPath id="glass-clip">
+                  <path d="M33 30 L127 30 L119 156 Q118 167 107 167 L53 167 Q42 167 41 156 Z" />
+                </clipPath>
+              </defs>
+              <g id="glass-layers" clip-path="url(#glass-clip)"></g>
+              <g clip-path="url(#glass-clip)" aria-hidden="true">
+                <circle class="bubble-dot" cx="64" cy="120" r="3.4" />
+                <circle class="bubble-dot" cx="92" cy="138" r="2.6" />
+                <circle class="bubble-dot" cx="78" cy="100" r="2.2" />
+                <circle class="bubble-dot" cx="104" cy="112" r="3.0" />
+              </g>
+              <path class="glass-line" d="M33 30 L127 30 L119 156 Q118 167 107 167 L53 167 Q42 167 41 156 Z" />
+              <ellipse class="glass-line" cx="80" cy="30" rx="47" ry="7" />
+              <line class="straw" x1="100" y1="6" x2="86" y2="64" />
+              <circle class="garnish" cx="124" cy="28" r="11" />
+              <path class="garnish-cut" d="M124 17 L124 39" />
+            </svg>
+          </div>
+          <div class="menu-info">
+            <h2 id="menu-name">메뉴</h2>
+            <p id="menu-desc">설명</p>
+            <ul id="ingredient-chips" class="ingredient-chips"></ul>
+            <dl id="drink-stats" class="drink-stats">
+              <div>
+                <dt>단맛</dt>
+                <dd id="stat-sweetness">-</dd>
+              </div>
+              <div>
+                <dt>산미</dt>
+                <dd id="stat-acidity">-</dd>
+              </div>
+              <div>
+                <dt>도수</dt>
+                <dd id="stat-strength">-</dd>
+              </div>
+            </dl>
+            <ol id="pipeline-steps" class="pipeline-steps">
+              <li data-step="색 스캔">색 스캔</li>
+              <li data-step="컵 픽업">컵 픽업</li>
+              <li data-step="디스펜서">디스펜서</li>
+              <li data-step="뚜껑·쉐이킹">뚜껑·쉐이킹</li>
+              <li data-step="완료">완료</li>
+            </ol>
+            <section class="robot-process" aria-label="로봇 제조 과정">
+              <div id="robot-scene" class="robot-scene" data-step="idle">
+                <div class="robot-base"></div>
+                <div class="robot-arm lower"></div>
+                <div class="robot-arm upper"></div>
+                <div class="robot-gripper"></div>
+                <div class="robot-cup">
+                  <span></span>
+                </div>
+                <div class="robot-dispenser">
+                  <span></span>
+                </div>
+                <div class="robot-shaker"></div>
+              </div>
+              <p id="robot-status-text" class="robot-status-text">주문 대기</p>
+            </section>
+          </div>
+        </section>
+
+        <section class="catalog-panel" aria-label="메뉴 카탈로그">
+          <div class="catalog-title-row">
+            <h2>메뉴 카탈로그</h2>
+            <span id="catalog-summary">YAML 카탈로그 대기</span>
+          </div>
+          <div id="catalog-list" class="catalog-list"></div>
+        </section>
+      </aside>
+    </div>
     <script src="/voice.js"></script>
   </body>
 </html>

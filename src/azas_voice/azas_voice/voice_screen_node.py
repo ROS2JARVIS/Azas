@@ -24,15 +24,19 @@ except ImportError:  # pragma: no cover - allows helper tests without sourced RO
     Node = object
     String = None
 
+from azas_voice.recipe_catalog import build_public_catalog
+
 
 def build_initial_state() -> dict[str, Any]:
     return {
         "started_at": time.time(),
+        "catalog": build_public_catalog(),
         "last_stt": "",
         "last_confirmation": "",
         "ui_state": {"state": "idle", "emotion": "neutral", "text": ""},
         "decision": {},
         "confirmed_decision": {},
+        "pipeline_status": {},
         "events": [],
     }
 
@@ -52,6 +56,7 @@ class VoiceScreenNode(Node):
         self.declare_parameter("confirmation_topic", "/azas/voice/confirmation")
         self.declare_parameter("ui_state_topic", "/azas/voice/ui_state")
         self.declare_parameter("confirmed_decision_topic", "/azas/voice/confirmed_recipe_decision")
+        self.declare_parameter("pipeline_status_topic", "/azas/voice/pipeline_status")
 
         self._lock = threading.Lock()
         self._events: deque[dict[str, Any]] = deque(maxlen=12)
@@ -90,6 +95,12 @@ class VoiceScreenNode(Node):
             String,
             str(self.get_parameter("confirmed_decision_topic").value),
             self._on_confirmed_decision,
+            10,
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("pipeline_status_topic").value),
+            self._on_pipeline_status,
             10,
         )
 
@@ -152,6 +163,11 @@ class VoiceScreenNode(Node):
         with self._lock:
             self._state["confirmed_decision"] = confirmed
             self._state["confirmed_decision_at"] = time.time()
+
+    def _on_pipeline_status(self, msg: String) -> None:
+        with self._lock:
+            self._state["pipeline_status"] = _json_or_text(msg.data)
+            self._state["pipeline_status_at"] = time.time()
 
     def _remember(self, speaker: str, text: str) -> None:
         with self._lock:

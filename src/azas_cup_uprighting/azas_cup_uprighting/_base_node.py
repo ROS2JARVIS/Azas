@@ -145,13 +145,22 @@ class BaseMoveItPickNode(Node):
 
         log = self.get_logger()
         log.info("MoveItPy 지연 초기화 중...")
-        self.robot = MoveItPy(node_name=self.MOVEIT_NODE_NAME)
+        try:
+            self.robot = MoveItPy(node_name=self.MOVEIT_NODE_NAME)
+        except RuntimeError as exc:
+            self.robot = None
+            self.arm = None
+            self.robot_model = None
+            self.ompl_params = None
+            self.pilz_params = None
+            log.error(f"MoveItPy 초기화 실패: {exc}")
+            return False
         self.arm = self.robot.get_planning_component(cfg.GROUP_NAME)
         self.robot_model = self.robot.get_robot_model()
         self.ompl_params = self._make_plan_params(
-            "ompl", "RRTConnect", vel=0.2, acc=0.1, time=2.0)
+            "ompl", "RRTConnect", vel=0.08, acc=0.05, time=3.0)
         self.pilz_params = self._make_plan_params(
-            "pilz_industrial_motion_planner", "PTP", vel=0.15, acc=0.1, time=2.0)
+            "pilz_industrial_motion_planner", "PTP", vel=0.06, acc=0.04, time=3.0)
         self.on_moveit_ready()
         log.info("MoveItPy 지연 초기화 완료")
         return True

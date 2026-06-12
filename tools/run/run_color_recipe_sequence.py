@@ -349,7 +349,9 @@ def main() -> int:
     )
     parser.add_argument("--regrasp-rear-entry-offset-x-m", default="-0.090")
     parser.add_argument("--regrasp-rear-entry-offset-y-m", default="0.0")
-    parser.add_argument("--final-regrasp-extra-x-offset-m", default="0.020")
+    parser.add_argument("--final-regrasp-extra-x-offset-m", default="0.000")
+    parser.add_argument("--skip-initial-move-release", action="store_true",
+                        help="복구 모드: 컵이 이미 첫 디스펜서 front-hold에 놓여 있다고 가정하고 press부터 시작")
     parser.add_argument("--final-regrasp-extra-y-offset-m", default="0.0")
     parser.add_argument("--final-regrasp-extra-z-offset-m", default="0.0")
     parser.add_argument("--final-regrasp-grasp-width-m", default="0.068")
@@ -477,6 +479,8 @@ def main() -> int:
     sequence_extra_args.append(
         "--skip-release-pre" if args.skip_release_pre else "--no-skip-release-pre"
     )
+    if args.skip_initial_move_release:
+        sequence_extra_args.append("--skip-initial-move-release")
     sequence_extra_args.append(
         "--use-cup-common-pre" if args.use_cup_common_pre else "--no-use-cup-common-pre"
     )

@@ -25,6 +25,9 @@ def generate_launch_description():
             DeclareLaunchArgument("use_conversation_manager", default_value="true"),
             DeclareLaunchArgument("use_dispenser_executor", default_value="false"),
             DeclareLaunchArgument("enable_dispenser_hardware_execution", default_value="false"),
+            DeclareLaunchArgument("use_pipeline_executor", default_value="false"),
+            DeclareLaunchArgument("enable_pipeline_hardware_execution", default_value="false"),
+            DeclareLaunchArgument("pipeline_service_prefix", default_value="dsr01"),
             DeclareLaunchArgument("dispenser_service_prefix", default_value="/"),
             DeclareLaunchArgument("dispenser_tcp_name", default_value=""),
             DeclareLaunchArgument(
@@ -122,6 +125,22 @@ def generate_launch_description():
                     }
                 ],
                 condition=IfCondition(use_dispenser_executor),
+            ),
+            Node(
+                package="azas_voice",
+                executable="voice_pipeline_executor_node",
+                name="voice_pipeline_executor_node",
+                output="screen",
+                parameters=[
+                    {
+                        "enable_hardware_execution": ParameterValue(
+                            LaunchConfiguration("enable_pipeline_hardware_execution"),
+                            value_type=bool,
+                        ),
+                        "service_prefix": LaunchConfiguration("pipeline_service_prefix"),
+                    }
+                ],
+                condition=IfCondition(LaunchConfiguration("use_pipeline_executor")),
             ),
             Node(
                 package="azas_voice",

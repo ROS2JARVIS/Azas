@@ -13,6 +13,7 @@ does not ask for or generate new robot coordinates.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import shlex
 import subprocess
@@ -41,6 +42,7 @@ from dsr_msgs2.srv import (
 ROOT = Path("/home/ssu/Azas")
 DEFAULT_CONFIG = ROOT / "src" / "azas_bringup" / "config" / "measured_dispenser_collision.yaml"
 CALIBRATION_CONFIG = ROOT / "src" / "azas_bringup" / "config" / "calibration.yaml"
+DEFAULT_RESUME_STATE = ROOT / "outputs" / "measured_dispenser_recipe_resume.json"
 MOVE_FRONT_HOLD = ROOT / "tools" / "run" / "move_to_measured_dispenser_front_hold.py"
 PICK_FRONT_HOLD = ROOT / "tools" / "run" / "pick_from_measured_dispenser_front_hold.py"
 RG2_OPEN = ROOT / "tools" / "run" / "rg2_full_open_verify.sh"
@@ -547,6 +549,229 @@ def group_consecutive_dispenser_ids(dispenser_ids: list[str]) -> list[tuple[str,
         else:
             groups.append((dispenser_id, 1))
     return groups
+
+
+RESUME_STAGES = ("move_release", "press", "regrasp")
+RESUME_STAGE_LABELS = {
+    "move_release": "move/release",
+    "press": "press",
+    "regrasp": "re-grasp/lift",
+    "cup_holder": "cup-holder place",
+}
+
+
+def grouped_resume_payload(groups: list[tuple[str, int]]) -> list[dict[str, object]]:
+    return [
+        {"dispenser_id": dispenser_id, "press_count": int(press_count)}
+        for dispenser_id, press_count in groups
+    ]
+
+
+def resume_recipe_token(dispenser_ids: list[str]) -> str:
+    return ",".join(dispenser_ids)
+
+
+def resume_stage_index(stage: str) -> int:
+    try:
+        return RESUME_STAGES.index(stage)
+    except ValueError as exc:
+        raise ValueError(f"unknown resume stage: {stage}") from exc
+
+
+class RecipeResumeTracker:
+    """Durably records the next robot step after each successful stage.
+
+    The checkpoint stores symbolic dispenser IDs and stage names only.  It does
+    not persist or synthesize robot coordinates; all poses still come from the
+    measured calibration/vision-derived path used by the runner.
+    """
+
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        dispenser_ids: list[str],
+        grouped_dispenser_ids: list[tuple[str, int]],
+    ) -> None:
+        self.enabled = bool(args.execute)
+        self.resume_enabled = bool(args.resume)
+        self.path = Path(args.resume_state_file)
+        self.recipe_token = resume_recipe_token(dispenser_ids)
+        self.groups = grouped_resume_payload(grouped_dispenser_ids)
+        self.total_groups = len(grouped_dispenser_ids)
+        self.next_group_index = 1
+        self.next_stage = "move_release"
+        self.loaded = False
+
+        if not self.enabled:
+            return
+        if args.clear_resume_state:
+            self.clear()
+        if self.resume_enabled:
+            self._load_if_present()
+        self._write(status="running")
+
+    def clear(self) -> None:
+        try:
+            self.path.unlink()
+            print(f"[Azas] resume_state cleared: {self.path}")
+        except FileNotFoundError:
+            pass
+
+    def _base_payload(self) -> dict[str, object]:
+        return {
+            "version": 1,
+            "runner": Path(__file__).name,
+            "recipe_token": self.recipe_token,
+            "groups": self.groups,
+            "total_groups": self.total_groups,
+            "next_group_index": self.next_group_index,
+            "next_stage": self.next_stage,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }
+
+    def _write(
+        self,
+        *,
+        status: str,
+        current_group_index: int | None = None,
+        current_stage: str | None = None,
+        dispenser_id: str | None = None,
+        press_count: int | None = None,
+    ) -> None:
+        if not self.enabled:
+            return
+        payload = self._base_payload()
+        payload["status"] = status
+        if current_group_index is not None:
+            payload["current_group_index"] = current_group_index
+        if current_stage is not None:
+            payload["current_stage"] = current_stage
+        if dispenser_id is not None:
+            payload["current_dispenser_id"] = dispenser_id
+        if press_count is not None:
+            payload["current_press_count"] = press_count
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def _load_if_present(self) -> None:
+        if not self.path.is_file():
+            return
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"resume state is unreadable: {self.path} ({exc}); "
+                "pass --clear-resume-state only after confirming the robot/cup state is safe"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"resume state is invalid: {self.path}")
+
+        status = str(payload.get("status") or "")
+        stored_recipe = str(payload.get("recipe_token") or "")
+        stored_groups = payload.get("groups")
+        if stored_recipe != self.recipe_token or stored_groups != self.groups:
+            if status == "completed":
+                print(f"[Azas] resume_state completed for a different recipe; starting fresh: {self.path}")
+                return
+            raise ValueError(
+                "resume state belongs to a different unfinished recipe. "
+                f"state={self.path} stored_recipe={stored_recipe!r} requested_recipe={self.recipe_token!r}; "
+                "use the same --dispenser-ids to resume or pass --clear-resume-state after manual safety review"
+            )
+        if status == "completed":
+            print(f"[Azas] resume_state already completed for this recipe; starting fresh: {self.path}")
+            return
+
+        try:
+            next_group_index = int(payload.get("next_group_index", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"resume state has invalid next_group_index: {self.path}") from exc
+        next_stage = str(payload.get("next_stage") or "move_release")
+        if not 1 <= next_group_index <= self.total_groups + 1:
+            raise ValueError(f"resume state next_group_index is out of range: {next_group_index}")
+        if next_stage not in (*RESUME_STAGES, "cup_holder"):
+            raise ValueError(f"resume state next_stage is invalid: {next_stage!r}")
+        if next_group_index <= self.total_groups and next_stage == "cup_holder":
+            raise ValueError("resume state cannot enter cup_holder before all dispenser groups complete")
+
+        self.next_group_index = next_group_index
+        self.next_stage = next_stage
+        self.loaded = True
+        print(
+            f"[Azas] resume_state loaded: {self.path} "
+            f"next_group={self.next_group_index}/{self.total_groups} "
+            f"next_stage={RESUME_STAGE_LABELS.get(self.next_stage, self.next_stage)}"
+        )
+
+    def should_run_stage(self, group_index: int, stage: str) -> bool:
+        if not self.enabled:
+            return True
+        if group_index < self.next_group_index:
+            return False
+        if group_index > self.next_group_index:
+            return True
+        if self.next_stage == "cup_holder":
+            return False
+        return resume_stage_index(stage) >= resume_stage_index(self.next_stage)
+
+    def start_stage(self, group_index: int, stage: str, dispenser_id: str, press_count: int) -> None:
+        if not self.enabled:
+            return
+        self.next_group_index = group_index
+        self.next_stage = stage
+        self._write(
+            status="running",
+            current_group_index=group_index,
+            current_stage=stage,
+            dispenser_id=dispenser_id,
+            press_count=press_count,
+        )
+        print(
+            f"[Azas] resume_state step_start: group={group_index}/{self.total_groups} "
+            f"stage={RESUME_STAGE_LABELS[stage]} state={self.path}"
+        )
+
+    def complete_stage(self, group_index: int, stage: str) -> None:
+        if not self.enabled:
+            return
+        if stage == "move_release":
+            self.next_group_index = group_index
+            self.next_stage = "press"
+        elif stage == "press":
+            self.next_group_index = group_index
+            self.next_stage = "regrasp"
+        elif stage == "regrasp":
+            self.next_group_index = group_index + 1
+            self.next_stage = "move_release"
+        else:
+            raise ValueError(f"cannot complete unknown stage: {stage}")
+        self._write(status="running")
+        print(
+            f"[Azas] resume_state step_done: group={group_index}/{self.total_groups} "
+            f"stage={RESUME_STAGE_LABELS[stage]} next_group={self.next_group_index} "
+            f"next_stage={RESUME_STAGE_LABELS.get(self.next_stage, self.next_stage)}"
+        )
+
+    def should_run_cup_holder(self) -> bool:
+        if not self.enabled:
+            return True
+        return self.next_group_index >= self.total_groups + 1
+
+    def start_cup_holder(self) -> None:
+        if not self.enabled:
+            return
+        self.next_group_index = self.total_groups + 1
+        self.next_stage = "cup_holder"
+        self._write(status="running", current_group_index=self.next_group_index, current_stage="cup_holder")
+        print(f"[Azas] resume_state step_start: final stage=cup-holder place state={self.path}")
+
+    def complete_all(self) -> None:
+        if not self.enabled:
+            return
+        self.next_group_index = self.total_groups + 1
+        self.next_stage = "cup_holder"
+        self._write(status="completed")
+        print(f"[Azas] resume_state completed: {self.path}")
 
 
 class IntegratedRecipeMotion:
@@ -3432,7 +3657,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--final-regrasp-extra-x-offset-m",
         type=float,
-        default=0.020,
+        default=0.000,
         help=(
             "Only for the final re-grasp before cup-holder placement: add this X offset "
             "to the cup re-grasp target. Positive X moves closer toward the dispenser/cup."
@@ -3544,6 +3769,26 @@ def parse_args() -> argparse.Namespace:
             "and start from press -> re-grasp/lift without repeating the move/release placement."
         ),
     )
+    parser.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Automatically resume from --resume-state-file when it contains the same unfinished "
+            "recipe. Use --no-resume to ignore a completed/stale state file."
+        ),
+    )
+    parser.add_argument(
+        "--resume-state-file",
+        type=Path,
+        default=DEFAULT_RESUME_STATE,
+        help="Durable JSON checkpoint used to remember the next recipe stage after unexpected stops.",
+    )
+    parser.add_argument(
+        "--clear-resume-state",
+        action="store_true",
+        help="Delete the existing resume checkpoint before starting this run.",
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm", default="", help=f"must equal {CONFIRM_PHRASE} when --execute is used")
     args = parser.parse_args()
@@ -3644,6 +3889,16 @@ def main() -> int:
         f"place_final_y_offset_m={args.cup_holder_place_final_y_offset_m:.3f} "
         f"place_final_z_offset_m={args.cup_holder_place_final_z_offset_m:.3f}"
     )
+    try:
+        resume_tracker = RecipeResumeTracker(args, dispenser_ids, grouped_dispenser_ids)
+    except ValueError as exc:
+        print(f"[BLOCKED] resume_state: {exc}")
+        return 2
+    if args.execute:
+        print(
+            f"[Azas] resume_state_file={resume_tracker.path} "
+            f"auto_resume={str(args.resume).lower()} loaded={str(resume_tracker.loaded).lower()}"
+        )
 
     motion: IntegratedRecipeMotion | None = None
     if args.execute and not args.legacy_subprocess_primitives:
@@ -3678,6 +3933,12 @@ def main() -> int:
             label_prefix = f"recipe group {index}/{total_groups} dispenser {dispenser_id} x{press_count}"
             final_regrasp = index == total_groups
             print(f"[Azas] START {label_prefix}: physical_dispenser={dispenser_id}")
+            move_release_needed = resume_tracker.should_run_stage(index, "move_release")
+            press_needed = resume_tracker.should_run_stage(index, "press")
+            regrasp_needed = resume_tracker.should_run_stage(index, "regrasp")
+            if args.execute and not (move_release_needed or press_needed or regrasp_needed):
+                print(f"[Azas] SKIP {label_prefix}: completed in resume_state")
+                continue
             if args.execute:
                 try:
                     require_dispenser_press_contact_enabled(dispenser_id)
@@ -3693,12 +3954,15 @@ def main() -> int:
                 print_dry_run_group_detail(args, dispenser_id, press_count)
                 continue
 
-            if args.skip_initial_move_release:
+            if move_release_needed:
+                resume_tracker.start_stage(index, "move_release", dispenser_id, press_count)
+            if move_release_needed and args.skip_initial_move_release:
                 print(
                     f"[Azas] {label_prefix}: skipping initial move/release; "
                     "cup is assumed already released at dispenser front-hold"
                 )
-            elif motion is None:
+                resume_tracker.complete_stage(index, "move_release")
+            elif move_release_needed and motion is None:
                 print(f"[Azas] {label_prefix}: MOVE/RELEASE physical_dispenser={dispenser_id}")
                 rc = run_command(f"{label_prefix}: move cup to front-hold and release", move_and_release_cmd(args, dispenser_id))
                 if rc != 0:
@@ -3706,15 +3970,19 @@ def main() -> int:
                 rc = run_command(f"{label_prefix}: RG2 full-open release verify", [str(RG2_OPEN)])
                 if rc != 0:
                     return rc
-            else:
+                resume_tracker.complete_stage(index, "move_release")
+            elif move_release_needed:
                 try:
                     print(f"[Azas] {label_prefix}: MOVE/RELEASE physical_dispenser={dispenser_id}")
                     motion.move_and_release(dispenser_id)
                 except RuntimeError as exc:
                     print(f"[FAIL] {label_prefix}: integrated move/release failed: {exc}")
                     return 1
+                resume_tracker.complete_stage(index, "move_release")
+            else:
+                print(f"[Azas] SKIP {label_prefix}: move/release completed in resume_state")
 
-            if motion is None:
+            if motion is None and (press_needed or regrasp_needed):
                 rc = run_command(
                     f"{label_prefix}: mark tumbler world object at dispenser",
                     tumbler_scene_cmd(
@@ -3725,7 +3993,9 @@ def main() -> int:
                 )
                 if rc != 0:
                     return rc
-            if motion is None:
+            if press_needed:
+                resume_tracker.start_stage(index, "press", dispenser_id, press_count)
+            if press_needed and motion is None:
                 print(f"[Azas] {label_prefix}: PRESS physical_dispenser={dispenser_id} count={press_count}")
                 rc = run_command(
                     f"{label_prefix}: press dispenser {press_count} time(s)",
@@ -3733,20 +4003,27 @@ def main() -> int:
                 )
                 if rc != 0:
                     return rc
-            else:
+                resume_tracker.complete_stage(index, "press")
+            elif press_needed:
                 try:
                     print(f"[Azas] {label_prefix}: PRESS physical_dispenser={dispenser_id} count={press_count}")
                     motion.press_dispenser(dispenser_id, press_count)
                 except RuntimeError as exc:
                     print(f"[FAIL] {label_prefix}: integrated press failed: {exc}")
                     return 1
+                resume_tracker.complete_stage(index, "press")
+            else:
+                print(f"[Azas] SKIP {label_prefix}: press completed in resume_state")
 
-            if motion is None:
+            if regrasp_needed:
+                resume_tracker.start_stage(index, "regrasp", dispenser_id, press_count)
+            if regrasp_needed and motion is None:
                 print(f"[Azas] {label_prefix}: RE-GRASP physical_dispenser={dispenser_id}")
                 rc = run_command(f"{label_prefix}: re-grasp cup from front-hold", pick_cmd(args, dispenser_id))
                 if rc != 0:
                     return rc
-            else:
+                resume_tracker.complete_stage(index, "regrasp")
+            elif regrasp_needed:
                 try:
                     regrasp_label = "FINAL RE-GRASP" if final_regrasp else "RE-GRASP"
                     print(f"[Azas] {label_prefix}: {regrasp_label} physical_dispenser={dispenser_id}")
@@ -3763,8 +4040,11 @@ def main() -> int:
                     if rc != 0:
                         print(f"[FAIL] {label_prefix}: fallback re-grasp/lift failed after integrated timeout")
                         return rc
+                resume_tracker.complete_stage(index, "regrasp")
+            else:
+                print(f"[Azas] SKIP {label_prefix}: re-grasp/lift completed in resume_state")
 
-            if motion is None:
+            if motion is None and regrasp_needed:
                 rc = run_command(
                     f"{label_prefix}: remove dispenser world object",
                     tumbler_scene_cmd(
@@ -3788,7 +4068,13 @@ def main() -> int:
                     "CUP_HOLDER_PLACE_FINAL -> RG2_OPEN -> CUP_HOLDER_RETREAT"
                 )
         elif args.place_cup_holder_after_sequence:
-            if motion is None:
+            cup_holder_needed = resume_tracker.should_run_cup_holder()
+            if not cup_holder_needed:
+                print("[Azas] SKIP final cup-holder place: completed in resume_state")
+                resume_tracker.complete_all()
+            else:
+                resume_tracker.start_cup_holder()
+            if cup_holder_needed and motion is None:
                 rc = run_command(
                     "place final cup in holder",
                     [
@@ -3827,13 +4113,17 @@ def main() -> int:
                 )
                 if rc != 0:
                     return rc
-            else:
+                resume_tracker.complete_all()
+            elif cup_holder_needed:
                 try:
                     print("[Azas] final: PLACE CUP IN HOLDER")
                     motion.place_cup_in_holder()
                 except RuntimeError as exc:
                     print(f"[FAIL] final cup-holder place failed: {exc}")
                     return 1
+                resume_tracker.complete_all()
+        elif args.execute:
+            resume_tracker.complete_all()
     finally:
         if motion is not None:
             motion.close()

@@ -1,4 +1,5 @@
 from azas_voice.command_parser import normalize_text, parse_recipe_command
+from azas_voice.recipe_catalog import RECIPE_DISPENSERS, build_public_catalog
 
 
 def assert_dispenser_colors(dispenser_ids):
@@ -47,6 +48,25 @@ def test_four_menu_recipes_map_to_one_dispenser_each():
         assert decision.valid
         assert decision.recipe_id == recipe_id
         assert decision.dispenser_ids == dispenser_ids
+
+
+def test_yaml_catalog_exposes_many_named_menus():
+    catalog = build_public_catalog()
+    assert len(catalog["recipes"]) >= 12
+    assert "recipe_12" in RECIPE_DISPENSERS
+
+
+def test_named_yaml_recipe_maps_to_catalog_amounts():
+    decision = parse_recipe_command("선셋 하이볼 만들어줘")
+    assert decision.valid
+    assert decision.recipe_id == "recipe_05"
+    assert decision.dispenser_ids == ("red", "yellow", "blue")
+    assert decision.dispenser_amounts == {
+        "red": 2,
+        "yellow": 1,
+        "green": 0,
+        "blue": 1,
+    }
 
 
 def test_mood_request_maps_to_custom_recommendation():

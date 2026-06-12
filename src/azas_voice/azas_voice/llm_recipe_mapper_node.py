@@ -18,6 +18,7 @@ from azas_voice.recipe_catalog import (
     RECIPE_DESCRIPTIONS,
     RECIPE_DISPENSERS,
     RECIPE_DISPLAY_NAMES,
+    recipe_amounts,
 )
 
 
@@ -128,10 +129,13 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
     recipe_id = str(recipe_id).strip() if recipe_id else None
     if intent == "make_cocktail" and (wanted_traits or avoided_traits):
         recipe_id = "custom_preference_mix"
-    if recipe_id and not recipe_id.startswith("recipe_") and recipe_id not in ALLOWED_CUSTOM_RECIPE_IDS:
+    if recipe_id and recipe_id not in RECIPE_DISPENSERS and recipe_id not in ALLOWED_CUSTOM_RECIPE_IDS:
         recipe_id = None
-    if recipe_id and recipe_id not in ALLOWED_CUSTOM_RECIPE_IDS:
+    if recipe_id and recipe_id in RECIPE_DISPENSERS:
         dispenser_ids = RECIPE_DISPENSERS.get(recipe_id, ())
+        catalog_amounts = recipe_amounts(recipe_id)
+        if catalog_amounts:
+            dispenser_amounts = catalog_amounts
 
     if intent == "make_cocktail" and recipe_id is None and not dispenser_ids:
         return _fallback_decision(text, "missing_recipe_or_dispenser")
@@ -286,8 +290,9 @@ class LlmRecipeMapperNode(Node):
                         "For descriptive preference or recommendation requests, extract wanted_traits and avoided_traits instead of calculating amounts. "
                         "Allowed traits: sweetness, fruitiness, freshness, aroma, alcohol, bitterness, softness, light, depth, herbal. "
                         "Examples of preferences: not too strong, light, easy to drink, rich aroma, sweet, not sweet, fruity. "
-                        "For a plain recommendation with no preferences, choose one recipe_01..recipe_04. "
-                        "Only choose recipe_01..recipe_04 when the user explicitly asks for a numbered/color menu or gives no preferences. "
+                        "For a plain recommendation with no preferences, choose one of these recipe_id values: "
+                        f"{', '.join(RECIPE_DISPENSERS)}. "
+                        "Only choose a catalog recipe when the user explicitly asks for a numbered/named menu or gives no preferences. "
                         "Allowed dispenser_ids values: red, yellow, green, blue only. "
                         "Do not output dispenser_amounts; the application calculates amounts from traits. "
                         "Never output robot coordinates, calibration values, trajectories, or safety approvals."

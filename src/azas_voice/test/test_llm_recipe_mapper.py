@@ -66,6 +66,28 @@ def test_sanitize_llm_decision_fills_recipe_dispenser_ids():
     assert "진행할까요" in decision.confirmation
 
 
+def test_sanitize_llm_decision_accepts_expanded_catalog_recipe_amounts():
+    decision = _sanitize_llm_decision(
+        "딥 럼 펀치 만들어줘",
+        {
+            "intent": "make_cocktail",
+            "recipe_id": "recipe_12",
+            "dispenser_ids": [],
+            "confirmation": "",
+        },
+    )
+
+    assert decision.valid
+    assert decision.recipe_id == "recipe_12"
+    assert decision.dispenser_ids == ("red", "yellow", "blue")
+    assert decision.dispenser_amounts == {
+        "red": 1,
+        "yellow": 1,
+        "green": 0,
+        "blue": 3,
+    }
+
+
 def test_sanitize_llm_decision_preserves_recommendation_wording():
     decision = _sanitize_llm_decision(
         "추천해줘",
@@ -84,7 +106,8 @@ def test_sanitize_llm_decision_preserves_recommendation_wording():
     assert "추천" in decision.confirmation
     assert "진행할까요" in decision.confirmation
     assert decision.profile is None
-    assert decision.dispenser_amounts is None
+    if decision.dispenser_amounts is not None:
+        assert all(color in {"red", "yellow", "green", "blue"} for color in decision.dispenser_amounts)
 
 
 def test_sanitize_llm_decision_prefers_local_preference_recommendation():

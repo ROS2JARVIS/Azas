@@ -18,6 +18,7 @@ from azas_voice.recipe_catalog import (
     RECIPE_DISPENSERS,
     RECIPE_DISPLAY_NAMES,
     TRAIT_KEYWORDS,
+    recipe_amounts,
 )
 
 
@@ -63,10 +64,15 @@ def _contains_any(normalized: str, words: tuple[str, ...]) -> bool:
 def _match_recipe(normalized: str) -> str | None:
     if "디스펜서" in normalized:
         return None
+    matches: list[tuple[int, str]] = []
     for recipe_id, aliases in RECIPE_ALIASES.items():
-        if _contains_any(normalized, aliases):
-            return recipe_id
-    return None
+        for alias in aliases:
+            normalized_alias = normalize_text(alias)
+            if normalized_alias and normalized_alias in normalized:
+                matches.append((len(normalized_alias), recipe_id))
+    if not matches:
+        return None
+    return max(matches)[1]
 
 
 def _match_colors(normalized: str) -> tuple[str, ...]:
@@ -94,12 +100,22 @@ def _recipe_description(recipe_id: str) -> str:
 def _random_recipe_decision(utterance: str, normalized: str) -> RecipeDecision:
     recipe_id = random.choice(tuple(RECIPE_DISPENSERS))
     dispenser_ids = RECIPE_DISPENSERS[recipe_id]
+    amounts = recipe_amounts(recipe_id)
     description = _recipe_description(recipe_id)
     confirmation = (
         f"{_recipe_name(recipe_id)}를 추천드릴게요. "
         f"{description} 진행할까요?"
     )
-    return RecipeDecision(True, utterance, normalized, "make_cocktail", recipe_id, dispenser_ids, confirmation)
+    return RecipeDecision(
+        True,
+        utterance,
+        normalized,
+        "make_cocktail",
+        recipe_id,
+        dispenser_ids,
+        confirmation,
+        dispenser_amounts=amounts,
+    )
 
 
 def _level_text(amount: int, zero: str, low: str, normal: str, high: str) -> str:
@@ -236,11 +252,20 @@ def parse_recipe_command(text: str) -> RecipeDecision:
             "no recipe or dispenser color matched",
         )
 
+    amounts = recipe_amounts(recipe_id)
     if recipe_id is None:
         recipe_id = "custom_color_selection"
-    elif not dispenser_ids:
+    else:
         dispenser_ids = RECIPE_DISPENSERS.get(recipe_id, ())
 
-    dispenser_text = ", ".join(dispenser_ids) if dispenser_ids else "configured recipe dispensers"
     confirmation = f"{_recipe_name(recipe_id)} 요청을 인식했습니다. 진행할까요?"
-    return RecipeDecision(True, utterance, normalized, "make_cocktail", recipe_id, dispenser_ids, confirmation)
+    return RecipeDecision(
+        True,
+        utterance,
+        normalized,
+        "make_cocktail",
+        recipe_id,
+        dispenser_ids,
+        confirmation,
+        dispenser_amounts=amounts,
+    )
