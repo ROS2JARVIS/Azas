@@ -31,7 +31,6 @@ from rclpy.node import Node
 from scipy.spatial.transform import Rotation
 
 from sensor_msgs.msg import CameraInfo, Image
-from cv_bridge import CvBridge
 
 from moveit.core.robot_state import RobotState
 from moveit.planning import MoveItPy, PlanRequestParameters
@@ -67,7 +66,6 @@ class BaseMoveItPickNode(Node):
         log = self.get_logger()
 
         # ── 카메라 상태 ──
-        self.bridge = CvBridge()
         self.color_image = None
         self.depth_image = None
         self.intrinsics  = None
@@ -166,10 +164,63 @@ class BaseMoveItPickNode(Node):
         }
 
     def _color_cb(self, msg):
-        self.color_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        self.color_image = self._imgmsg_to_bgr(msg)
 
     def _depth_cb(self, msg):
-        self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
+        self.depth_image = self._imgmsg_to_array(msg)
+
+    # cv_bridge는 NumPy 1.x ABI로 빌드되어 ~/.local의 NumPy 2.x와 충돌
+    # (_ARRAY_API not found → segfault)하므로 직접 변환한다.
+    @staticmethod
+    def _imgmsg_to_array(msg: Image) -> np.ndarray:
+        encoding = msg.encoding.lower()
+        dtype_by_encoding = {
+            "8uc1": np.uint8,
+            "mono8": np.uint8,
+            "8uc3": np.uint8,
+            "rgb8": np.uint8,
+            "bgr8": np.uint8,
+            "16uc1": np.uint16,
+            "mono16": np.uint16,
+            "32fc1": np.float32,
+        }
+        channels_by_encoding = {
+            "8uc1": 1,
+            "mono8": 1,
+            "8uc3": 3,
+            "rgb8": 3,
+            "bgr8": 3,
+            "16uc1": 1,
+            "mono16": 1,
+            "32fc1": 1,
+        }
+        if encoding not in dtype_by_encoding:
+            raise ValueError(f"unsupported image encoding: {msg.encoding}")
+
+        dtype = dtype_by_encoding[encoding]
+        channels = channels_by_encoding[encoding]
+        itemsize = np.dtype(dtype).itemsize
+        row_values = msg.step // itemsize
+        data = np.frombuffer(msg.data, dtype=dtype)
+        if msg.is_bigendian != (data.dtype.byteorder == ">"):
+            data = data.byteswap().view(data.dtype.newbyteorder())
+        if channels == 1:
+            image = data.reshape((msg.height, row_values))[:, : msg.width]
+        else:
+            image = data.reshape((msg.height, row_values // channels, channels))[:, : msg.width, :]
+        return np.ascontiguousarray(image)
+
+    @classmethod
+    def _imgmsg_to_bgr(cls, msg: Image) -> np.ndarray:
+        image = cls._imgmsg_to_array(msg)
+        encoding = msg.encoding.lower()
+        if encoding in {"bgr8", "8uc3"}:
+            return image
+        if encoding == "rgb8":
+            return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        if encoding in {"mono8", "8uc1"}:
+            return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        raise ValueError(f"unsupported color encoding: {msg.encoding}")
 
     # ════════════════════════════════════════════
     #  Perception 래퍼
