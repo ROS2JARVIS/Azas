@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -75,7 +76,7 @@ class AutoCupFlowRouter(Node):
         # 사이드 그립에서 base x가 +20mm 정도 어긋나는 실측 보정값
         self.declare_parameter("side_target_x_offset_m", -0.02)
 
-        self.declare_parameter("color_scan_before_recipe", True)
+        self.declare_parameter("color_scan_at_start", True)
         self.declare_parameter(
             "color_scan_command",
             "bash /home/ssu/Azas/tools/run/run_color_scan_stage.sh",
@@ -95,6 +96,10 @@ class AutoCupFlowRouter(Node):
             "export PYTHONPATH=/home/ssu/Azas/tools/run/python_compat:${PYTHONPATH:-} && "
             "python3 tools/run/run_color_recipe_sequence.py --execute --confirm",
         )
+        # 키오스크/음성 주문(latest_recipe.json) 없이 색을 직접 내릴 때: 예) "red:2,blue:1"
+        self.declare_parameter("recipe_colors", "")
+        # 디스펜서 누르기 종료 후 컵홀더에 놓을 때 z를 더 낮추는 실측 보정값
+        self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
         self.declare_parameter("lid_shake_after_recipe", True)
         self.declare_parameter(
             "lid_shake_command",
@@ -125,9 +130,11 @@ class AutoCupFlowRouter(Node):
         if not self._confirmed():
             return 2
 
-        self.get_logger().info("auto cup router: observe -> open -> classify -> route")
+        self.get_logger().info("auto cup router: color scan -> observe -> open -> classify -> route")
         perception = None
         try:
+            if not self._run_color_scan_sequence():
+                return 1
             if not self._move_observe("initial observe"):
                 return 1
             if not self._open_gripper("initial gripper full-open"):
@@ -146,8 +153,6 @@ class AutoCupFlowRouter(Node):
             else:
                 success = self._run_cup_uprighting(decision)
             if not success:
-                return 1
-            if not self._run_color_scan_sequence():
                 return 1
             if not self._run_recipe_sequence():
                 return 1
@@ -458,14 +463,14 @@ class AutoCupFlowRouter(Node):
         return self._run_process(cmd, "cup_uprighting")
 
     def _run_color_scan_sequence(self) -> bool:
-        if not bool(self.get_parameter("color_scan_before_recipe").value):
-            self.get_logger().info("color_scan_before_recipe=false; skipping dispenser color scan")
+        if not bool(self.get_parameter("color_scan_at_start").value):
+            self.get_logger().info("color_scan_at_start=false; skipping dispenser color scan")
             return True
         command = str(self.get_parameter("color_scan_command").value).strip()
         if not command:
             self.get_logger().warning("color_scan_command is empty; skipping dispenser color scan")
             return True
-        self.get_logger().info("pick flow succeeded; moving to color_scan_pose and scanning dispensers")
+        self.get_logger().info("moving to color_scan_pose and scanning dispensers before cup pick")
         return self._run_process(["bash", "-c", command], "color_scan")
 
     def _run_recipe_sequence(self) -> bool:
@@ -476,6 +481,12 @@ class AutoCupFlowRouter(Node):
         if not command:
             self.get_logger().warning("recipe_command is empty; skipping dispenser recipe sequence")
             return True
+        colors = str(self.get_parameter("recipe_colors").value).strip()
+        if colors:
+            command += f" --colors {shlex.quote(colors)}"
+            self.get_logger().info(f"recipe colors given directly: {colors}")
+        place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
+        command += f" --cup-holder-place-final-z-offset-m {place_z}"
         self.get_logger().info("pick flow succeeded; starting integrated dispenser recipe sequence")
         return self._run_process(["bash", "-c", command], "recipe")
 
