@@ -661,9 +661,9 @@ class AutoCupFlowRouter(Node):
                 if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
                     shutting_down = True
                 match = self._NODE_DIED_PATTERN.search(text)
-                # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)과
-                # 음수 exit code(시그널 종료)는 정상 정리 과정이므로 제외
-                if match and int(match.group("code")) > 0 and not shutting_down:
+                # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)만 정상 정리로
+                # 간주한다. 종료 신호 전이라면 음수 exit code(SIGSEGV -11 등)도 실패다.
+                if match and not shutting_down:
                     self._child_node_failures.setdefault(label, []).append(
                         f"{match.group('node')} exit code {match.group('code')}")
 
