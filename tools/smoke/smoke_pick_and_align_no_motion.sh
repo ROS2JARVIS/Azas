@@ -8,7 +8,7 @@ set -euo pipefail
 ACTION_LOG="${ACTION_LOG:-/tmp/azas_smoke_pick_and_align_no_motion_action.log}"
 SERVER_LOG="${SERVER_LOG:-/tmp/azas_smoke_pick_and_align_no_motion_server.log}"
 POSE_TOPIC="${POSE_TOPIC:-/jarvis/tumbler_dispenser/tumbler_pose}"
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-72}"
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-15}"
 export ROS_LOG_DIR="${ROS_LOG_DIR:-/tmp/azas_ros_logs}"
 export ROS2CLI_DISABLE_DAEMON="${ROS2CLI_DISABLE_DAEMON:-1}"
 
