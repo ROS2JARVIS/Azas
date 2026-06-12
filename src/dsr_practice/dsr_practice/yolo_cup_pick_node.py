@@ -49,6 +49,17 @@ HOME_JOINTS_RAD = [
 ]
 ARM_JOINT_ORDER = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
 
+
+def set_arm_joint_positions(state, joint_positions):
+    """관절값을 dict 기반 joint_positions 세터로 넣는다.
+
+    moveit_py의 set_joint_group_positions(Eigen 바인딩)는 user-site NumPy 2.x
+    환경에서 list/ndarray 인자 모두 세그폴트(exit -11)하므로 사용 금지.
+    """
+    state.joint_positions = {
+        name: float(value) for name, value in zip(ARM_JOINT_ORDER, joint_positions)
+    }
+
 SAFE_X_MIN = 0.0
 SAFE_Y_MIN = -0.35
 SAFE_Y_MAX = 0.35
@@ -1438,7 +1449,7 @@ class YoloCupPickNode(Node):
             )
             return False
         joint_positions = [target_by_name[name] for name in ARM_JOINT_ORDER]
-        target_state.set_joint_group_positions(GROUP_NAME, joint_positions)
+        set_arm_joint_positions(target_state, joint_positions)
         target_state.update()
         return self.plan_and_execute(
             state_goal=target_state,
@@ -1716,7 +1727,7 @@ class YoloCupPickNode(Node):
 
     def move_joint_home(self):
         home_state = RobotState(self.robot_model)
-        home_state.set_joint_group_positions(GROUP_NAME, HOME_JOINTS_RAD)
+        set_arm_joint_positions(home_state, HOME_JOINTS_RAD)
         home_state.update()
         if not self.plan_and_execute(
             state_goal=home_state,
@@ -1738,7 +1749,7 @@ class YoloCupPickNode(Node):
     def move_camera_joint_home(self):
         log = self.get_logger()
         target_state = RobotState(self.robot_model)
-        target_state.set_joint_group_positions(GROUP_NAME, self.camera_home_joint_positions)
+        set_arm_joint_positions(target_state, self.camera_home_joint_positions)
         target_state.update()
         joint_degrees = [math.degrees(value) for value in self.camera_home_joint_positions]
         log.info(
@@ -1800,7 +1811,7 @@ class YoloCupPickNode(Node):
             return None
         state = RobotState(self.robot_model)
         joint_positions = [float(joint_map[name]) for name in ARM_JOINT_ORDER]
-        state.set_joint_group_positions(GROUP_NAME, joint_positions)
+        set_arm_joint_positions(state, joint_positions)
         state.update()
         return state
 
@@ -1885,7 +1896,7 @@ class YoloCupPickNode(Node):
             f"joint_1 {before_deg:.1f} -> {before_deg + delta:.1f} deg"
         )
         target_state = RobotState(self.robot_model)
-        target_state.set_joint_group_positions(GROUP_NAME, joint_positions)
+        set_arm_joint_positions(target_state, joint_positions)
         target_state.update()
         return self.plan_and_execute(
             state_goal=target_state,

@@ -3761,6 +3761,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "VERIFY_JOINT_TARGETS=true JOINT_TARGET_TOLERANCE_DEG=8.0 "
             "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
             "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
+            "REAL_ROBOT_MOTION_CONFIRM=ENABLE_REAL_ROBOT_MOTION "
             "tools/run/run_rule_based_shake_real.sh"
             " && echo '[Azas] SHAKE DONE: 손 검출/핸드오버를 위해 카메라 포즈로 복귀합니다 (컵 파지 유지).' && "
             "python3 tools/run/direct_movej_joints.py "

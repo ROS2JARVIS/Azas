@@ -488,9 +488,11 @@ def print_dry_run_group_detail(args: argparse.Namespace, dispenser_id: str, pres
         if cup_common_pre is not None:
             print(f"[PLAN] dispenser {dispenser_id}: cup CUP_COMMON_PRE -> DISP_PLACE -> RELEASE")
         else:
+            extra_x_m = args.dispenser_3_cup_pre_extra_x_offset_m if str(dispenser_id) == "3" else 0.0
+            total_x_offset_m = args.cup_pre_from_place_x_offset_m + extra_x_m
             print(
                 f"[PLAN] dispenser {dispenser_id}: cup generated DISP_PRE "
-                f"(DISP_PLACE X{args.cup_pre_from_place_x_offset_m * 1000.0:+.0f}mm "
+                f"(DISP_PLACE X{total_x_offset_m * 1000.0:+.0f}mm "
                 f"Z{args.cup_pre_from_place_z_offset_m * 1000.0:+.0f}mm) "
                 "-> DISP_PLACE -> RELEASE"
             )
@@ -1788,13 +1790,21 @@ class IntegratedRecipeMotion:
                     f"[Azas] cup placement: dispenser={dispenser_id} using measured "
                     "DISP_PLACE with generated DISP_PRE from X offset; saved cup_pre_place_joints_deg ignored"
                 )
+                extra_x_m = (
+                    self.args.dispenser_3_cup_pre_extra_x_offset_m
+                    if str(dispenser_id) == "3"
+                    else 0.0
+                )
+                total_x_offset_m = self.args.cup_pre_from_place_x_offset_m + extra_x_m
                 pre_target = list(final_target)
-                pre_target[0] += self.args.cup_pre_from_place_x_offset_m * 1000.0
+                pre_target[0] += total_x_offset_m * 1000.0
                 pre_target[2] += self.args.cup_pre_from_place_z_offset_m * 1000.0
                 print(
                     "[Azas] generated cup pre: "
                     f"dispenser={dispenser_id} "
-                    f"pre_x_offset={self.args.cup_pre_from_place_x_offset_m * 1000.0:.1f}mm "
+                    f"pre_x_offset={total_x_offset_m * 1000.0:.1f}mm "
+                    f"base_pre_x_offset={self.args.cup_pre_from_place_x_offset_m * 1000.0:.1f}mm "
+                    f"dispenser_3_extra_x_offset={extra_x_m * 1000.0:.1f}mm "
                     f"pre_z_offset={self.args.cup_pre_from_place_z_offset_m * 1000.0:.1f}mm "
                     f"target_posx=[{pre_target[0]:.1f}, {pre_target[1]:.1f}, {pre_target[2]:.1f}, "
                     f"{pre_target[3]:.1f}, {pre_target[4]:.1f}, {pre_target[5]:.1f}]"
@@ -2896,6 +2906,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Generate DISP_PRE from the latest measured cup_place pose by changing only Z. "
             "Default +0.030m."
+        ),
+    )
+    parser.add_argument(
+        "--dispenser-3-cup-pre-extra-x-offset-m",
+        type=float,
+        default=-0.010,
+        help=(
+            "Extra X offset applied only to generated DISP3_PRE. Default -0.010m "
+            "adds 10mm robot-side clearance without changing measured DISP3_PLACE."
         ),
     )
     parser.add_argument(

@@ -288,6 +288,7 @@ def main() -> int:
     parser.add_argument("--move-release-offset-z-m", default="0.010")
     parser.add_argument("--cup-pre-from-place-x-offset-m", default="-0.090")
     parser.add_argument("--cup-pre-from-place-z-offset-m", default="0.030")
+    parser.add_argument("--dispenser-3-cup-pre-extra-x-offset-m", default="-0.010")
     parser.add_argument("--generated-cup-pre-max-joint-delta-deg", default="190.0")
     parser.add_argument(
         "--press-contact-use-joint-move",
@@ -418,6 +419,7 @@ def main() -> int:
         "--move-release-offset-z-m", str(args.move_release_offset_z_m),
         "--cup-pre-from-place-x-offset-m", str(args.cup_pre_from_place_x_offset_m),
         "--cup-pre-from-place-z-offset-m", str(args.cup_pre_from_place_z_offset_m),
+        "--dispenser-3-cup-pre-extra-x-offset-m", str(args.dispenser_3_cup_pre_extra_x_offset_m),
         "--generated-cup-pre-max-joint-delta-deg", str(args.generated_cup_pre_max_joint_delta_deg),
         "--regrasp-retreat-x-m", str(args.regrasp_retreat_x_m),
         "--regrasp-retreat-y-m", str(args.regrasp_retreat_y_m),
