@@ -72,12 +72,41 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("controller_action_name", "/dsr_moveit_controller/follow_joint_trajectory")
         self.declare_parameter("side_extra_args", "")
         self.declare_parameter("cup_uprighting_extra_args", "")
+        # 사이드 그립에서 base x가 +20mm 정도 어긋나는 실측 보정값
+        self.declare_parameter("side_target_x_offset_m", -0.02)
+
+        self.declare_parameter("color_scan_before_recipe", True)
+        self.declare_parameter(
+            "color_scan_command",
+            "bash /home/ssu/Azas/tools/run/run_color_scan_stage.sh",
+        )
+        self.declare_parameter("recipe_after_success", True)
+        self.declare_parameter(
+            "recipe_command",
+            "cd /home/ssu/Azas && source /opt/ros/humble/setup.bash && "
+            "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
+            "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-9} && "
+            "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0} && "
+            "export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4} && "
+            "if [ -f /home/ssu/ws_moveit/install/setup.bash ]; then source /home/ssu/ws_moveit/install/setup.bash; fi && "
+            "if [ -f /home/ssu/ros2_ws/install/setup.bash ]; then source /home/ssu/ros2_ws/install/setup.bash; fi && "
+            "if [ -f /home/ssu/Azas/install/setup.bash ]; then source /home/ssu/Azas/install/setup.bash; "
+            "else source /home/ssu/Azas/install/local_setup.bash; fi && "
+            "export PYTHONPATH=/home/ssu/Azas/tools/run/python_compat:${PYTHONPATH:-} && "
+            "python3 tools/run/run_color_recipe_sequence.py --execute --confirm",
+        )
+        self.declare_parameter("lid_shake_after_recipe", True)
+        self.declare_parameter(
+            "lid_shake_command",
+            "bash /home/ssu/Azas/tools/run/run_lid_close_then_shake_chain.sh",
+        )
 
         self._latest_detection: Optional[CupDetection] = None
         self._latest_image: Optional[np.ndarray] = None
         self._image_lock = threading.Lock()
         self._window_enabled = bool(self.get_parameter("show_classification_window").value)
         self._children: list[subprocess.Popen[str]] = []
+        self._child_node_failures: dict[str, list[str]] = {}
 
         self.create_subscription(
             CupDetection,
@@ -117,6 +146,12 @@ class AutoCupFlowRouter(Node):
             else:
                 success = self._run_cup_uprighting(decision)
             if not success:
+                return 1
+            if not self._run_color_scan_sequence():
+                return 1
+            if not self._run_recipe_sequence():
+                return 1
+            if not self._run_lid_shake_sequence():
                 return 1
             self.get_logger().info("auto cup router: selected flow completed; router exiting")
             return 0
@@ -401,6 +436,7 @@ class AutoCupFlowRouter(Node):
             "table_center_y:=0.0",
             "dispenser_collision_enabled:=true",
             f"moveit_controller_name:={self.get_parameter('moveit_controller_name').value}",
+            f"side_target_x_offset_m:={float(self.get_parameter('side_target_x_offset_m').value)}",
             "start_joint_state_relay:=false",
             f"model_path:={self.get_parameter('yolo_model_path').value}",
         ])
@@ -420,6 +456,39 @@ class AutoCupFlowRouter(Node):
         ])
         cmd.extend(self._split_extra_args(str(self.get_parameter("cup_uprighting_extra_args").value)))
         return self._run_process(cmd, "cup_uprighting")
+
+    def _run_color_scan_sequence(self) -> bool:
+        if not bool(self.get_parameter("color_scan_before_recipe").value):
+            self.get_logger().info("color_scan_before_recipe=false; skipping dispenser color scan")
+            return True
+        command = str(self.get_parameter("color_scan_command").value).strip()
+        if not command:
+            self.get_logger().warning("color_scan_command is empty; skipping dispenser color scan")
+            return True
+        self.get_logger().info("pick flow succeeded; moving to color_scan_pose and scanning dispensers")
+        return self._run_process(["bash", "-c", command], "color_scan")
+
+    def _run_recipe_sequence(self) -> bool:
+        if not bool(self.get_parameter("recipe_after_success").value):
+            self.get_logger().info("recipe_after_success=false; skipping dispenser recipe sequence")
+            return True
+        command = str(self.get_parameter("recipe_command").value).strip()
+        if not command:
+            self.get_logger().warning("recipe_command is empty; skipping dispenser recipe sequence")
+            return True
+        self.get_logger().info("pick flow succeeded; starting integrated dispenser recipe sequence")
+        return self._run_process(["bash", "-c", command], "recipe")
+
+    def _run_lid_shake_sequence(self) -> bool:
+        if not bool(self.get_parameter("lid_shake_after_recipe").value):
+            self.get_logger().info("lid_shake_after_recipe=false; skipping lid close / shake chain")
+            return True
+        command = str(self.get_parameter("lid_shake_command").value).strip()
+        if not command:
+            self.get_logger().warning("lid_shake_command is empty; skipping lid close / shake chain")
+            return True
+        self.get_logger().info("recipe succeeded; starting lid close -> holder re-pick -> shake chain")
+        return self._run_process(["bash", "-c", command], "lid_shake")
 
     def _move_observe(self, label: str) -> bool:
         prefix = str(self.get_parameter("service_prefix").value).strip().strip("/")
@@ -490,6 +559,31 @@ class AutoCupFlowRouter(Node):
     def _split_extra_args(raw: str) -> list[str]:
         return [part for part in raw.split() if part]
 
+    @staticmethod
+    def _subprocess_env() -> dict[str, str]:
+        # 다른 워크스페이스(예: ~/ros2_ws)에 같은 이름의 stale 패키지가 있으면
+        # 터미널 source 순서에 따라 자식 launch가 엉뚱한 사본을 잡을 수 있다.
+        # 이 라우터가 설치된 워크스페이스의 경로를 검색 변수 맨 앞으로 올려서
+        # 자식 프로세스가 항상 같은 워크스페이스의 패키지를 먼저 찾게 한다.
+        env = os.environ.copy()
+        try:
+            from ament_index_python.packages import get_package_prefix
+            # install/<pkg> 두 단계 위 = 워크스페이스 루트. symlink 설치는 egg-info가
+            # build/<pkg>에 있으므로 install/만 올리면 entry point 탐색이 또 어긋난다.
+            ws_root = os.path.dirname(os.path.dirname(get_package_prefix("azas_task_manager"))) + os.sep
+        except Exception:
+            return env
+        for var in ("AMENT_PREFIX_PATH", "COLCON_PREFIX_PATH", "CMAKE_PREFIX_PATH",
+                    "PYTHONPATH", "PATH", "LD_LIBRARY_PATH"):
+            value = env.get(var)
+            if not value:
+                continue
+            entries = value.split(os.pathsep)
+            own = [e for e in entries if e.startswith(ws_root) or e + os.sep == ws_root]
+            rest = [e for e in entries if e not in own]
+            env[var] = os.pathsep.join(own + rest)
+        return env
+
     def _popen(self, cmd: list[str], label: str) -> subprocess.Popen[str]:
         proc = subprocess.Popen(
             cmd,
@@ -498,6 +592,7 @@ class AutoCupFlowRouter(Node):
             text=True,
             bufsize=1,
             preexec_fn=os.setsid,
+            env=self._subprocess_env(),
         )
         self._children.append(proc)
         threading.Thread(target=self._forward_output, args=(proc, label), daemon=True).start()
@@ -505,19 +600,39 @@ class AutoCupFlowRouter(Node):
 
     def _run_process(self, cmd: list[str], label: str) -> bool:
         self.get_logger().info(f"{label}: " + " ".join(cmd))
+        self._child_node_failures.pop(label, None)
         proc = self._popen(cmd, label)
         code = proc.wait()
+        # ros2 launch는 내부 노드가 죽어도 exit code 0으로 끝나므로
+        # 출력에서 감지한 노드 비정상 종료를 별도로 확인한다.
+        failures = self._child_node_failures.pop(label, None)
+        if failures:
+            self.get_logger().error(f"{label}: node failure detected: " + "; ".join(failures))
+            return False
         if code == 0:
             self.get_logger().info(f"{label}: completed successfully")
             return True
         self.get_logger().error(f"{label}: process exited with code {code}")
         return False
 
+    _NODE_DIED_PATTERN = re.compile(r"\[ERROR\] \[(?P<node>[^\]]+)\]: process has died.*exit code (?P<code>-?\d+)")
+    _SHUTDOWN_PATTERN = re.compile(r"sending signal 'SIG(INT|TERM)'|user interrupted with ctrl-c")
+
     def _forward_output(self, proc: subprocess.Popen[str], label: str) -> None:
         if proc.stdout is None:
             return
+        shutting_down = False
         for line in proc.stdout:
-            self.get_logger().info(f"{label}> {line.rstrip()}")
+            text = line.rstrip()
+            self.get_logger().info(f"{label}> {text}")
+            if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
+                shutting_down = True
+            match = self._NODE_DIED_PATTERN.search(text)
+            # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)과
+            # 음수 exit code(시그널 종료)는 정상 정리 과정이므로 제외
+            if match and int(match.group("code")) > 0 and not shutting_down:
+                self._child_node_failures.setdefault(label, []).append(
+                    f"{match.group('node')} exit code {match.group('code')}")
 
     def _stop_process(self, proc: Optional[subprocess.Popen[str]], label: str) -> None:
         if proc is None or proc.poll() is not None:
