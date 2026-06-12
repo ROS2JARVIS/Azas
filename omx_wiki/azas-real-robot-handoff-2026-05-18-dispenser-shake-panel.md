@@ -266,7 +266,7 @@ source /opt/ros/humble/setup.bash
 source /home/ssu/ros2_ws/install/setup.bash
 colcon build --packages-select azas_dispenser azas_motion azas_bringup --symlink-install
 
-ROS_DOMAIN_ID=87 SERVICE_PREFIX=azas_fake_shake_<pid> \
+ROS_DOMAIN_ID=15 SERVICE_PREFIX=azas_fake_shake_<pid> \
   tools/smoke/smoke_tumbler_shake_sequence.sh
 ```
 

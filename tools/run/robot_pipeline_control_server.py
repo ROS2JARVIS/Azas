@@ -35,7 +35,7 @@ HTML_PATH = ROOT / "docs" / "robot_pipeline_control.html"
 ROS_SETUP = (
     "source /opt/ros/humble/setup.bash && "
     "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
-    "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-9} && "
+    "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-15} && "
     "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0} && "
     "export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4} && "
     "if [ -f /home/ssu/ws_moveit/install/setup.bash ]; then "
@@ -53,7 +53,7 @@ ROS_SETUP = (
 )
 DEFAULT_ROBOT_HOST = "192.168.1.100"
 DEFAULT_RT_HOST = "0.0.0.0"
-DEFAULT_ROS_DOMAIN_ID = "9"
+DEFAULT_ROS_DOMAIN_ID = "15"
 DEFAULT_YOLO_MODEL_PATH = ROOT / "local_models" / "best.pt"
 CUP_UPRIGHTING_YOLO_MODEL_PATH = (
     ROOT / "src" / "azas_perception" / "config" / "yolo_cup_uprighting_best.pt"
@@ -66,7 +66,7 @@ HAND_EYE_TF_TARGET_FRAME = "base_link"
 HAND_EYE_TF_SOURCE_FRAME = "camera_color_optical_frame"
 FAST_MOVE_VELOCITY = "30"
 FAST_MOVE_ACCELERATION = "30"
-RVIZ_PREVIEW_ROS_DOMAIN_ID = "79"
+RVIZ_PREVIEW_ROS_DOMAIN_ID = "15"
 BACKGROUND_LOG_DIR = ROOT / "log" / "panel"
 COMMAND_OVERRIDES_PATH = ROOT / "outputs" / "panel_command_overrides.json"
 ROBOT_STATE_NAMES = {

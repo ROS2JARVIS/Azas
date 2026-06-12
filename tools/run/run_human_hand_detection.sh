@@ -13,7 +13,7 @@ if [[ -f "${ROOT_DIR}/install/setup.bash" ]]; then
   source "${ROOT_DIR}/install/setup.bash"
 fi
 
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-15}"
 export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
 
 exec python3 "${ROOT_DIR}/tools/perception/human_hand_detection_node.py" "$@"
