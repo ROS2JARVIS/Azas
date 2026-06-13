@@ -17,6 +17,11 @@ if ! [[ "${RECIPE_COLORS}" =~ ^(red|yellow|green|blue):[0-9]+(,(red|yellow|green
 fi
 
 SERVICE_PREFIX="${SERVICE_PREFIX:-dsr01}"
+MOTION_SERVICE_PREFIX="${MOTION_SERVICE_PREFIX:-auto}"
+AUTO_FLOW_RESUME_MODE="${AUTO_FLOW_RESUME_MODE:-normal}"
+AUTO_FLOW_RESUME_STATE_FILE="${AUTO_FLOW_RESUME_STATE_FILE:-/home/ssu/Azas/outputs/auto_cup_flow_resume.json}"
+AUTO_FLOW_RESUME_EVENTS_FILE="${AUTO_FLOW_RESUME_EVENTS_FILE:-/home/ssu/Azas/outputs/auto_cup_flow_events.jsonl}"
+AUTO_FLOW_DISPENSER_RESUME_STATE_FILE="${AUTO_FLOW_DISPENSER_RESUME_STATE_FILE:-/home/ssu/Azas/outputs/measured_dispenser_recipe_resume.json}"
 ROUTER_CONFIRM="${ROUTER_CONFIRM:-}"
 if [[ "${ROUTER_CONFIRM}" != "ENABLE_AUTO_CUP_ROUTER" ]]; then
   echo "[voice_flow] BLOCKED: set ROUTER_CONFIRM=ENABLE_AUTO_CUP_ROUTER to run real motion." >&2
@@ -36,11 +41,16 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
 export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}"
 export FASTDDS_BUILTIN_TRANSPORTS="${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
 
-echo "[voice_flow] starting full auto cup flow: recipe_colors=${RECIPE_COLORS}"
-exec ros2 launch azas_bringup auto_cup_flow_router.launch.py \
+echo "[voice_flow] starting full auto cup flow: recipe_colors=${RECIPE_COLORS} resume_mode=${AUTO_FLOW_RESUME_MODE}"
+mkdir -p "${ROS_LOG_DIR:-/tmp/azas_ros_logs}"
+VOICE_FLOW_LOG="${ROS_LOG_DIR:-/tmp/azas_ros_logs}/voice_auto_cup_flow_$(date +%Y%m%d_%H%M%S).log"
+
+set +e
+ros2 launch azas_bringup auto_cup_flow_router.launch.py \
   enable_real_motion:=true \
   router_confirm:=ENABLE_AUTO_CUP_ROUTER \
   service_prefix:="${SERVICE_PREFIX}" \
+  motion_service_prefix:="${MOTION_SERVICE_PREFIX}" \
   moveit_controller_name:=/${SERVICE_PREFIX}/dsr_moveit_controller \
   controller_action_name:=/${SERVICE_PREFIX}/dsr_moveit_controller/follow_joint_trajectory \
   classifier_path:=/home/ssu/Azas/cup_classifier_best.pth \
@@ -48,4 +58,17 @@ exec ros2 launch azas_bringup auto_cup_flow_router.launch.py \
   route_hold_sec:=2.0 \
   route_stable_required_samples:=5 \
   route_stable_min_sec:=0.8 \
-  recipe_colors:="${RECIPE_COLORS}"
+  recipe_colors:="${RECIPE_COLORS}" \
+  resume_mode:="${AUTO_FLOW_RESUME_MODE}" \
+  resume_state_file:="${AUTO_FLOW_RESUME_STATE_FILE}" \
+  resume_events_file:="${AUTO_FLOW_RESUME_EVENTS_FILE}" \
+  dispenser_resume_state_file:="${AUTO_FLOW_DISPENSER_RESUME_STATE_FILE}" 2>&1 | tee "${VOICE_FLOW_LOG}"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+launch_rc="${pipeline_status[0]}"
+
+if grep -Eq "\[auto_cup_flow_router-[0-9]+\]: process has died|auto_cup_flow_router.*exit code 1|lid_shake: process exited with code [1-9]" "${VOICE_FLOW_LOG}"; then
+  echo "[voice_flow] auto cup flow failed; see ${VOICE_FLOW_LOG}" >&2
+  exit 1
+fi
+exit "${launch_rc}"

@@ -93,6 +93,12 @@ def offset_target_y(target: TargetPose, offset_m: float) -> TargetPose:
     return TargetPose(target.label, adjusted_xyz, list(target.rpy_rad))
 
 
+def offset_target_rz(target: TargetPose, offset_deg: float) -> TargetPose:
+    adjusted_rpy = list(target.rpy_rad)
+    adjusted_rpy[2] += math.radians(float(offset_deg))
+    return TargetPose(target.label, list(target.xyz_m), adjusted_rpy)
+
+
 def print_target(target: TargetPose) -> None:
     rx, ry, rz = target.rpy_deg
     x, y, z = target.xyz_m
@@ -305,6 +311,12 @@ def parse_args() -> argparse.Namespace:
             "the holder placement 10mm in negative Y without rewriting calibration.yaml."
         ),
     )
+    parser.add_argument(
+        "--rz-offset-deg",
+        type=float,
+        default=0.0,
+        help="Add this RZ offset to all measured cup-holder side-grip poses without rewriting calibration.yaml.",
+    )
     parser.add_argument("--timeout-sec", type=float, default=90.0)
     parser.add_argument("--wait-service-sec", type=float, default=8.0)
     parser.add_argument("--verify-timeout-sec", type=float, default=35.0)
@@ -362,6 +374,10 @@ def main() -> int:
             place_final = offset_target_y(place_final, args.place_final_y_offset_m)
         if abs(args.place_final_z_offset_m) > 1e-9:
             place_final = offset_target_z(place_final, args.place_final_z_offset_m)
+        if abs(args.rz_offset_deg) > 1e-9:
+            pre_place = offset_target_rz(pre_place, args.rz_offset_deg)
+            place_final = offset_target_rz(place_final, args.rz_offset_deg)
+            retreat = offset_target_rz(retreat, args.rz_offset_deg)
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"[FAIL] {exc}")
         return 2
@@ -372,6 +388,7 @@ def main() -> int:
     print(f"[Azas] approach_lift_m={approach_lift_m:.3f}")
     print(f"[Azas] place_final_y_offset_m={args.place_final_y_offset_m:.4f}")
     print(f"[Azas] place_final_z_offset_m={args.place_final_z_offset_m:.4f}")
+    print(f"[Azas] rz_offset_deg={args.rz_offset_deg:.3f}")
     print_target(pre_place)
     print_target(place_final)
     print_target(retreat)

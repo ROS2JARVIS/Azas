@@ -6,6 +6,9 @@ LOG_DIR="${ROOT}/log/tmux_logic"
 SERVICE_PREFIX="${SERVICE_PREFIX:-dsr01}"
 DISPLAY="${DISPLAY:-:0}"
 XAUTHORITY="${XAUTHORITY:-/run/user/1000/gdm/Xauthority}"
+ROS_LOCALHOST_ONLY="${TMUX_LOGIC_ROS_LOCALHOST_ONLY:-0}"
+LID_TCP_GRASP_OFFSET_Z_M="${LID_TCP_GRASP_OFFSET_Z_M:--0.032}"
+LID_MIN_GRASP_Z_M="${LID_MIN_GRASP_Z_M:-0.020}"
 
 mkdir -p "${LOG_DIR}" /tmp/azas_ros_logs
 cd "${ROOT}"
@@ -19,7 +22,7 @@ set -u
 
 export ROS_LOG_DIR=/tmp/azas_ros_logs
 export PYTHONPATH="${ROOT}/tools/run/python_compat:${PYTHONPATH:-}"
-export DISPLAY XAUTHORITY
+export DISPLAY XAUTHORITY ROS_LOCALHOST_ONLY
 
 support_pids=()
 
@@ -197,11 +200,11 @@ run_lid_grip_close() {
     visual_refine_max_position_std_m:=0.005 visual_refine_apply_xy:=true visual_refine_apply_yaw:=true visual_refine_fallback_to_initial_plan:=true \
     enable_hardware:=true hardware_confirm:=ENABLE_REAL_ROBOT_MOTION allow_service_control_without_moveit:=true service_prefix:=/${SERVICE_PREFIX} \
     rx:=108.41 ry:=-176.32 rz:=175.98 offset_axis:=base_z surface_offset_m:=0.0 \
-    tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:=-0.040 min_grasp_z_m:=0.025 \
+    tcp_grasp_offset_x_m:=0.0 tcp_grasp_offset_y_m:=0.0 tcp_grasp_offset_z_m:="${LID_TCP_GRASP_OFFSET_Z_M}" min_grasp_z_m:="${LID_MIN_GRASP_Z_M}" \
     approach_offset_m:=0.08 lift_offset_m:=0.10 settle_seconds_before_grasp:=0.5 hold_seconds_after_grasp:=3.0 \
     line_velocity:=30.0 line_acceleration:=10.0 move_timeout_sec:=90.0 \
     enable_gripper_service_calls:=true gripper_set_service:=/jarvis/rg2/set_width \
-    gripper_preopen_width_m:=0.110 gripper_grasp_width_m:=0.020 gripper_force_n:=12.0 \
+    gripper_preopen_width_m:=0.110 gripper_grasp_width_m:=0.020 gripper_force_n:=16.0 \
     continue_after_gripper_grasp_failure:=true gripper_grasp_failure_wait_sec:=2.0 \
     enable_lid_twist_after_grasp:=true \
     lid_twist_target_x_m:=0.422959106 lid_twist_target_y_m:=0.223224869 lid_twist_target_z_m:=0.166827988 \

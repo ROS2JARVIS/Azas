@@ -183,6 +183,8 @@ function renderSteps(pipeline) {
     activeIndex = 0;
   } else if (status === "completed") {
     activeIndex = pipelineSteps.length;
+  } else if (status === "recovery_ready" && pipeline.stage in STAGE_TO_STEP) {
+    activeIndex = STAGE_TO_STEP[pipeline.stage];
   }
   pipelineSteps.forEach((step, index) => {
     step.classList.toggle("done", activeIndex > index);
@@ -198,9 +200,9 @@ function renderRobot(activeIndex, pipeline, hasMenu) {
     return;
   }
   const status = pipeline.status || "";
-  if (status === "failed") {
+  if (status === "failed" || status === "blocked") {
     robotScene.dataset.step = "idle";
-    robotStatusText.textContent = "제조 중단";
+    robotStatusText.textContent = status === "blocked" ? "복구 대기" : "제조 중단";
     return;
   }
   if (status === "completed" || activeIndex >= pipelineSteps.length) {
@@ -293,7 +295,15 @@ function renderMenu(state) {
     menuCard.hidden = true;
     menuEmpty.hidden = false;
     renderRobot(-1, pipeline, false);
-    setBadge("idle", "대기 중");
+    if (pipeline.status === "blocked") {
+      setBadge("failed", "복구 조치 필요");
+    } else if (pipeline.status === "recovery_ready") {
+      setBadge("confirmed", "복구 가능");
+    } else if (pipeline.status === "recovery_cleared") {
+      setBadge("idle", "복구 기록 초기화");
+    } else {
+      setBadge("idle", "대기 중");
+    }
     return;
   }
 
@@ -322,10 +332,14 @@ function renderMenu(state) {
   renderRobot(activeIndex, pipeline, true);
 
   const pipelineStatus = pipeline.status || "";
-  if (pipelineStatus === "failed") {
-    setBadge("failed", "제조 실패");
+  if (pipelineStatus === "failed" || pipelineStatus === "blocked") {
+    setBadge("failed", pipelineStatus === "blocked" ? "복구 조치 필요" : "제조 실패");
   } else if (pipelineStatus === "completed") {
     setBadge("done", "완성! 맛있게 드세요");
+  } else if (pipelineStatus === "recovery_ready") {
+    setBadge("confirmed", "복구 가능");
+  } else if (pipelineStatus === "recovery_cleared") {
+    setBadge("idle", "복구 기록 초기화");
   } else if (pipelineStatus === "running" || pipelineStatus === "starting") {
     setBadge("making", pipeline.stage ? `제조 중 · ${pipeline.stage}` : "제조 중");
   } else if (pipelineStatus === "dry_run") {

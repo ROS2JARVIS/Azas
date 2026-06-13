@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -212,6 +213,11 @@ def main() -> int:
     parser.add_argument("--color-map-json", default="",
                         help="패널이 현재 알고 있는 dispenser_id→color JSON. --colors 직접 입력 시 우선 사용")
     parser.add_argument(
+        "--service-prefix",
+        default=os.environ.get("SERVICE_PREFIX", ""),
+        help="Doosan direct service namespace. 현재 스택이 /motion/* 루트 서비스를 쓰면 빈 값",
+    )
+    parser.add_argument(
         "--confirm",
         nargs="?",
         const=CONFIRM_PHRASE,
@@ -223,6 +229,12 @@ def main() -> int:
     )
     parser.add_argument("--execute", action="store_true",
                         help="실제 measured dispenser sequence를 실행")
+    parser.add_argument(
+        "--recipe-speed-scale",
+        type=float,
+        default=4.0,
+        help="디스펜서 레시피 사이클의 속도/가속도 배율. 기본 4.0배.",
+    )
     parser.add_argument("--move-velocity", default="80.0")
     parser.add_argument("--move-acceleration", default="25.0")
     parser.add_argument("--move-prehold-velocity", default="80.0")
@@ -251,14 +263,19 @@ def main() -> int:
     parser.add_argument("--press-contact-joint-acceleration", default="15.0")
     parser.add_argument("--press-contact-entry-lift-m", default="0.050")
     parser.add_argument(
+        "--dispenser-1-press-y-offset-m",
+        default="0.002",
+        help="1번 디스펜서 press target에만 적용할 Y 보정값(m). 기본 +0.002m.",
+    )
+    parser.add_argument(
         "--press-reset-before-press",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="컵을 놓은 뒤 CONTACT_ENTRY_LIFT 전에 PRESS_COMMON_PRE/HOME joint waypoint를 경유. 기본 false",
     )
     parser.add_argument("--press-reset-joints-deg", default="0,0,90,0,90,0")
-    parser.add_argument("--press-reset-joint-velocity", default="80.0")
-    parser.add_argument("--press-reset-joint-acceleration", default="25.0")
+    parser.add_argument("--press-reset-joint-velocity", default="26.6666667")
+    parser.add_argument("--press-reset-joint-acceleration", default="8.33333333")
     parser.add_argument("--press-depth-m", default="0.070")
     parser.add_argument(
         "--press-extra-depth-m",
@@ -304,7 +321,7 @@ def main() -> int:
     )
     parser.add_argument("--regrasp-retreat-x-m", default="-0.080")
     parser.add_argument("--regrasp-retreat-y-m", default="0.0")
-    parser.add_argument("--post-press-safe-lift-z-m", default="0.470")
+    parser.add_argument("--post-press-safe-lift-z-m", default="0.350")
     parser.add_argument(
         "--start-safe-lift-z-m",
         default="0.15",
@@ -352,10 +369,26 @@ def main() -> int:
     parser.add_argument("--final-regrasp-extra-x-offset-m", default="0.000")
     parser.add_argument("--skip-initial-move-release", action="store_true",
                         help="복구 모드: 컵이 이미 첫 디스펜서 front-hold에 놓여 있다고 가정하고 press부터 시작")
+    parser.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="명시 복구 모드에서만 디스펜서 resume_state를 읽음. 기본 false.",
+    )
+    parser.add_argument(
+        "--resume-state-file",
+        default="",
+        help="run_measured_dispenser_recipe_sequence.py에 전달할 디스펜서 resume JSON 경로",
+    )
+    parser.add_argument(
+        "--clear-resume-state",
+        action="store_true",
+        help="이번 실행 시작 전에 디스펜서 resume JSON을 삭제",
+    )
     parser.add_argument("--final-regrasp-extra-y-offset-m", default="0.0")
     parser.add_argument("--final-regrasp-extra-z-offset-m", default="0.0")
     parser.add_argument("--final-regrasp-grasp-width-m", default="0.068")
-    parser.add_argument("--final-regrasp-force-n", default="35.0")
+    parser.add_argument("--final-regrasp-force-n", default="25.0")
     parser.add_argument(
         "--allow-tcp-set-failure",
         action="store_true",
@@ -370,9 +403,14 @@ def main() -> int:
         default=True,
         help="마지막 디스펜서 처리 후 컵홀더에 컵을 놓음",
     )
-    parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.030")
+    parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.040")
     parser.add_argument("--cup-holder-place-final-y-offset-m", default="-0.010")
-    parser.add_argument("--cup-holder-z-min-m", default="0.08",
+    parser.add_argument(
+        "--cup-holder-rz-offset-deg",
+        default="-1.0",
+        help="컵홀더 이동 전 구간의 RZ 자세 보정값. calibration.yaml은 수정하지 않음.",
+    )
+    parser.add_argument("--cup-holder-z-min-m", default="0.06",
                         help="컵홀더 place 목표 z 안전 하한. place z offset을 크게 낮출 때 함께 내려야 함")
     parser.add_argument("--cup-holder-approach-velocity", default="80.0")
     parser.add_argument("--cup-holder-approach-acceleration", default="20.0")
@@ -396,21 +434,30 @@ def main() -> int:
     if args.execute and not args.confirm:
         print(f"[BLOCKED] --execute requires --confirm ({CONFIRM_PHRASE})", file=sys.stderr)
         return 2
+    if args.recipe_speed_scale <= 0.0:
+        parser.error("--recipe-speed-scale must be > 0")
+
+    def scaled_motion(value: str) -> str:
+        return f"{float(value) * args.recipe_speed_scale:.6g}"
+
+    def scaled_motion_capped(value: str, cap: float) -> str:
+        return f"{min(float(value) * args.recipe_speed_scale, cap):.6g}"
 
     sequence_extra_args = [
-        "--move-velocity", str(args.move_velocity),
-        "--move-acceleration", str(args.move_acceleration),
-        "--move-prehold-velocity", str(args.move_prehold_velocity),
-        "--move-prehold-acceleration", str(args.move_prehold_acceleration),
-        "--pick-approach-velocity", str(args.pick_approach_velocity),
-        "--pick-approach-acceleration", str(args.pick_approach_acceleration),
-        "--pick-lift-velocity", str(args.pick_lift_velocity),
-        "--pick-lift-acceleration", str(args.pick_lift_acceleration),
-        "--regrasp-approach-velocity", str(args.regrasp_approach_velocity),
-        "--regrasp-approach-acceleration", str(args.regrasp_approach_acceleration),
+        "--service-prefix", str(args.service_prefix),
+        "--move-velocity", scaled_motion(args.move_velocity),
+        "--move-acceleration", scaled_motion(args.move_acceleration),
+        "--move-prehold-velocity", scaled_motion(args.move_prehold_velocity),
+        "--move-prehold-acceleration", scaled_motion(args.move_prehold_acceleration),
+        "--pick-approach-velocity", scaled_motion(args.pick_approach_velocity),
+        "--pick-approach-acceleration", scaled_motion(args.pick_approach_acceleration),
+        "--pick-lift-velocity", scaled_motion(args.pick_lift_velocity),
+        "--pick-lift-acceleration", scaled_motion(args.pick_lift_acceleration),
+        "--regrasp-approach-velocity", scaled_motion(args.regrasp_approach_velocity),
+        "--regrasp-approach-acceleration", scaled_motion(args.regrasp_approach_acceleration),
         "--regrasp-reset-joints-deg", str(args.regrasp_reset_joints_deg),
-        "--regrasp-reset-joint-velocity", str(args.regrasp_reset_joint_velocity),
-        "--regrasp-reset-joint-acceleration", str(args.regrasp_reset_joint_acceleration),
+        "--regrasp-reset-joint-velocity", scaled_motion(args.regrasp_reset_joint_velocity),
+        "--regrasp-reset-joint-acceleration", scaled_motion(args.regrasp_reset_joint_acceleration),
         "--press-min-transit-z-m", str(args.press_min_transit_z_m),
         "--press-pre-lift-m", str(args.press_pre_lift_m),
         "--press-transit-height-m", str(args.press_transit_height_m),
@@ -439,16 +486,17 @@ def main() -> int:
         "--final-regrasp-extra-z-offset-m", str(args.final_regrasp_extra_z_offset_m),
         "--final-regrasp-grasp-width-m", str(args.final_regrasp_grasp_width_m),
         "--final-regrasp-force-n", str(args.final_regrasp_force_n),
-        "--press-line-velocity", str(args.press_line_velocity),
-        "--press-line-acceleration", str(args.press_line_acceleration),
-        "--press-travel-velocity", str(args.press_travel_velocity),
-        "--press-travel-acceleration", str(args.press_travel_acceleration),
-        "--press-contact-joint-velocity", str(args.press_contact_joint_velocity),
-        "--press-contact-joint-acceleration", str(args.press_contact_joint_acceleration),
+        "--press-line-velocity", scaled_motion(args.press_line_velocity),
+        "--press-line-acceleration", scaled_motion(args.press_line_acceleration),
+        "--press-travel-velocity", scaled_motion(args.press_travel_velocity),
+        "--press-travel-acceleration", scaled_motion(args.press_travel_acceleration),
+        "--press-contact-joint-velocity", scaled_motion(args.press_contact_joint_velocity),
+        "--press-contact-joint-acceleration", scaled_motion(args.press_contact_joint_acceleration),
         "--press-contact-entry-lift-m", str(args.press_contact_entry_lift_m),
+        "--dispenser-1-press-y-offset-m", str(args.dispenser_1_press_y_offset_m),
         "--press-reset-joints-deg", str(args.press_reset_joints_deg),
-        "--press-reset-joint-velocity", str(args.press_reset_joint_velocity),
-        "--press-reset-joint-acceleration", str(args.press_reset_joint_acceleration),
+        "--press-reset-joint-velocity", scaled_motion_capped(args.press_reset_joint_velocity, 80.0),
+        "--press-reset-joint-acceleration", scaled_motion_capped(args.press_reset_joint_acceleration, 25.0),
         "--press-depth-m", str(args.press_depth_m),
         "--press-extra-depth-m", str(args.press_extra_depth_m),
         "--press-lock-contact-joints", str(args.press_lock_contact_joints),
@@ -456,13 +504,14 @@ def main() -> int:
         "--gripper-settle-seconds", str(args.gripper_settle_seconds),
         "--cup-holder-place-final-z-offset-m", str(args.cup_holder_place_final_z_offset_m),
         "--cup-holder-place-final-y-offset-m", str(args.cup_holder_place_final_y_offset_m),
+        "--cup-holder-rz-offset-deg", str(args.cup_holder_rz_offset_deg),
         "--cup-holder-z-min-m", str(args.cup_holder_z_min_m),
-        "--cup-holder-approach-velocity", str(args.cup_holder_approach_velocity),
-        "--cup-holder-approach-acceleration", str(args.cup_holder_approach_acceleration),
-        "--cup-holder-place-velocity", str(args.cup_holder_place_velocity),
-        "--cup-holder-place-acceleration", str(args.cup_holder_place_acceleration),
-        "--cup-holder-retreat-velocity", str(args.cup_holder_retreat_velocity),
-        "--cup-holder-retreat-acceleration", str(args.cup_holder_retreat_acceleration),
+        "--cup-holder-approach-velocity", scaled_motion(args.cup_holder_approach_velocity),
+        "--cup-holder-approach-acceleration", scaled_motion(args.cup_holder_approach_acceleration),
+        "--cup-holder-place-velocity", scaled_motion(args.cup_holder_place_velocity),
+        "--cup-holder-place-acceleration", scaled_motion(args.cup_holder_place_acceleration),
+        "--cup-holder-retreat-velocity", scaled_motion(args.cup_holder_retreat_velocity),
+        "--cup-holder-retreat-acceleration", scaled_motion(args.cup_holder_retreat_acceleration),
         "--cup-holder-timeout-sec", str(args.cup_holder_timeout_sec),
         "--cup-holder-target-tolerance-mm", str(args.cup_holder_target_tolerance_mm),
         "--wait-service-sec", str(args.wait_service_sec),
@@ -514,6 +563,13 @@ def main() -> int:
         sequence_extra_args.append("--allow-tcp-set-failure")
     if args.force_cartesian_press:
         sequence_extra_args.append("--force-cartesian-press")
+    sequence_extra_args.append("--resume" if args.resume else "--no-resume")
+    if str(args.resume_state_file).strip():
+        sequence_extra_args += ["--resume-state-file", str(args.resume_state_file).strip()]
+    if args.clear_resume_state:
+        sequence_extra_args.append("--clear-resume-state")
+
+    print(f"[run_color_recipe] 속도 배율: {args.recipe_speed_scale:.2f}x")
 
     direct_dispenser_ids = args.dispenser_ids.strip()
     if direct_dispenser_ids:

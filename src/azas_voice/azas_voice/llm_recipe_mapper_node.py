@@ -22,7 +22,16 @@ from azas_voice.recipe_catalog import (
 )
 
 
-ALLOWED_INTENTS = {"make_cocktail", "confirm", "cancel", "unknown"}
+ALLOWED_INTENTS = {
+    "make_cocktail",
+    "confirm",
+    "cancel",
+    "resume_flow",
+    "restart_flow",
+    "recheck_recovery",
+    "clear_recovery",
+    "unknown",
+}
 ALLOWED_CUSTOM_RECIPE_IDS = {"custom_color_selection", "custom_preference_mix"}
 DISPENSER_NUMBER_TO_COLOR = {
     "1": "red",
@@ -96,7 +105,14 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
         return _fallback_decision(text, f"invalid_intent:{intent}")
 
     fallback = parse_recipe_command(text)
-    if fallback.valid and fallback.intent in {"confirm", "cancel"}:
+    if fallback.valid and fallback.intent in {
+        "confirm",
+        "cancel",
+        "resume_flow",
+        "restart_flow",
+        "recheck_recovery",
+        "clear_recovery",
+    }:
         return fallback
     if fallback.valid and fallback.intent == "make_cocktail" and fallback.recipe_id in RECIPE_DISPENSERS and "추천" in fallback.confirmation:
         return fallback
@@ -140,7 +156,7 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
     if intent == "make_cocktail" and recipe_id is None and not dispenser_ids:
         return _fallback_decision(text, "missing_recipe_or_dispenser")
 
-    valid = intent in {"make_cocktail", "confirm", "cancel"}
+    valid = intent in ALLOWED_INTENTS - {"unknown"}
     if intent == "make_cocktail" and recipe_id is None:
         recipe_id = "custom_preference_mix" if dispenser_amounts else "custom_color_selection"
 
@@ -166,6 +182,14 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
             confirmation = "칵테일 제조 요청을 취소합니다."
         elif intent == "confirm":
             confirmation = "선택한 칵테일 제조를 확인했습니다."
+        elif intent == "resume_flow":
+            confirmation = "이전 작업을 이어서 진행할 수 있는지 확인합니다."
+        elif intent == "restart_flow":
+            confirmation = "이전 주문을 처음부터 다시 시작할 수 있는지 확인합니다."
+        elif intent == "recheck_recovery":
+            confirmation = "복구 상태를 다시 확인합니다."
+        elif intent == "clear_recovery":
+            confirmation = "복구 기록을 초기화합니다."
         elif recipe_id == "custom_preference_mix" and fallback.confirmation:
             confirmation = fallback.confirmation
         elif fallback.confirmation and "추천" in fallback.confirmation:
@@ -294,6 +318,8 @@ class LlmRecipeMapperNode(Node):
                         f"{', '.join(RECIPE_DISPENSERS)}. "
                         "Only choose a catalog recipe when the user explicitly asks for a numbered/named menu or gives no preferences. "
                         "Allowed dispenser_ids values: red, yellow, green, blue only. "
+                        "For recovery commands such as 이어서 해줘, 복구 다시 확인, 처음부터 다시, or 복구 기록 초기화, "
+                        "use intents resume_flow, recheck_recovery, restart_flow, or clear_recovery. "
                         "Do not output dispenser_amounts; the application calculates amounts from traits. "
                         "Never output robot coordinates, calibration values, trajectories, or safety approvals."
                     ),

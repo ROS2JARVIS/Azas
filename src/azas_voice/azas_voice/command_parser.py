@@ -61,6 +61,88 @@ def _contains_any(normalized: str, words: tuple[str, ...]) -> bool:
     return any(normalize_text(word) in normalized for word in words)
 
 
+RECOVERY_RESTART_WORDS = (
+    "처음부터다시",
+    "처음부터시작",
+    "처음부터해",
+    "새로시작",
+    "처음부터",
+)
+RECOVERY_CLEAR_WORDS = (
+    "복구기록초기화",
+    "복구기록삭제",
+    "체크포인트삭제",
+    "체크포인트초기화",
+    "재개기록삭제",
+)
+RECOVERY_RECHECK_WORDS = (
+    "복구다시확인",
+    "복구상태확인",
+    "상태다시확인",
+    "다시확인",
+    "점검해",
+    "점검해줘",
+)
+RECOVERY_RESUME_WORDS = (
+    "이어서해",
+    "이어서해줘",
+    "이어서진행",
+    "마저해",
+    "마저진행",
+    "계속진행",
+    "멈춘데서",
+    "멈춘곳에서",
+    "멈춘부분",
+    "재개해",
+    "재개해줘",
+    "복구시작",
+)
+
+
+def _recovery_decision(utterance: str, normalized: str) -> RecipeDecision | None:
+    if _contains_any(normalized, RECOVERY_CLEAR_WORDS):
+        return RecipeDecision(
+            True,
+            utterance,
+            normalized,
+            "clear_recovery",
+            None,
+            (),
+            "복구 기록을 초기화합니다.",
+        )
+    if _contains_any(normalized, RECOVERY_RESTART_WORDS):
+        return RecipeDecision(
+            True,
+            utterance,
+            normalized,
+            "restart_flow",
+            None,
+            (),
+            "이전 주문을 처음부터 다시 시작할 수 있는지 확인합니다.",
+        )
+    if _contains_any(normalized, RECOVERY_RECHECK_WORDS):
+        return RecipeDecision(
+            True,
+            utterance,
+            normalized,
+            "recheck_recovery",
+            None,
+            (),
+            "복구 상태를 다시 확인합니다.",
+        )
+    if _contains_any(normalized, RECOVERY_RESUME_WORDS):
+        return RecipeDecision(
+            True,
+            utterance,
+            normalized,
+            "resume_flow",
+            None,
+            (),
+            "이전 작업을 이어서 진행할 수 있는지 확인합니다.",
+        )
+    return None
+
+
 def _match_recipe(normalized: str) -> str | None:
     if "디스펜서" in normalized:
         return None
@@ -87,6 +169,10 @@ def _is_random_recipe_request(normalized: str) -> bool:
     has_mood = _contains_any(normalized, MOOD_WORDS)
     has_random = _contains_any(normalized, RANDOM_RECIPE_WORDS)
     return has_mood or has_random
+
+
+def _is_preference_mix_request(normalized: str) -> bool:
+    return _contains_any(normalized, PREFERENCE_WORDS)
 
 
 def _recipe_name(recipe_id: str) -> str:
@@ -220,6 +306,10 @@ def parse_recipe_command(text: str) -> RecipeDecision:
     if not normalized:
         return RecipeDecision(False, utterance, normalized, "unknown", None, (), "", "empty utterance")
 
+    recovery = _recovery_decision(utterance, normalized)
+    if recovery is not None:
+        return recovery
+
     if _contains_any(normalized, REROLL_RECOMMENDATION_WORDS):
         return _random_recipe_decision(utterance, normalized)
 
@@ -229,12 +319,30 @@ def parse_recipe_command(text: str) -> RecipeDecision:
     recipe_id = _match_recipe(normalized)
     dispenser_ids = _match_colors(normalized)
 
+    if recipe_id is None and _is_preference_mix_request(normalized):
+        if not dispenser_ids or any(
+            marker in normalized
+            for marker in (
+                "적게",
+                "많이",
+                "진하게",
+                "약하게",
+                "강하게",
+                "덜",
+                "안",
+                "않",
+                "부담",
+                "추천",
+            )
+        ):
+            return _custom_preference_decision(utterance, normalized)
+
     if recipe_id is None and not dispenser_ids and _is_random_recipe_request(normalized):
-        if _contains_any(normalized, PREFERENCE_WORDS):
+        if _is_preference_mix_request(normalized):
             return _custom_preference_decision(utterance, normalized)
         return _random_recipe_decision(utterance, normalized)
 
-    if recipe_id is None and not dispenser_ids and _contains_any(normalized, PREFERENCE_WORDS):
+    if recipe_id is None and not dispenser_ids and _is_preference_mix_request(normalized):
         return _custom_preference_decision(utterance, normalized)
 
     if recipe_id is None and not dispenser_ids and _contains_any(normalized, CONFIRM_WORDS):

@@ -19,7 +19,7 @@ CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M="${CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M:-0.0}"
 # Negative values lower the final grasp pose; calibration.yaml is not modified.
 CUP_HOLDER_PICK_Z_OFFSET_M="${CUP_HOLDER_PICK_Z_OFFSET_M:--0.020}"
 CUP_HOLDER_PICK_WIDTH_M="${CUP_HOLDER_PICK_WIDTH_M:-0.068}"
-CUP_HOLDER_PICK_FORCE_N="${CUP_HOLDER_PICK_FORCE_N:-35.0}"
+CUP_HOLDER_PICK_FORCE_N="${CUP_HOLDER_PICK_FORCE_N:-25.0}"
 USE_CURRENT_TCP_AS_SHAKE_CENTER="${USE_CURRENT_TCP_AS_SHAKE_CENTER:-false}"
 REQUIRE_JOINT_LIMITS="${REQUIRE_JOINT_LIMITS:-true}"
 REQUIRE_ROBOT_STANDBY="${REQUIRE_ROBOT_STANDBY:-true}"
@@ -280,9 +280,9 @@ if [[ "${SKIP_CUP_HOLDER_PICK}" != "true" ]]; then
   python3 "${ROOT_DIR}/tools/run/pick_from_cup_holder_side_grip.py" \
     --service-prefix "${SERVICE_PREFIX}" \
     --config "${CUP_HOLDER_PICK_CONFIG}" \
-    --approach-velocity 12.0 --approach-acceleration 16.0 \
-    --descend-velocity 6.0 --descend-acceleration 10.0 \
-    --lift-velocity 12.0 --lift-acceleration 16.0 \
+    --approach-velocity 40.0 --approach-acceleration 40.0 \
+    --descend-velocity 40.0 --descend-acceleration 40.0 \
+    --lift-velocity 40.0 --lift-acceleration 40.0 \
     --place-final-z-offset-m "${CUP_HOLDER_PICK_Z_OFFSET_M}" \
     --timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 \
     --ikin-timeout-sec 20.0 --ikin-retries 2 \

@@ -538,6 +538,39 @@ def print_dry_run_group_detail(args: argparse.Namespace, dispenser_id: str, pres
             f"[PLAN] dispenser {dispenser_id}: press Cartesian fallback xyz_m={press_xyz_m} "
             f"rpy_deg={press_rpy_deg} -> Z overdrive={z_overdrive_mm:.1f}mm x{press_count}"
         )
+    press_y_offset_m = dispenser_press_y_offset_m(args, dispenser_id)
+    if abs(press_y_offset_m) > 1e-9:
+        print(
+            f"[PLAN] dispenser {dispenser_id}: press target Y offset "
+            f"{press_y_offset_m * 1000.0:+.1f}mm applied at runtime; calibration.yaml unchanged"
+        )
+
+
+def dispenser_press_y_offset_m(args: argparse.Namespace, dispenser_id: str) -> float:
+    if str(dispenser_id) == "1":
+        return float(args.dispenser_1_press_y_offset_m)
+    return 0.0
+
+
+def apply_dispenser_press_y_offset(
+    args: argparse.Namespace,
+    dispenser_id: str,
+    posx: list[float],
+    *,
+    label: str,
+) -> list[float]:
+    adjusted = list(posx)
+    offset_m = dispenser_press_y_offset_m(args, dispenser_id)
+    if abs(offset_m) <= 1e-9:
+        return adjusted
+    before_y = adjusted[1]
+    adjusted[1] += offset_m * 1000.0
+    print(
+        "[Azas] press target runtime offset: "
+        f"dispenser={dispenser_id} label={label} y_mm={before_y:.1f}->{adjusted[1]:.1f} "
+        f"offset={offset_m * 1000.0:+.1f}mm"
+    )
+    return adjusted
 
 
 def group_consecutive_dispenser_ids(dispenser_ids: list[str]) -> list[tuple[str, int]]:
@@ -1748,6 +1781,10 @@ class IntegratedRecipeMotion:
         pre_place = load_cup_holder_target_posx("pre_place")
         place_final = load_cup_holder_target_posx("place_final")
         retreat = load_cup_holder_target_posx("retreat")
+        rz_offset_deg = self.args.cup_holder_rz_offset_deg
+        if abs(rz_offset_deg) > 1e-9:
+            for posx in (pre_place, place_final, retreat):
+                posx[5] += rz_offset_deg
         place_final[1] += self.args.cup_holder_place_final_y_offset_m * 1000.0
         place_final[2] += self.args.cup_holder_place_final_z_offset_m * 1000.0
         for label, posx in (
@@ -2439,6 +2476,12 @@ class IntegratedRecipeMotion:
                 contact_joints,
                 label=f"measured PRESS_CONTACT FK for entry lift dispenser {dispenser_id}",
             )
+            contact_fk_posx = apply_dispenser_press_y_offset(
+                self.args,
+                dispenser_id,
+                list(contact_fk_posx[:6]),
+                label="PRESS_CONTACT_FK",
+            )
             contact_entry_posx = list(contact_fk_posx[:6])
             contact_entry_posx[2] += entry_lift_m * 1000.0
             self.validate_cartesian_target_z(
@@ -2465,6 +2508,11 @@ class IntegratedRecipeMotion:
                     label="CONTACT_ENTRY_LIFT above measured PRESS_CONTACT",
                 )
                 if self.args.press_contact_use_joint_move:
+                    if abs(dispenser_press_y_offset_m(self.args, dispenser_id)) > 1e-9:
+                        print(
+                            "[WARN] press Y runtime offset is ignored for "
+                            "press_contact_use_joint_move=true because measured joints are commanded directly"
+                        )
                     self.movej(
                         contact_joints,
                         label="PRESS_CONTACT measured contact joints",
@@ -2577,10 +2625,20 @@ class IntegratedRecipeMotion:
         press_xyz_m, press_rpy_deg = load_press_pose(dispenser_id)
         joint_space_press = contact_joints is not None
         if contact_joints is None:
-            x_mm = press_xyz_m[0] * 1000.0
-            y_mm = press_xyz_m[1] * 1000.0
-            contact_z = press_xyz_m[2] * 1000.0
-            rx, ry, rz = press_rpy_deg
+            press_posx = apply_dispenser_press_y_offset(
+                self.args,
+                dispenser_id,
+                [
+                    press_xyz_m[0] * 1000.0,
+                    press_xyz_m[1] * 1000.0,
+                    press_xyz_m[2] * 1000.0,
+                    press_rpy_deg[0],
+                    press_rpy_deg[1],
+                    press_rpy_deg[2],
+                ],
+                label="press_pose_xyz_m fallback",
+            )
+            x_mm, y_mm, contact_z, rx, ry, rz = press_posx[:6]
             print(
                 f"[Azas] dispenser {dispenser_id}: no press contact joints in calibration; "
                 "falling back to press_pose_xyz_m/rpy_deg"
@@ -2602,6 +2660,12 @@ class IntegratedRecipeMotion:
             contact_fk_posx = self.fkin_posx(
                 contact_joints,
                 label=f"measured PRESS_CONTACT FK dispenser {dispenser_id}",
+            )
+            contact_fk_posx = apply_dispenser_press_y_offset(
+                self.args,
+                dispenser_id,
+                list(contact_fk_posx[:6]),
+                label="fallback PRESS_CONTACT_FK",
             )
             x_mm, y_mm, contact_z, rx, ry, rz = contact_fk_posx[:6]
         if joint_space_press:
@@ -3442,10 +3506,10 @@ def parse_args() -> argparse.Namespace:
         default=0.500,
         help="Minimum absolute TCP Z before moving from cup release toward dispenser press joints.",
     )
-    parser.add_argument("--press-line-velocity", type=float, default=25.0)
-    parser.add_argument("--press-line-acceleration", type=float, default=10.0)
-    parser.add_argument("--press-travel-velocity", type=float, default=40.0)
-    parser.add_argument("--press-travel-acceleration", type=float, default=20.0)
+    parser.add_argument("--press-line-velocity", type=float, default=35.0)
+    parser.add_argument("--press-line-acceleration", type=float, default=30.0)
+    parser.add_argument("--press-travel-velocity", type=float, default=60.0)
+    parser.add_argument("--press-travel-acceleration", type=float, default=50.0)
     parser.add_argument("--press-timeout-sec", type=float, default=120.0)
     parser.add_argument("--press-hold-seconds", type=float, default=0.25)
     parser.add_argument("--press-gripper-close-width-m", type=float, default=0.0)
@@ -3470,8 +3534,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--press-reset-joint-acceleration", type=float, default=25.0)
     parser.add_argument("--press-pre-joint-velocity", type=float, default=80.0)
     parser.add_argument("--press-pre-joint-acceleration", type=float, default=25.0)
-    parser.add_argument("--press-contact-joint-velocity", type=float, default=35.0)
-    parser.add_argument("--press-contact-joint-acceleration", type=float, default=15.0)
+    parser.add_argument("--press-contact-joint-velocity", type=float, default=50.0)
+    parser.add_argument("--press-contact-joint-acceleration", type=float, default=40.0)
     parser.add_argument(
         "--press-contact-use-joint-move",
         action=argparse.BooleanOptionalAction,
@@ -3488,6 +3552,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Generated Cartesian CONTACT_ENTRY_LIFT height above measured PRESS_CONTACT FK. "
             "Default stays in the 50-80mm hardware-safe range."
+        ),
+    )
+    parser.add_argument(
+        "--dispenser-1-press-y-offset-m",
+        type=float,
+        default=0.002,
+        help=(
+            "Runtime Y offset applied only to dispenser 1 press Cartesian targets. "
+            "Default +0.002m; calibration.yaml measured values are not modified."
         ),
     )
     parser.add_argument(
@@ -3673,8 +3746,14 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="After the final dispenser re-grasp, place the held cup into calibration.yaml cup_holder.side_grip_place.",
     )
-    parser.add_argument("--cup-holder-place-final-z-offset-m", type=float, default=-0.030)
+    parser.add_argument("--cup-holder-place-final-z-offset-m", type=float, default=-0.040)
     parser.add_argument("--cup-holder-place-final-y-offset-m", type=float, default=-0.010)
+    parser.add_argument(
+        "--cup-holder-rz-offset-deg",
+        type=float,
+        default=0.0,
+        help="Add this RZ offset to all measured cup-holder side-grip poses without editing calibration.yaml.",
+    )
     parser.add_argument("--cup-holder-approach-velocity", type=float, default=80.0)
     parser.add_argument("--cup-holder-approach-acceleration", type=float, default=20.0)
     parser.add_argument("--cup-holder-place-velocity", type=float, default=80.0)
@@ -3687,7 +3766,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cup-holder-x-max-m", type=float, default=0.50)
     parser.add_argument("--cup-holder-y-min-m", type=float, default=0.15)
     parser.add_argument("--cup-holder-y-max-m", type=float, default=0.30)
-    parser.add_argument("--cup-holder-z-min-m", type=float, default=0.08)
+    parser.add_argument("--cup-holder-z-min-m", type=float, default=0.06)
     parser.add_argument("--cup-holder-z-max-m", type=float, default=0.28)
     parser.add_argument(
         "--gripper-settle-seconds",
@@ -3772,10 +3851,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
-            "Automatically resume from --resume-state-file when it contains the same unfinished "
-            "recipe. Use --no-resume to ignore a completed/stale state file."
+            "Resume from --resume-state-file when it contains the same unfinished recipe. "
+            "Default false so a new order cannot silently skip move/release from stale state."
         ),
     )
     parser.add_argument(
@@ -3887,7 +3966,8 @@ def main() -> int:
     print(
         f"[Azas] cup_holder_after_sequence={str(args.place_cup_holder_after_sequence).lower()} "
         f"place_final_y_offset_m={args.cup_holder_place_final_y_offset_m:.3f} "
-        f"place_final_z_offset_m={args.cup_holder_place_final_z_offset_m:.3f}"
+        f"place_final_z_offset_m={args.cup_holder_place_final_z_offset_m:.3f} "
+        f"rz_offset_deg={args.cup_holder_rz_offset_deg:.1f}"
     )
     try:
         resume_tracker = RecipeResumeTracker(args, dispenser_ids, grouped_dispenser_ids)
@@ -4102,6 +4182,8 @@ def main() -> int:
                         f"{args.cup_holder_place_final_z_offset_m:.6f}",
                         "--place-final-y-offset-m",
                         f"{args.cup_holder_place_final_y_offset_m:.6f}",
+                        "--rz-offset-deg",
+                        f"{args.cup_holder_rz_offset_deg:.6f}",
                         "--timeout-sec",
                         f"{args.cup_holder_timeout_sec:.6f}",
                         "--target-tolerance-mm",

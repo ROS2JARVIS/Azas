@@ -18,6 +18,7 @@ class ConversationManagerNode(Node):
         self.declare_parameter("decision_topic", "/azas/voice/recipe_decision")
         self.declare_parameter("confirmation_topic", "/azas/voice/confirmation")
         self.declare_parameter("confirmed_decision_topic", "/azas/voice/confirmed_recipe_decision")
+        self.declare_parameter("recovery_command_topic", "/azas/voice/recovery_command")
         self.declare_parameter("pending_timeout_s", 30.0)
 
         self._pending: dict[str, object] | None = None
@@ -32,6 +33,11 @@ class ConversationManagerNode(Node):
         self._confirmed_pub = self.create_publisher(
             String,
             str(self.get_parameter("confirmed_decision_topic").value),
+            10,
+        )
+        self._recovery_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("recovery_command_topic").value),
             10,
         )
         self.create_subscription(
@@ -62,6 +68,8 @@ class ConversationManagerNode(Node):
         elif intent == "cancel":
             self._pending = None
             self._publish_confirmation(str(decision.get("confirmation") or "취소했습니다."))
+        elif intent in {"resume_flow", "restart_flow", "recheck_recovery", "clear_recovery"}:
+            self._handle_recovery_command(decision)
         elif decision.get("valid"):
             self._publish_confirmation(str(decision.get("confirmation") or "명령을 확인했습니다."))
         else:
@@ -104,6 +112,19 @@ class ConversationManagerNode(Node):
         self._confirmed_pub.publish(msg)
         self.get_logger().info(msg.data)
         self._publish_confirmation("제조를 시작합니다.")
+
+    def _handle_recovery_command(self, decision: dict[str, object]) -> None:
+        if not decision.get("valid"):
+            self._publish_confirmation("복구 명령을 다시 말씀해주세요.")
+            return
+        command = copy.deepcopy(decision)
+        command["confirmed"] = True
+        command["confirmed_by"] = "voice_recovery"
+        msg = String()
+        msg.data = json.dumps(command, ensure_ascii=False)
+        self._recovery_pub.publish(msg)
+        self.get_logger().info(msg.data)
+        self._publish_confirmation(str(command.get("confirmation") or "복구 상태를 확인합니다."))
 
     def _publish_confirmation(self, text: str) -> None:
         msg = String()

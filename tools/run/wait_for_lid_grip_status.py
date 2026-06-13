@@ -36,14 +36,32 @@ def parse_args() -> argparse.Namespace:
         default=["failed"],
         help="status value that means the lid close sequence failed",
     )
+    parser.add_argument(
+        "--ignore-pretrigger-failures",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "ignore retryable failed statuses before an accepted lid trigger starts; "
+            "this keeps early p-key/no-pose events from aborting the shake chain"
+        ),
+    )
     return parser.parse_args()
 
 
 class LidGripStatusWaiter(Node):
-    def __init__(self, topic: str, success_statuses: set[str], failure_statuses: set[str]):
+    def __init__(
+        self,
+        topic: str,
+        success_statuses: set[str],
+        failure_statuses: set[str],
+        *,
+        ignore_pretrigger_failures: bool,
+    ):
         super().__init__("azas_wait_for_lid_grip_status")
         self._success_statuses = success_statuses
         self._failure_statuses = failure_statuses
+        self._ignore_pretrigger_failures = ignore_pretrigger_failures
+        self._sequence_started = False
         self.result_code: int | None = None
         self.result_text = ""
         self.create_subscription(String, topic, self._on_status, 10)
@@ -57,13 +75,42 @@ class LidGripStatusWaiter(Node):
         status = str(payload.get("status", "")).strip()
         if not status:
             return
-        print(f"[Azas] lid_grip_status={status} payload={payload}", flush=True)
+        if self._marks_sequence_started(status, payload):
+            self._sequence_started = True
         if status in self._success_statuses:
+            print(f"[Azas] lid_grip_status={status} payload={payload}", flush=True)
             self.result_code = 0
             self.result_text = f"success status observed: {status}"
         elif status in self._failure_statuses:
+            if self._should_ignore_failure(payload):
+                print(f"[Azas] lid_grip_status_ignored={status} payload={payload}", flush=True)
+                return
+            print(f"[Azas] lid_grip_status={status} payload={payload}", flush=True)
             self.result_code = 1
             self.result_text = f"failure status observed: {status}"
+        else:
+            print(f"[Azas] lid_grip_status={status} payload={payload}", flush=True)
+
+    @staticmethod
+    def _marks_sequence_started(status: str, payload: dict) -> bool:
+        if status == "trigger_received":
+            return True
+        if str(payload.get("request_source") or "") == "p_key":
+            return True
+        if payload.get("real_motion") is True:
+            return True
+        if payload.get("motion_allowed") is True:
+            return True
+        return False
+
+    def _should_ignore_failure(self, payload: dict) -> bool:
+        if not self._ignore_pretrigger_failures:
+            return False
+        if self._sequence_started:
+            return False
+        if payload.get("real_motion") is True:
+            return False
+        return True
 
 
 def main() -> int:
@@ -73,7 +120,12 @@ def main() -> int:
     timeout_sec = max(float(args.timeout_sec), 0.1)
 
     rclpy.init(args=None)
-    node = LidGripStatusWaiter(args.topic, success_statuses, failure_statuses)
+    node = LidGripStatusWaiter(
+        args.topic,
+        success_statuses,
+        failure_statuses,
+        ignore_pretrigger_failures=bool(args.ignore_pretrigger_failures),
+    )
     deadline = time.monotonic() + timeout_sec
     try:
         while rclpy.ok() and node.result_code is None and time.monotonic() < deadline:
