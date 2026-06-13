@@ -20,6 +20,9 @@ RG2_PORT="${RG2_PORT:-502}"
 VOICE_PORT="${VOICE_PORT:-8090}"
 # 기본은 실제 로봇 제조까지 켠다. 리허설만 하려면 HW_EXEC=false 로 실행.
 HW_EXEC="${HW_EXEC:-true}"
+USE_LIVE_STT="${USE_LIVE_STT:-true}"
+STT_DEVICE_INDEX="${STT_DEVICE_INDEX:--1}"
+STT_LANGUAGE="${STT_LANGUAGE:-ko-KR}"
 USE_LLM="${USE_LLM:-false}"
 OPEN_BROWSER="${OPEN_BROWSER:-true}"
 
@@ -45,7 +48,7 @@ stamp='$(date +%Y%m%d-%H%M%S)'
 robot_cmd="cd ${ROOT}; ${common_env}; export ROBOT_HOST=${ROBOT_HOST}; export ROBOT_NAME=${ROBOT_NAME}; export RT_HOST=${RT_HOST}; export DOOSAN_REAL_MOTION_CONFIRM=ENABLE_DOOSAN_REAL_MOTION_BRINGUP; bash tools/run/run_doosan_real_m0609.sh 2>&1 | tee ${ROOT}/log/tmux_logic/robot-${stamp}.log"
 gripper_cmd="cd ${ROOT}; ${common_env}; source /opt/ros/humble/setup.bash; source ${ROOT}/install/setup.bash; ros2 launch ${ROOT}/install/azas_gripper/share/azas_gripper/launch/rg2_trigger.launch.py ip:=${RG2_IP} port:=${RG2_PORT} connect:=true open_width:=1100 close_width:=0 force:=300 settle_seconds:=0.6 2>&1 | tee ${ROOT}/log/tmux_logic/gripper-${stamp}.log"
 camera_cmd="cd ${ROOT}; ${common_env}; source /opt/ros/humble/setup.bash; source ${ROOT}/install/setup.bash; ros2 launch realsense2_camera rs_launch.py camera_name:=camera initial_reset:=true reconnect_timeout:=5.0 enable_color:=true enable_depth:=true align_depth.enable:=true rgb_camera.color_profile:=640x480x30 depth_module.depth_profile:=640x480x30 2>&1 | tee ${ROOT}/log/tmux_logic/camera-${stamp}.log"
-voice_cmd="cd ${ROOT}; ${common_env}; source /opt/ros/humble/setup.bash; source ${ROOT}/install/setup.bash; ros2 launch azas_voice azas_voice.launch.py use_pipeline_executor:=true enable_pipeline_hardware_execution:=${HW_EXEC} use_llm:=${USE_LLM} enable_llm:=${USE_LLM} voice_screen_port:=${VOICE_PORT} 2>&1 | tee ${ROOT}/log/tmux_logic/voice-${stamp}.log"
+voice_cmd="cd ${ROOT}; ${common_env}; source /opt/ros/humble/setup.bash; source ${ROOT}/install/setup.bash; ros2 launch azas_voice azas_voice.launch.py use_live_stt:=${USE_LIVE_STT} stt_device_index:=${STT_DEVICE_INDEX} stt_language:=${STT_LANGUAGE} use_pipeline_executor:=true enable_pipeline_hardware_execution:=${HW_EXEC} pipeline_service_prefix:=${ROBOT_NAME} use_llm:=${USE_LLM} enable_llm:=${USE_LLM} use_tts:=true voice_screen_port:=${VOICE_PORT} 2>&1 | tee ${ROOT}/log/tmux_logic/voice-${stamp}.log"
 
 echo "[Azas] starting robot bringup..."
 tmux new-session -d -s "${SESSION}" -n robot "${robot_cmd}"
@@ -62,6 +65,7 @@ sleep 4
 
 echo ""
 echo "[Azas] voice cocktail stack is up: tmux session '${SESSION}' (robot/gripper/camera/voice)"
+echo "[Azas] live STT: ${USE_LIVE_STT} device_index=${STT_DEVICE_INDEX} language=${STT_LANGUAGE}"
 echo "[Azas] panel: http://localhost:${VOICE_PORT}  — 말로 주문하고 '응'으로 확정하면 제조가 시작됩니다."
 echo "[Azas] logs:  tmux attach -t ${SESSION}   /  stop: bash tools/run/stop_azas_voice_stack.sh"
 tmux list-windows -t "${SESSION}"

@@ -17,6 +17,12 @@ def generate_launch_description():
     tts_speech_rate = LaunchConfiguration("tts_speech_rate")
     tts_startup_prompt = LaunchConfiguration("tts_startup_prompt")
     stt_topic = LaunchConfiguration("stt_topic")
+    stt_language = LaunchConfiguration("stt_language")
+    stt_device_index = LaunchConfiguration("stt_device_index")
+    stt_energy_threshold = LaunchConfiguration("stt_energy_threshold")
+    stt_pause_threshold = LaunchConfiguration("stt_pause_threshold")
+    stt_phrase_time_limit = LaunchConfiguration("stt_phrase_time_limit")
+    stt_ambient_duration = LaunchConfiguration("stt_ambient_duration")
 
     return LaunchDescription(
         [
@@ -53,6 +59,12 @@ def generate_launch_description():
             DeclareLaunchArgument("llm_api_key_env", default_value="OPENAI_API_KEY"),
             DeclareLaunchArgument("llm_request_timeout_sec", default_value="20.0"),
             DeclareLaunchArgument("stt_topic", default_value="/stt_result"),
+            DeclareLaunchArgument("stt_language", default_value="ko-KR"),
+            DeclareLaunchArgument("stt_device_index", default_value="-1"),
+            DeclareLaunchArgument("stt_energy_threshold", default_value="300.0"),
+            DeclareLaunchArgument("stt_pause_threshold", default_value="0.8"),
+            DeclareLaunchArgument("stt_phrase_time_limit", default_value="5.0"),
+            DeclareLaunchArgument("stt_ambient_duration", default_value="1.0"),
             Node(
                 package="azas_voice",
                 executable="recipe_mapper_node",
@@ -147,7 +159,17 @@ def generate_launch_description():
                 executable="stt_node",
                 name="stt_node",
                 output="screen",
-                parameters=[{"stt_topic": stt_topic}],
+                parameters=[
+                    {
+                        "stt_topic": stt_topic,
+                        "language": stt_language,
+                        "device_index": ParameterValue(stt_device_index, value_type=int),
+                        "energy_threshold": ParameterValue(stt_energy_threshold, value_type=float),
+                        "pause_threshold": ParameterValue(stt_pause_threshold, value_type=float),
+                        "phrase_time_limit": ParameterValue(stt_phrase_time_limit, value_type=float),
+                        "ambient_duration": ParameterValue(stt_ambient_duration, value_type=float),
+                    }
+                ],
                 condition=IfCondition(use_live_stt),
             ),
             Node(

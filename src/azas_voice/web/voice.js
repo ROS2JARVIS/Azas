@@ -193,6 +193,15 @@ function renderSteps(pipeline) {
   return activeIndex;
 }
 
+function pipelineFailureText(pipeline) {
+  const tail = Array.isArray(pipeline.output_tail) ? pipeline.output_tail : [];
+  const failureLine = [...tail]
+    .reverse()
+    .find((line) => line.includes("[FAIL]") || line.includes("[ERROR]") || line.includes("process has died"));
+  const text = failureLine || pipeline.reason || (pipeline.status === "blocked" ? "복구 대기" : "제조 중단");
+  return text.length > 72 ? `${text.slice(0, 69)}...` : text;
+}
+
 function renderRobot(activeIndex, pipeline, hasMenu) {
   if (!hasMenu) {
     robotScene.dataset.step = "idle";
@@ -202,7 +211,7 @@ function renderRobot(activeIndex, pipeline, hasMenu) {
   const status = pipeline.status || "";
   if (status === "failed" || status === "blocked") {
     robotScene.dataset.step = "idle";
-    robotStatusText.textContent = status === "blocked" ? "복구 대기" : "제조 중단";
+    robotStatusText.textContent = pipelineFailureText(pipeline);
     return;
   }
   if (status === "completed" || activeIndex >= pipelineSteps.length) {

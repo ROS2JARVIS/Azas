@@ -17,7 +17,7 @@ if ! [[ "${RECIPE_COLORS}" =~ ^(red|yellow|green|blue):[0-9]+(,(red|yellow|green
 fi
 
 SERVICE_PREFIX="${SERVICE_PREFIX:-dsr01}"
-MOTION_SERVICE_PREFIX="${MOTION_SERVICE_PREFIX:-auto}"
+MOTION_SERVICE_PREFIX="${MOTION_SERVICE_PREFIX:-${SERVICE_PREFIX}}"
 AUTO_FLOW_RESUME_MODE="${AUTO_FLOW_RESUME_MODE:-normal}"
 AUTO_FLOW_RESUME_STATE_FILE="${AUTO_FLOW_RESUME_STATE_FILE:-/home/ssu/Azas/outputs/auto_cup_flow_resume.json}"
 AUTO_FLOW_RESUME_EVENTS_FILE="${AUTO_FLOW_RESUME_EVENTS_FILE:-/home/ssu/Azas/outputs/auto_cup_flow_events.jsonl}"

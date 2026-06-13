@@ -118,7 +118,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("dispenser_3_cup_pre_extra_x_offset_m", -0.01)
         # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
         self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
-        self.declare_parameter("cup_holder_place_y_offset_m", 0.0)
+        self.declare_parameter("cup_holder_place_y_offset_m", -0.010)
         self.declare_parameter("cup_holder_rz_offset_deg", -1.0)
         self.declare_parameter("cup_holder_z_min_m", 0.06)
         self.declare_parameter("lid_shake_after_recipe", True)
@@ -782,12 +782,12 @@ class AutoCupFlowRouter(Node):
 
         service_prefix = str(self.get_parameter("service_prefix").value or "").strip().strip("/")
         services = {name for name, _types in self.get_service_names_and_types()}
-        if "/motion/move_joint" in services:
-            return ""
         if service_prefix and f"/{service_prefix}/motion/move_joint" in services:
             return service_prefix
         if "/dsr01/motion/move_joint" in services:
             return "dsr01"
+        if "/motion/move_joint" in services:
+            return ""
         return service_prefix
 
     def _open_gripper(self, label: str) -> bool:

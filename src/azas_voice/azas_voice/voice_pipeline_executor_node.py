@@ -6,6 +6,7 @@ from pathlib import Path
 import signal
 import subprocess
 import threading
+from collections import deque
 
 try:
     import rclpy
@@ -340,8 +341,14 @@ class VoicePipelineExecutorNode(Node):
 
     def _monitor_pipeline(self, proc: subprocess.Popen[str], recipe_colors: str, resume_mode: str) -> None:
         last_stage = ""
+        output_tail: deque[str] = deque(maxlen=20)
         if proc.stdout is not None:
             for line in proc.stdout:
+                line = line.rstrip()
+                if line:
+                    output_tail.append(line)
+                    if any(marker in line for marker in ("[FAIL]", "[ERROR]", "process exited", "service=")):
+                        self.get_logger().warn(f"flow> {line}")
                 stage = stage_from_line(line)
                 if stage and stage != last_stage:
                     last_stage = stage
@@ -359,6 +366,7 @@ class VoicePipelineExecutorNode(Node):
                 returncode=code,
                 last_stage=last_stage,
                 resume_mode=resume_mode,
+                output_tail=list(output_tail),
             )
 
     def _publish_status(self, status: str, **fields: object) -> None:

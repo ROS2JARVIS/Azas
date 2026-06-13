@@ -34,7 +34,7 @@ def generate_launch_description():
         DeclareLaunchArgument("dispenser_3_cup_pre_extra_x_offset_m", default_value="-0.01"),
         DeclareLaunchArgument("final_regrasp_z_offset_m", default_value="0.0"),
         DeclareLaunchArgument("cup_holder_place_z_offset_m", default_value="-0.04"),
-        DeclareLaunchArgument("cup_holder_place_y_offset_m", default_value="0.0"),
+        DeclareLaunchArgument("cup_holder_place_y_offset_m", default_value="-0.010"),
         DeclareLaunchArgument("cup_holder_rz_offset_deg", default_value="-1.0"),
         DeclareLaunchArgument("cup_holder_z_min_m", default_value="0.06"),
         DeclareLaunchArgument("lid_shake_after_recipe", default_value="true"),

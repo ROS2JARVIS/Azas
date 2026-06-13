@@ -188,8 +188,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--place-final-z-offset-m",
         type=float,
-        default=0.0,
-        help="Same measured adjustment used by place_cup_holder; added only to place_final Z.",
+        default=-0.020,
+        help="Operational Z adjustment for pre-shake cup-holder re-grasp; negative lowers place_final Z.",
     )
     parser.add_argument("--timeout-sec", type=float, default=90.0)
     parser.add_argument("--wait-service-sec", type=float, default=8.0)
