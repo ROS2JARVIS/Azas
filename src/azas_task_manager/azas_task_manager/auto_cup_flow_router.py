@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import os
 import re
 import shlex
@@ -19,6 +20,15 @@ from dsr_msgs2.srv import MoveJoint, MoveWait
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
+
+from azas_task_manager.auto_flow_resume_state import (
+    DEFAULT_EVENTS_LOG,
+    DEFAULT_RESUME_STATE,
+    AutoFlowResumeStore,
+)
+
+
+DEFAULT_DISPENSER_RESUME_STATE = "/home/ssu/Azas/outputs/measured_dispenser_recipe_resume.json"
 
 
 @dataclass(frozen=True)
@@ -51,6 +61,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("observe_time", 0.0)
         self.declare_parameter("motion_timeout_sec", 25.0)
         self.declare_parameter("service_prefix", "")
+        self.declare_parameter("motion_service_prefix", "auto")
         self.declare_parameter("gripper_open_service", "/jarvis/rg2/open")
 
         self.declare_parameter("detection_topic", "/azas/cup_detection")
@@ -105,6 +116,8 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("side_cup_collision_padding_m", 0.015)
         self.declare_parameter("side_cup_collision_clear_before_close", True)
         self.declare_parameter("side_cup_collision_update_wait_sec", 0.15)
+        self.declare_parameter("side_trajectory_execution_duration_scaling", 3.0)
+        self.declare_parameter("side_trajectory_execution_goal_margin_sec", 3.0)
 
         self.declare_parameter("color_scan_at_start", True)
         self.declare_parameter(
@@ -116,8 +129,8 @@ class AutoCupFlowRouter(Node):
             "recipe_command",
             "cd /home/ssu/Azas && source /opt/ros/humble/setup.bash && "
             "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
-            "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-15} && "
-            "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0} && "
+            "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-9} && "
+            "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-1} && "
             "export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4} && "
             "if [ -f /home/ssu/ws_moveit/install/setup.bash ]; then source /home/ssu/ws_moveit/install/setup.bash; fi && "
             "if [ -f /home/ssu/ros2_ws/install/setup.bash ]; then source /home/ssu/ros2_ws/install/setup.bash; fi && "
@@ -129,19 +142,27 @@ class AutoCupFlowRouter(Node):
         # 키오스크/음성 주문(latest_recipe.json) 없이 색을 직접 내릴 때: 예) "red:2,blue:1"
         self.declare_parameter("recipe_colors", "")
         # 디스펜서 누르기 종료 후 디스펜서 앞의 컵을 마지막으로 재파지할 때 z 실측 보정값
-        self.declare_parameter("final_regrasp_z_offset_m", -0.02)
+        self.declare_parameter("final_regrasp_z_offset_m", 0.0)
         # 잡기 직전 pre 위치(cup_place 기준 X offset) 보정값. 스크립트 기본 -0.09에 -30mm 추가
         self.declare_parameter("cup_pre_from_place_x_offset_m", -0.12)
         self.declare_parameter("dispenser_3_cup_pre_extra_x_offset_m", -0.01)
         # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
-        self.declare_parameter("cup_holder_place_z_offset_m", -0.03)
-        self.declare_parameter("cup_holder_place_y_offset_m", 0.0)
-        self.declare_parameter("cup_holder_z_min_m", 0.08)
+        self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
+        self.declare_parameter("cup_holder_place_x_offset_m", 0.015)
+        self.declare_parameter("cup_holder_place_y_offset_m", -0.010)
+        self.declare_parameter("cup_holder_rz_offset_deg", -1.0)
+        self.declare_parameter("cup_holder_z_min_m", 0.06)
         self.declare_parameter("lid_shake_after_recipe", True)
         self.declare_parameter(
             "lid_shake_command",
             "bash /home/ssu/Azas/tools/run/run_lid_close_then_shake_chain.sh",
         )
+        self.declare_parameter("holder_pick_shake_command", "")
+        self.declare_parameter("shake_only_command", "")
+        self.declare_parameter("resume_mode", "normal")
+        self.declare_parameter("resume_state_file", str(DEFAULT_RESUME_STATE))
+        self.declare_parameter("resume_events_file", str(DEFAULT_EVENTS_LOG))
+        self.declare_parameter("dispenser_resume_state_file", DEFAULT_DISPENSER_RESUME_STATE)
 
         self._latest_detection: Optional[CupDetection] = None
         self._latest_image: Optional[np.ndarray] = None
@@ -149,6 +170,8 @@ class AutoCupFlowRouter(Node):
         self._window_enabled = bool(self.get_parameter("show_classification_window").value)
         self._children: list[subprocess.Popen[str]] = []
         self._child_node_failures: dict[str, list[str]] = {}
+        self._stage_failure_reasons: dict[str, str] = {}
+        self._resume_store: AutoFlowResumeStore | None = None
 
         self.create_subscription(
             CupDetection,
@@ -170,31 +193,41 @@ class AutoCupFlowRouter(Node):
         self.get_logger().info("auto cup router: color scan -> observe -> open -> classify -> route")
         perception = None
         try:
-            if not self._run_color_scan_sequence():
+            if not self._prepare_resume_store():
+                return 2
+            if not self._run_resumable_stage(
+                "color_scan",
+                self._run_color_scan_sequence,
+                verified={"color_map": True},
+            ):
                 return 1
-            if not self._move_observe("initial observe"):
+            if not self._run_resumable_stage("observe", lambda: self._move_observe("initial observe")):
                 return 1
-            if not self._open_gripper("initial gripper full-open"):
+            if not self._run_resumable_stage("open_gripper", lambda: self._open_gripper("initial gripper full-open")):
                 return 1
-
-            perception = self._start_perception()
-            decision = self._wait_for_route_decision()
-            if decision is None:
-                self.get_logger().error("route decision failed: no stable upright/lying classification")
+            if not self._run_resumable_stage(
+                "cup_pick",
+                self._run_cup_pick_stage,
+                verified={"cup_picked": True},
+                held_objects={"cup": "gripper", "lid": "unknown"},
+            ):
                 return 1
-            self._stop_process(perception, "perception")
-            perception = None
-
-            if decision.route == "side_grasp":
-                success = self._run_side_grasp(decision)
-            else:
-                success = self._run_cup_uprighting(decision)
-            if not success:
+            if not self._run_resumable_stage(
+                "recipe",
+                self._run_recipe_sequence,
+                verified={"dispenser_sequence_done": True, "cup_in_holder": True},
+                held_objects={"cup": "in_holder", "lid": "unknown"},
+            ):
                 return 1
-            if not self._run_recipe_sequence():
+            if not self._run_resumable_stage(
+                "lid_shake",
+                self._run_lid_shake_sequence,
+                verified={"lid_closed": True, "shake_done": True},
+                held_objects={"cup": "gripper", "lid": "on_cup"},
+            ):
                 return 1
-            if not self._run_lid_shake_sequence():
-                return 1
+            if self._resume_store is not None:
+                self._resume_store.complete_run()
             self.get_logger().info("auto cup router: selected flow completed; router exiting")
             return 0
         finally:
@@ -211,6 +244,69 @@ class AutoCupFlowRouter(Node):
             self.get_logger().error("router_confirm must be ENABLE_AUTO_CUP_ROUTER")
             return False
         return True
+
+    def _prepare_resume_store(self) -> bool:
+        mode = str(self.get_parameter("resume_mode").value or "normal").strip()
+        colors = str(self.get_parameter("recipe_colors").value or "").strip()
+        self._resume_store = AutoFlowResumeStore(
+            state_path=str(self.get_parameter("resume_state_file").value),
+            events_path=str(self.get_parameter("resume_events_file").value),
+            mode=mode,
+            recipe_colors=colors,
+        )
+        if not self._resume_store.prepare():
+            self.get_logger().error("resume store blocked this run")
+            return False
+        self.get_logger().info(
+            f"auto_flow_resume: mode={mode} state={self._resume_store.state_path} "
+            f"next_stage={self._resume_store.next_stage()}"
+        )
+        return True
+
+    def _run_resumable_stage(
+        self,
+        stage: str,
+        action,
+        *,
+        verified: dict[str, bool] | None = None,
+        held_objects: dict[str, str] | None = None,
+    ) -> bool:
+        if self._resume_store is not None and self._resume_store.should_skip(stage):
+            self.get_logger().info(f"resume_state skip completed stage: {stage}")
+            return True
+        if self._resume_store is not None:
+            self._resume_store.start_stage(stage)
+        try:
+            ok = bool(action())
+        except Exception as exc:
+            self.get_logger().exception(f"{stage}: unexpected exception")
+            if self._resume_store is not None:
+                self._resume_store.fail_stage(stage, f"{stage}_exception:{exc}", auto_recoverable=True)
+            return False
+        if ok:
+            if self._resume_store is not None:
+                self._resume_store.complete_stage(stage, verified=verified, held_objects=held_objects)
+            return True
+        if self._resume_store is not None:
+            reason = self._stage_failure_reasons.pop(stage, f"{stage}_failed")
+            self._resume_store.fail_stage(stage, reason, auto_recoverable=True)
+        return False
+
+    def _run_cup_pick_stage(self) -> bool:
+        perception = None
+        try:
+            perception = self._start_perception()
+            decision = self._wait_for_route_decision()
+            if decision is None:
+                self.get_logger().error("route decision failed: no stable upright/lying classification")
+                return False
+            self._stop_process(perception, "perception")
+            perception = None
+            if decision.route == "side_grasp":
+                return self._run_side_grasp(decision)
+            return self._run_cup_uprighting(decision)
+        finally:
+            self._stop_process(perception, "perception")
 
     def _on_detection(self, msg: CupDetection) -> None:
         self._latest_detection = msg
@@ -447,6 +543,7 @@ class AutoCupFlowRouter(Node):
 
     def _run_side_grasp(self, decision: RouteDecision) -> bool:
         self.get_logger().info(f"route=side_grasp: launching existing side grasp flow ({decision.status})")
+        helpers = self._start_side_grasp_support_processes()
         cmd = self._launch_command(str(self.get_parameter("side_launch").value))
         cmd.extend([
             "auto_pick:=true",
@@ -497,6 +594,7 @@ class AutoCupFlowRouter(Node):
             "side_low_retry_attempts:=5",
             "workspace_xy_clamp_enabled:=false",
             "table_collision_enabled:=true",
+            "workspace_collision_scene_enabled:=false",
             "table_surface_z:=0.0",
             "table_thickness:=0.04",
             "table_size_x:=1.10",
@@ -504,6 +602,10 @@ class AutoCupFlowRouter(Node):
             "table_center_x:=0.29",
             "table_center_y:=0.0",
             "dispenser_collision_enabled:=true",
+            "trajectory_execution_allowed_duration_scaling:="
+            f"{float(self.get_parameter('side_trajectory_execution_duration_scaling').value)}",
+            "trajectory_execution_allowed_goal_duration_margin:="
+            f"{float(self.get_parameter('side_trajectory_execution_goal_margin_sec').value)}",
             f"moveit_controller_name:={self.get_parameter('moveit_controller_name').value}",
             f"side_target_x_offset_m:={float(self.get_parameter('side_target_x_offset_m').value)}",
             f"side_target_y_offset_m:={float(self.get_parameter('side_target_y_offset_m').value)}",
@@ -512,7 +614,78 @@ class AutoCupFlowRouter(Node):
             f"model_path:={self.get_parameter('yolo_model_path').value}",
         ])
         cmd.extend(self._split_extra_args(str(self.get_parameter("side_extra_args").value)))
-        return self._run_process(cmd, "side_grasp")
+        try:
+            return self._run_process(cmd, "side_grasp")
+        finally:
+            for proc, label in helpers:
+                self._stop_process(proc, label)
+
+    def _start_side_grasp_support_processes(self) -> list[tuple[subprocess.Popen[str], str]]:
+        prefix = str(self.get_parameter("service_prefix").value or "dsr01").strip().strip("/") or "dsr01"
+        helpers: list[tuple[subprocess.Popen[str], str]] = []
+        helper_cmds = [
+            (
+                [
+                    "ros2",
+                    "run",
+                    "tf2_ros",
+                    "static_transform_publisher",
+                    "--x",
+                    "0",
+                    "--y",
+                    "0",
+                    "--z",
+                    "0",
+                    "--yaw",
+                    "0",
+                    "--pitch",
+                    "0",
+                    "--roll",
+                    "0",
+                    "--frame-id",
+                    "world",
+                    "--child-frame-id",
+                    "base_link",
+                ],
+                "world_base_tf",
+            ),
+            (
+                [
+                    "ros2",
+                    "run",
+                    "azas_perception",
+                    "hand_eye_static_tf_node",
+                    "--ros-args",
+                    "-p",
+                    "compose_timeout_sec:=30.0",
+                    "-p",
+                    "allow_direct_fallback:=false",
+                ],
+                "hand_eye_static_tf",
+            ),
+            (
+                [
+                    sys.executable,
+                    "/home/ssu/Azas/src/dsr_practice/dsr_practice/joint_state_relay.py",
+                    "--ros-args",
+                    "-r",
+                    "__node:=azas_auto_cup_joint_state_relay",
+                    "-p",
+                    f"input_topic:=/{prefix}/joint_states",
+                    "-p",
+                    "output_topic:=/joint_states",
+                ],
+                "joint_state_relay",
+            ),
+        ]
+        for cmd, label in helper_cmds:
+            try:
+                helpers.append((self._popen(cmd, label), label))
+            except OSError as exc:
+                self.get_logger().warn(f"{label}: failed to start support process: {exc}")
+                self._stage_failure_reasons.setdefault("cup_pick", f"{label}_start_failed")
+        time.sleep(1.0)
+        return helpers
 
     def _run_cup_uprighting(self, decision: RouteDecision) -> bool:
         self.get_logger().info(f"route=cup_uprighting: launching optimized cup-uprighting flow ({decision.status})")
@@ -536,6 +709,8 @@ class AutoCupFlowRouter(Node):
         if not command:
             self.get_logger().warning("color_scan_command is empty; skipping dispenser color scan")
             return True
+        service_prefix = self._motion_service_prefix()
+        command = f"SERVICE_PREFIX={shlex.quote(service_prefix or '/')} {command}"
         self.get_logger().info("moving to color_scan_pose and scanning dispensers before cup pick")
         return self._run_process(["bash", "-c", command], "color_scan")
 
@@ -551,18 +726,34 @@ class AutoCupFlowRouter(Node):
         if colors:
             command += f" --colors {shlex.quote(colors)}"
             self.get_logger().info(f"recipe colors given directly: {colors}")
+        resume_mode = str(self.get_parameter("resume_mode").value or "normal").strip()
+        dispenser_resume_state = str(self.get_parameter("dispenser_resume_state_file").value).strip()
+        if dispenser_resume_state:
+            command += f" --resume-state-file {shlex.quote(dispenser_resume_state)}"
+        if resume_mode == "resume":
+            command += " --resume"
+            self.get_logger().info("recipe resume_state enabled by explicit resume_mode=resume")
+        else:
+            command += " --no-resume --clear-resume-state"
+            self.get_logger().info("recipe resume_state cleared for fresh dispenser placement")
+        service_prefix = self._motion_service_prefix()
+        command += f" --service-prefix {shlex.quote(service_prefix)}"
         cup_pre_x = float(self.get_parameter("cup_pre_from_place_x_offset_m").value)
         command += f" --cup-pre-from-place-x-offset-m {cup_pre_x}"
         dispenser_3_pre_x = float(self.get_parameter("dispenser_3_cup_pre_extra_x_offset_m").value)
         command += f" --dispenser-3-cup-pre-extra-x-offset-m {dispenser_3_pre_x}"
         regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
+        place_x = float(self.get_parameter("cup_holder_place_x_offset_m").value)
         place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)
+        place_rz = float(self.get_parameter("cup_holder_rz_offset_deg").value)
         z_min = float(self.get_parameter("cup_holder_z_min_m").value)
         command += (
             f" --final-regrasp-extra-z-offset-m {regrasp_z}"
             f" --cup-holder-place-final-z-offset-m {place_z}"
+            f" --cup-holder-place-final-x-offset-m {place_x}"
             f" --cup-holder-place-final-y-offset-m {place_y}"
+            f" --cup-holder-rz-offset-deg {place_rz}"
             f" --cup-holder-z-min-m {z_min}"
         )
         self.get_logger().info("pick flow succeeded; starting integrated dispenser recipe sequence")
@@ -572,15 +763,47 @@ class AutoCupFlowRouter(Node):
         if not bool(self.get_parameter("lid_shake_after_recipe").value):
             self.get_logger().info("lid_shake_after_recipe=false; skipping lid close / shake chain")
             return True
-        command = str(self.get_parameter("lid_shake_command").value).strip()
+        command = self._lid_shake_command_for_current_resume_state()
         if not command:
             self.get_logger().warning("lid_shake_command is empty; skipping lid close / shake chain")
             return True
         self.get_logger().info("recipe succeeded; starting lid close -> holder re-pick -> shake chain")
         return self._run_process(["bash", "-c", command], "lid_shake")
 
+    def _lid_shake_command_for_current_resume_state(self) -> str:
+        if self._resume_store is None:
+            return str(self.get_parameter("lid_shake_command").value).strip()
+        snapshot = self._resume_store.snapshot
+        verified = snapshot.get("verified") if isinstance(snapshot.get("verified"), dict) else {}
+        held = snapshot.get("held_objects") if isinstance(snapshot.get("held_objects"), dict) else {}
+        if bool(verified.get("shake_done")):
+            self.get_logger().info("resume_state: lid/shake already verified done")
+            return "true"
+        if bool(verified.get("lid_closed")):
+            skip_holder_pick = held.get("cup") == "gripper_for_shake"
+            if skip_holder_pick:
+                self.get_logger().info("resume_state: resuming shake with cup already grasped")
+            else:
+                self.get_logger().info("resume_state: lid already closed; resuming cup-holder pick then shake")
+            return self._holder_pick_shake_command(skip_holder_pick=skip_holder_pick)
+        return str(self.get_parameter("lid_shake_command").value).strip()
+
+    def _holder_pick_shake_command(self, *, skip_holder_pick: bool) -> str:
+        param_name = "shake_only_command" if skip_holder_pick else "holder_pick_shake_command"
+        configured = str(self.get_parameter(param_name).value or "").strip()
+        if configured:
+            return configured
+        prefix = self._motion_service_prefix()
+        env_prefix = prefix if prefix else "/"
+        skip_value = "true" if skip_holder_pick else "false"
+        return (
+            f"SERVICE_PREFIX={shlex.quote(env_prefix)} "
+            f"SKIP_CUP_HOLDER_PICK={skip_value} "
+            "bash /home/ssu/Azas/tools/run/run_holder_pick_then_shake_chain.sh"
+        )
+
     def _move_observe(self, label: str) -> bool:
-        prefix = str(self.get_parameter("service_prefix").value).strip().strip("/")
+        prefix = self._motion_service_prefix()
         base = f"/{prefix}/motion" if prefix else "/motion"
         service = f"{base}/move_joint"
         wait_service = f"{base}/move_wait"
@@ -612,6 +835,22 @@ class AutoCupFlowRouter(Node):
             if self._spin_future(wait_future, timeout) and bool(wait_future.result().success):
                 self.get_logger().info(f"{label}: MoveWait completed")
         return True
+
+    def _motion_service_prefix(self) -> str:
+        configured_raw = str(self.get_parameter("motion_service_prefix").value or "").strip()
+        configured = configured_raw.strip("/")
+        if configured_raw and configured_raw.lower() != "auto":
+            return configured
+
+        service_prefix = str(self.get_parameter("service_prefix").value or "").strip().strip("/")
+        services = {name for name, _types in self.get_service_names_and_types()}
+        if service_prefix and f"/{service_prefix}/motion/move_joint" in services:
+            return service_prefix
+        if "/dsr01/motion/move_joint" in services:
+            return "dsr01"
+        if "/motion/move_joint" in services:
+            return ""
+        return service_prefix
 
     def _open_gripper(self, label: str) -> bool:
         service = str(self.get_parameter("gripper_open_service").value)
@@ -704,6 +943,153 @@ class AutoCupFlowRouter(Node):
         self.get_logger().error(f"{label}: process exited with code {code}")
         return False
 
+    def _record_child_progress_from_output(self, label: str, text: str) -> None:
+        if self._resume_store is None:
+            return
+        if label == "side_grasp":
+            self._record_side_grasp_progress(text)
+        if label == "lid_shake":
+            self._record_lid_shake_progress(text)
+
+    def _record_side_grasp_progress(self, text: str) -> None:
+        if "Could not find a connection between 'world' and 'camera_" in text:
+            self._stage_failure_reasons["cup_pick"] = "side_grasp_tf_tree_disconnected"
+            self._resume_store.update_progress("cup_pick", "side_grasp_tf_missing")
+        elif "Didn't receive robot state" in text:
+            self._stage_failure_reasons["cup_pick"] = "side_grasp_joint_state_stale"
+            self._resume_store.update_progress("cup_pick", "side_grasp_joint_state_stale")
+        elif "Unable to configure planning scene monitor" in text:
+            self._stage_failure_reasons["cup_pick"] = "side_grasp_moveit_planning_scene_monitor_failed"
+            self._resume_store.update_progress("cup_pick", "side_grasp_moveit_blocked")
+
+    def _record_lid_shake_progress(self, text: str) -> None:
+        if self._resume_store is None:
+            return
+
+        payload = self._lid_status_payload(text)
+        if payload is not None:
+            self._record_lid_status_payload(payload)
+            return
+
+        if "ArUco lid_grip_close 성공 status 확인" in text:
+            self._resume_store.update_progress(
+                "lid_shake",
+                "lid_closed",
+                verified={"lid_grasped": True, "lid_closed": True},
+                held_objects={"cup": "in_holder", "lid": "on_cup"},
+            )
+        elif "Cup-holder pick is required before shake" in text:
+            self._resume_store.update_progress("lid_shake", "cup_holder_pick_for_shake")
+        elif (
+            "Cup-holder pick completed; continuing to shake" in text
+            or "[PASS] cup holder side-grip pick sequence completed" in text
+        ):
+            self._resume_store.update_progress(
+                "lid_shake",
+                "cup_holder_pick_done",
+                held_objects={"cup": "gripper_for_shake", "lid": "on_cup"},
+            )
+        elif "Cup-holder pick skipped" in text:
+            self._resume_store.update_progress(
+                "lid_shake",
+                "shake_start",
+                held_objects={"cup": "gripper_for_shake", "lid": "on_cup"},
+            )
+        elif "shake sequence finished without failure markers" in text or "SHAKE DONE" in text:
+            self._resume_store.update_progress(
+                "lid_shake",
+                "shake_done",
+                verified={"shake_done": True},
+                held_objects={"cup": "gripper", "lid": "on_cup"},
+            )
+        elif "Refusing real robot shake" in text:
+            self._stage_failure_reasons["lid_shake"] = "lid_shake_hardware_blocked"
+            self._resume_store.update_progress("lid_shake", "hardware_blocked")
+
+    @staticmethod
+    def _lid_status_payload(text: str) -> dict[str, object] | None:
+        match = re.search(r"lid_grip_status=[^\s]+\s+payload=(\{.*\})", text)
+        if match is None:
+            return None
+        try:
+            payload = ast.literal_eval(match.group(1))
+        except (SyntaxError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _record_lid_status_payload(self, payload: dict[str, object]) -> None:
+        if self._resume_store is None:
+            return
+        status = str(payload.get("status") or "").strip()
+        step = str(payload.get("step") or "").strip()
+        if not status:
+            return
+        if status == "failed":
+            reason = str(payload.get("error") or "lid_grip_failed")
+            self._stage_failure_reasons["lid_shake"] = reason
+            self._resume_store.fail_stage("lid_shake", reason, auto_recoverable=True)
+            return
+        if status == "trigger_received":
+            self._resume_store.update_progress("lid_shake", "lid_trigger_received")
+        elif status == "planned":
+            self._resume_store.update_progress("lid_shake", "lid_pick_planned")
+        elif status == "gripper_preopen_requested":
+            self._resume_store.update_progress("lid_shake", "lid_gripper_open")
+        elif status == "gripper_grasp_requested":
+            self._resume_store.update_progress(
+                "lid_shake",
+                "lid_gripper_grasp_requested",
+                held_objects={"lid": "gripper_request"},
+            )
+        elif status == "gripper_result":
+            command = str(payload.get("command") or "")
+            success = bool(payload.get("success"))
+            if command == "grasp" and success:
+                self._resume_store.update_progress(
+                    "lid_shake",
+                    "lid_grasped",
+                    verified={"lid_grasped": True},
+                    held_objects={"lid": "gripper"},
+                )
+            elif command == "preopen":
+                self._resume_store.update_progress("lid_shake", "lid_gripper_open")
+        elif status == "motion_target_reached":
+            self._resume_store.update_progress(
+                "lid_shake",
+                self._lid_motion_step_name(step),
+                verified={"lid_grasped": step == "lift_lid"} if step == "lift_lid" else None,
+                held_objects={"lid": "gripper"} if step == "lift_lid" else None,
+            )
+        elif status == "motion_sequence_requested":
+            self._resume_store.update_progress(
+                "lid_shake",
+                "lid_closed",
+                verified={"lid_grasped": True, "lid_closed": True},
+                held_objects={"cup": "in_holder", "lid": "on_cup"},
+            )
+        elif status.startswith("lid_twist"):
+            self._resume_store.update_progress("lid_shake", self._lid_motion_step_name(step or status))
+
+    @staticmethod
+    def _lid_motion_step_name(step: str) -> str:
+        if step == "approach_lid":
+            return "lid_approach_reached"
+        if step == "grasp_lid":
+            return "lid_grasp_pose_reached"
+        if step == "lift_lid":
+            return "lid_lifted"
+        if step.startswith("lid_twist_transfer"):
+            return "lid_transfer_to_cup"
+        if step.startswith("lid_twist_press"):
+            return "lid_pressed_on_cup"
+        if step.startswith("lid_twist_preseat"):
+            return "lid_preseat"
+        if step.startswith("lid_twist_turn"):
+            return "lid_twisting_on_cup"
+        if step.startswith("lid_twist_release") or step.startswith("lid_twist_home"):
+            return "lid_twist_released"
+        return step or "lid_progress"
+
     _NODE_DIED_PATTERN = re.compile(r"\[ERROR\] \[(?P<node>[^\]]+)\]: process has died.*exit code (?P<code>-?\d+)")
     _SHUTDOWN_PATTERN = re.compile(r"sending signal 'SIG(INT|TERM)'|user interrupted with ctrl-c")
 
@@ -720,6 +1106,9 @@ class AutoCupFlowRouter(Node):
                 text = line.rstrip()
                 self.get_logger().info(f"{label}> {text}")
                 log_file.write(text + "\n")
+                if self._resume_store is not None:
+                    self._resume_store.heartbeat(process_label=label)
+                self._record_child_progress_from_output(label, text)
                 if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
                     shutting_down = True
                 match = self._NODE_DIED_PATTERN.search(text)

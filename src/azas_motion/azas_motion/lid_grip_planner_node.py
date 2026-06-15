@@ -380,7 +380,15 @@ class LidGripPlannerNode(Node):
             payload = json.loads(msg.data)
         except json.JSONDecodeError:
             payload = {"accepted": True, "raw": msg.data}
+        request_source = self._request_source_from_payload(payload)
         if payload.get("accepted") is False:
+            if self._sequence_lock.locked():
+                self._publish_status(
+                    "trigger_ignored_no_valid_detection_motion_in_progress",
+                    request=payload,
+                    real_motion=self._hardware_armed,
+                )
+                return
             self._publish_status(
                 "failed",
                 error="P_KEY_WITHOUT_VALID_LID_DETECTION",
@@ -409,20 +417,28 @@ class LidGripPlannerNode(Node):
         self._publish_status(
             "trigger_received",
             request=payload,
+            request_source=request_source,
             hardware_armed=self._hardware_armed,
             real_motion=self._hardware_armed,
         )
         threading.Thread(
             target=self._run_trigger_sequence,
-            args=(pose_snapshot,),
+            args=(pose_snapshot, request_source),
             daemon=True,
         ).start()
 
-    def _run_trigger_sequence(self, pose_snapshot: PoseStamped) -> None:
+    @staticmethod
+    def _request_source_from_payload(payload: dict) -> str:
+        source = str(payload.get("trigger_source") or "").strip()
+        if source:
+            return source
+        return "p_key"
+
+    def _run_trigger_sequence(self, pose_snapshot: PoseStamped, request_source: str) -> None:
         try:
             self._plan_from_pose(
                 pose_snapshot,
-                request_source="p_key",
+                request_source=request_source,
                 allow_gripper=bool(self.get_parameter("enable_gripper_service_calls").value),
                 allow_motion=True,
             )
@@ -3437,6 +3453,8 @@ class LidGripPlannerNode(Node):
             return "[뚜껑픽] 6/6 sequence 완료: approach -> grasp -> lift 요청 완료"
         if status == "trigger_ignored_motion_in_progress":
             return "[뚜껑픽] p 입력 무시: 이전 motion sequence가 아직 진행 중입니다"
+        if status == "trigger_ignored_no_valid_detection_motion_in_progress":
+            return "[뚜껑픽] 감지 끊김 요청 무시: 이전 motion sequence가 아직 진행 중입니다"
         if status == "trigger_planned_no_motion":
             return "[뚜껑픽] motion 미실행: enable_hardware=false라 plan만 생성했습니다"
         if status == "failed":

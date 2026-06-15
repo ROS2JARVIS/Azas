@@ -5,6 +5,15 @@ set -euo pipefail
 # This does not send robot motion, gripper, dispenser, coordinate, or calibration commands.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+for env_file in "${ROOT_DIR}/.env" "${ROOT_DIR}/.env.local"; do
+  if [[ -f "${env_file}" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${env_file}"
+    set +a
+  fi
+done
+
 LOG_DIR="${LOG_DIR:-/tmp/azas_kiosk_voice_demo}"
 VOICE_PORT="${VOICE_PORT:-8090}"
 KIOSK_PORT="${KIOSK_PORT:-8080}"
@@ -14,6 +23,17 @@ USE_TTS="${USE_TTS:-true}"
 ENABLE_TTS_AUDIO="${ENABLE_TTS_AUDIO:-true}"
 USE_LLM="${USE_LLM:-false}"
 ENABLE_LLM="${ENABLE_LLM:-false}"
+LLM_PROVIDER="${LLM_PROVIDER:-openai_chat}"
+LLM_MODEL="${LLM_MODEL:-gpt-4o-mini}"
+LLM_BASE_URL="${LLM_BASE_URL:-https://api.openai.com/v1}"
+LLM_API_KEY_ENV="${LLM_API_KEY_ENV:-OPENAI_API_KEY}"
+ELEVENLABS_AGENT_ID_ENV="${ELEVENLABS_AGENT_ID_ENV:-ELEVENLABS_AGENT_ID}"
+ELEVENLABS_LANGUAGE="${ELEVENLABS_LANGUAGE:-ko}"
+ELEVENLABS_NEW_TURNS_LIMIT="${ELEVENLABS_NEW_TURNS_LIMIT:-2}"
+
+if [[ "${LLM_PROVIDER}" == elevenlabs* && "${LLM_API_KEY_ENV}" == "OPENAI_API_KEY" ]]; then
+  LLM_API_KEY_ENV="ELEVENLABS_API_KEY"
+fi
 
 mkdir -p "${LOG_DIR}"
 export ROS_LOG_DIR="${ROS_LOG_DIR:-/tmp/azas_ros_logs}"
@@ -57,6 +77,13 @@ ros2 launch azas_voice azas_voice.launch.py \
   enable_tts_audio:="${ENABLE_TTS_AUDIO}" \
   use_llm:="${USE_LLM}" \
   enable_llm:="${ENABLE_LLM}" \
+  llm_provider:="${LLM_PROVIDER}" \
+  llm_model:="${LLM_MODEL}" \
+  llm_base_url:="${LLM_BASE_URL}" \
+  llm_api_key_env:="${LLM_API_KEY_ENV}" \
+  elevenlabs_agent_id_env:="${ELEVENLABS_AGENT_ID_ENV}" \
+  elevenlabs_language:="${ELEVENLABS_LANGUAGE}" \
+  elevenlabs_new_turns_limit:="${ELEVENLABS_NEW_TURNS_LIMIT}" \
   run_voice_screen:=true \
   voice_screen_host:="${HOST}" \
   voice_screen_port:="${VOICE_PORT}" \

@@ -1,4 +1,5 @@
 from azas_voice.command_parser import normalize_text, parse_recipe_command
+from azas_voice.recipe_catalog import RECIPE_DISPENSERS, build_public_catalog
 
 
 def assert_dispenser_colors(dispenser_ids):
@@ -47,6 +48,25 @@ def test_four_menu_recipes_map_to_one_dispenser_each():
         assert decision.valid
         assert decision.recipe_id == recipe_id
         assert decision.dispenser_ids == dispenser_ids
+
+
+def test_yaml_catalog_exposes_many_named_menus():
+    catalog = build_public_catalog()
+    assert len(catalog["recipes"]) >= 12
+    assert "recipe_12" in RECIPE_DISPENSERS
+
+
+def test_named_yaml_recipe_maps_to_catalog_amounts():
+    decision = parse_recipe_command("선셋 하이볼 만들어줘")
+    assert decision.valid
+    assert decision.recipe_id == "recipe_05"
+    assert decision.dispenser_ids == ("red", "yellow", "blue")
+    assert decision.dispenser_amounts == {
+        "red": 2,
+        "yellow": 1,
+        "green": 0,
+        "blue": 1,
+    }
 
 
 def test_mood_request_maps_to_custom_recommendation():
@@ -163,6 +183,22 @@ def test_cancel_intent():
     assert decision.intent == "cancel"
 
 
+def test_recovery_voice_commands_map_to_operational_intents():
+    expected = {
+        "이어서 해줘": "resume_flow",
+        "멈춘 데서 다시 진행해": "resume_flow",
+        "복구 다시 확인": "recheck_recovery",
+        "처음부터 다시 해줘": "restart_flow",
+        "복구 기록 초기화": "clear_recovery",
+    }
+    for utterance, intent in expected.items():
+        decision = parse_recipe_command(utterance)
+        assert decision.valid
+        assert decision.intent == intent
+        assert decision.recipe_id is None
+        assert decision.dispenser_ids == ()
+
+
 def test_proceed_phrase_maps_to_confirm_intent():
     decision = parse_recipe_command("진행해줘")
     assert decision.valid
@@ -179,7 +215,23 @@ def test_common_acknowledgements_map_to_confirm_intent():
         "괜찮아",
         "콜",
         "가자",
+        "가보자",
         "계속해줘",
+    ):
+        decision = parse_recipe_command(utterance)
+        assert decision.valid
+        assert decision.intent == "confirm"
+
+
+def test_natural_start_phrases_map_to_confirm_intent():
+    for utterance in (
+        "만들어줘",
+        "어 만들어줘",
+        "그래 좋아 시작해",
+        "가보자 그래 좋아",
+        "만들어 진행해 시작해",
+        "시작 만들어",
+        "제조해줘",
     ):
         decision = parse_recipe_command(utterance)
         assert decision.valid
