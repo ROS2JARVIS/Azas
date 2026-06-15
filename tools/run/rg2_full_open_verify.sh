@@ -14,6 +14,8 @@ SERVICE="${RG2_SET_WIDTH_SERVICE:-/jarvis/rg2/set_width}"
 WIDTH_M="${RG2_FULL_OPEN_WIDTH_M:-0.110}"
 FORCE_N="${RG2_OPEN_FORCE_N:-25.0}"
 TIMEOUT_SEC="${RG2_OPEN_TIMEOUT_SEC:-12}"
+RETRIES="${RG2_OPEN_RETRIES:-3}"
+RETRY_SLEEP_SEC="${RG2_OPEN_RETRY_SLEEP_SEC:-1.0}"
 
 cd "${ROOT_DIR}"
 
@@ -27,20 +29,30 @@ echo "[Azas] RG2 full-open request"
 echo "[Azas] service=${SERVICE}"
 echo "[Azas] command=open width_m=${WIDTH_M} force_n=${FORCE_N}"
 
-if ! output="$(
-  python3 tools/run/rg2_set_width_verify.py \
-    --service "${SERVICE}" \
-    --command open \
-    --width-m "${WIDTH_M}" \
-    --force-n "${FORCE_N}" \
-    --timeout-sec "${TIMEOUT_SEC}" \
-    --ready-timeout-sec "${RG2_READY_TIMEOUT_SEC:-18}" \
-    --rg2-ip "${RG2_IP:-192.168.1.1}" 2>&1
-)"; then
+output=""
+for attempt in $(seq 1 "${RETRIES}"); do
+  echo "[Azas] RG2 full-open attempt ${attempt}/${RETRIES}"
+  if output="$(
+    python3 tools/run/rg2_set_width_verify.py \
+      --service "${SERVICE}" \
+      --command open \
+      --width-m "${WIDTH_M}" \
+      --force-n "${FORCE_N}" \
+      --timeout-sec "${TIMEOUT_SEC}" \
+      --ready-timeout-sec "${RG2_READY_TIMEOUT_SEC:-18}" \
+      --rg2-ip "${RG2_IP:-192.168.1.1}" 2>&1
+  )"; then
+    break
+  fi
   echo "${output}"
-  echo "[FAIL] RG2 full-open service call failed"
-  exit 1
-fi
+  if [[ "${attempt}" -lt "${RETRIES}" ]]; then
+    echo "[WARN] RG2 full-open service call failed; retrying after ${RETRY_SLEEP_SEC}s"
+    sleep "${RETRY_SLEEP_SEC}"
+  else
+    echo "[FAIL] RG2 full-open service call failed after ${RETRIES} attempts"
+    exit 1
+  fi
+done
 
 echo "${output}"
 

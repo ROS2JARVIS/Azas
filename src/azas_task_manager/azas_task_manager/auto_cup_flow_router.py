@@ -84,8 +84,38 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("controller_action_name", "/dsr_moveit_controller/follow_joint_trajectory")
         self.declare_parameter("side_extra_args", "")
         self.declare_parameter("cup_uprighting_extra_args", "")
-        # 사이드 그립에서 base x가 +20mm 정도 어긋나는 실측 보정값
-        self.declare_parameter("side_target_x_offset_m", -0.02)
+        # 사이드 그립에서 base XY가 어긋나는 실측 보정값
+        self.declare_parameter("side_target_x_offset_m", -0.01)
+        self.declare_parameter("side_target_y_offset_m", 0.09)
+        self.declare_parameter("side_target_y_offset_follows_direction", True)
+        self.declare_parameter("side_candidate_axes", "y,x")
+        self.declare_parameter("side_secondary_axis_score_penalty_m", 0.15)
+        self.declare_parameter("side_joint_seed_candidates_enabled", True)
+        self.declare_parameter(
+            "side_joint_seed_offsets_deg",
+            "0,0,0,0,0,0",
+        )
+        self.declare_parameter(
+            "side_joint_seed_positions_deg",
+            "62.84,36.44,128.21,91.78,-88.90,72.33;"
+            "62.84,36.44,128.21,91.78,-88.90,87.33;"
+            "62.84,36.44,128.21,91.78,-88.90,57.33;"
+            "54.84,36.44,128.21,76.78,-88.90,82.33;"
+            "70.84,36.44,128.21,106.78,-88.90,62.33;"
+            "62.84,42.44,120.21,91.78,-98.90,72.33;"
+            "62.84,30.44,136.21,91.78,-78.90,72.33;"
+            "58.84,40.44,124.21,81.78,-96.90,87.33;"
+            "66.84,32.44,132.21,101.78,-80.90,57.33",
+        )
+        self.declare_parameter("side_y_tool_roll_candidates_deg", "configured")
+        self.declare_parameter("side_x_tool_roll_candidates_deg", "90,-90,configured,180")
+        self.declare_parameter("side_tool_roll_score_penalty_m", 0.005)
+        self.declare_parameter("side_cup_collision_enabled", True)
+        self.declare_parameter("side_cup_collision_radius_m", 0.045)
+        self.declare_parameter("side_cup_collision_height_m", 0.120)
+        self.declare_parameter("side_cup_collision_padding_m", 0.015)
+        self.declare_parameter("side_cup_collision_clear_before_close", True)
+        self.declare_parameter("side_cup_collision_update_wait_sec", 0.15)
         self.declare_parameter("side_trajectory_execution_duration_scaling", 3.0)
         self.declare_parameter("side_trajectory_execution_goal_margin_sec", 3.0)
 
@@ -505,6 +535,12 @@ class AutoCupFlowRouter(Node):
                 parts.append(f"{key}={value}")
         return "  ".join(parts) if parts else status[:120]
 
+    @staticmethod
+    def _bool_launch_arg(value) -> bool:
+        if isinstance(value, str):
+            return str(value).strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
     def _run_side_grasp(self, decision: RouteDecision) -> bool:
         self.get_logger().info(f"route=side_grasp: launching existing side grasp flow ({decision.status})")
         helpers = self._start_side_grasp_support_processes()
@@ -512,6 +548,27 @@ class AutoCupFlowRouter(Node):
         cmd.extend([
             "auto_pick:=true",
             "grasp_mode:=side",
+            "motion_link:=gripper_tcp",
+            "camera_reference_link:=link_6",
+            "side_tcp_compensation_enabled:=true",
+            "side_tcp_reach_m:=0.213",
+            "side_tcp_stage_offset_m:=0.120",
+            "side_tcp_pre_offset_m:=0.100",
+            "side_tcp_close_offset_m:=0.055",
+            f"side_candidate_axes:={self.get_parameter('side_candidate_axes').value}",
+            f"side_secondary_axis_score_penalty_m:={float(self.get_parameter('side_secondary_axis_score_penalty_m').value)}",
+            f"side_joint_seed_candidates_enabled:={str(self._bool_launch_arg(self.get_parameter('side_joint_seed_candidates_enabled').value)).lower()}",
+            f"side_joint_seed_offsets_deg:={self.get_parameter('side_joint_seed_offsets_deg').value}",
+            f"side_joint_seed_positions_deg:={self.get_parameter('side_joint_seed_positions_deg').value}",
+            f"side_y_tool_roll_candidates_deg:={self.get_parameter('side_y_tool_roll_candidates_deg').value}",
+            f"side_x_tool_roll_candidates_deg:={self.get_parameter('side_x_tool_roll_candidates_deg').value}",
+            f"side_tool_roll_score_penalty_m:={float(self.get_parameter('side_tool_roll_score_penalty_m').value)}",
+            f"side_cup_collision_enabled:={str(self._bool_launch_arg(self.get_parameter('side_cup_collision_enabled').value)).lower()}",
+            f"side_cup_collision_radius_m:={float(self.get_parameter('side_cup_collision_radius_m').value)}",
+            f"side_cup_collision_height_m:={float(self.get_parameter('side_cup_collision_height_m').value)}",
+            f"side_cup_collision_padding_m:={float(self.get_parameter('side_cup_collision_padding_m').value)}",
+            f"side_cup_collision_clear_before_close:={str(self._bool_launch_arg(self.get_parameter('side_cup_collision_clear_before_close').value)).lower()}",
+            f"side_cup_collision_update_wait_sec:={float(self.get_parameter('side_cup_collision_update_wait_sec').value)}",
             "exit_after_pick:=true",
             "move_to_camera_home:=false",
             "skip_initial_home_move:=true",
@@ -551,6 +608,8 @@ class AutoCupFlowRouter(Node):
             f"{float(self.get_parameter('side_trajectory_execution_goal_margin_sec').value)}",
             f"moveit_controller_name:={self.get_parameter('moveit_controller_name').value}",
             f"side_target_x_offset_m:={float(self.get_parameter('side_target_x_offset_m').value)}",
+            f"side_target_y_offset_m:={float(self.get_parameter('side_target_y_offset_m').value)}",
+            f"side_target_y_offset_follows_direction:={str(self._bool_launch_arg(self.get_parameter('side_target_y_offset_follows_direction').value)).lower()}",
             "start_joint_state_relay:=false",
             f"model_path:={self.get_parameter('yolo_model_path').value}",
         ])
