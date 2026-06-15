@@ -354,7 +354,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_tcp_close_offset_m", 0.055)
         dynamic_param = ParameterDescriptor(dynamic_typing=True)
         self.declare_parameter("side_grasp_axis", "y_axis", dynamic_param)
-        self.declare_parameter("side_candidate_axes", "y")
+        self.declare_parameter("side_candidate_axes", "y", dynamic_param)
         self.declare_parameter("side_secondary_axis_score_penalty_m", 0.15)
         self.declare_parameter("side_joint_seed_candidates_enabled", False)
         self.declare_parameter(
