@@ -8,7 +8,7 @@ docs/post_shake_human_handover_plan.md with every gate kept explicit:
                   bash tools/run/run_human_hand_detection.sh) and transform the
                   palm into base frame via live TF base_link->link_6 and the
                   measured T_gripper2camera hand-eye calibration.
-  2. PLAN         compute LIFT -> ABOVE_HIGH -> ABOVE_PALM -> staged descent
+  2. PLAN         compute LIFT -> APPROACH -> ABOVE_PALM -> staged descent
                   -> RELEASE/CONTACT_RELEASE -> RETREAT, all with the CURRENT side-grip
                   orientation preserved (--use-current-rpy on every MoveLine).
   3. GATES        default is dry-run. --execute needs --confirm, a typed
@@ -335,9 +335,11 @@ def force_contact_confirmed(
     axis_delta_n: float,
     contact_axis: str,
     samples: int,
+    min_hits: int,
     interval_sec: float,
 ) -> bool:
     needed = max(int(samples), 1)
+    required_hits = min(max(int(min_hits), 1), needed)
     hits = 0
     for index in range(needed):
         force = perception.tool_force_n()
@@ -359,17 +361,20 @@ def force_contact_confirmed(
         hits += 1 if hit else 0
         print(
             "[Azas] contact confirm "
-            f"{index + 1}/{needed}: hit={hit} "
+            f"{index + 1}/{needed}: hit={hit} hits={hits}/{required_hits} "
             f"fx={force[0]:.2f} fy={force[1]:.2f} fz={force[2]:.2f} "
             f"delta_mag={mag_delta:.2f}N "
             f"delta_axis=[{axis_delta[0]:.2f}, {axis_delta[1]:.2f}, {axis_delta[2]:.2f}] "
             f"max_{contact_axis}_axis={max_axis_delta:.2f}N"
         )
-        if not hit:
+        if hits >= required_hits:
+            return True
+        remaining = needed - (index + 1)
+        if hits + remaining < required_hits:
             return False
         if index + 1 < needed:
             time.sleep(max(interval_sec, 0.0))
-    return hits >= needed
+    return hits >= required_hits
 
 
 def open_gripper(args: argparse.Namespace) -> None:
@@ -406,6 +411,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-hand-recheck", action="store_true",
                         help="use the initially sampled palm for descent without the pre-descent palm re-check")
     parser.add_argument("--transit-z-m", type=float, default=0.45)
+    parser.add_argument("--diagonal-approach", action=argparse.BooleanOptionalAction, default=True,
+                        help="move toward the palm with XYZ blended to the descent-start height; "
+                             "--no-diagonal-approach keeps the older XY-at-transit-height behavior")
     parser.add_argument("--above-palm-m", type=float, default=0.12,
                         help="TCP height above the palm before the staged descent")
     parser.add_argument("--release-tcp-above-palm-m", type=float, default=0.08,
@@ -444,6 +452,9 @@ def parse_args() -> argparse.Namespace:
                         help="with --release-on-contact, only open RG2 after contact is detected")
     parser.add_argument("--contact-confirm-samples", type=int, default=5,
                         help="consecutive above-threshold force samples required before opening RG2")
+    parser.add_argument("--contact-confirm-min-hits", type=int, default=0,
+                        help="minimum hit samples needed within --contact-confirm-samples; "
+                             "0 means all samples, preserving the strict default")
     parser.add_argument("--contact-confirm-interval-sec", type=float, default=0.12,
                         help="delay between force confirmation samples")
     parser.add_argument("--contact-relief-lift-m", type=float, default=0.0,
@@ -526,16 +537,23 @@ def main() -> int:
 
         lift = [current_m[0], current_m[1], max(current_m[2], args.transit_z_m)]
         contact_start_z = palm[2] + max(args.force_search_start_above_palm_m, 0.0)
-        above_high = [palm[0], palm[1], max(args.transit_z_m, contact_start_z if args.release_on_contact else palm[2] + args.above_palm_m)]
+        descent_start_z = contact_start_z if args.release_on_contact else palm[2] + args.above_palm_m
+        if args.diagonal_approach:
+            approach_z = max(args.z_min, min(args.z_max, descent_start_z))
+            approach_label = "APPROACH"
+        else:
+            approach_z = max(args.transit_z_m, descent_start_z)
+            approach_label = "ABOVE_HIGH"
+        approach = [palm[0], palm[1], approach_z]
         above_palm = [
             palm[0],
             palm[1],
-            contact_start_z if args.release_on_contact else palm[2] + args.above_palm_m,
+            descent_start_z,
         ]
         release = [palm[0], palm[1], palm[2] + args.release_tcp_above_palm_m]
         contact_floor_z = max(args.z_min, palm[2] - max(args.force_search_below_palm_m, 0.0))
         retreat = [palm[0], palm[1], palm[2] + args.retreat_lift_m]
-        plan_items = [("LIFT", lift), ("ABOVE_HIGH", above_high), ("ABOVE_PALM", above_palm)]
+        plan_items = [("LIFT", lift), (approach_label, approach), ("ABOVE_PALM", above_palm)]
         if not args.release_on_contact:
             plan_items.append(("RELEASE", release))
         plan_items.append(("RETREAT", retreat))
@@ -578,12 +596,20 @@ def main() -> int:
         run_movel(args, lift, label="LIFT to transit height (Z-only)",
                   velocity=args.transit_velocity, acceleration=args.transit_acceleration,
                   rpy_deg=preserved_rpy)
-        run_movel(args, above_high, label="ABOVE_HIGH over palm at transit height",
+        approach_motion_label = (
+            "APPROACH to palm descent start (XYZ blended)"
+            if args.diagonal_approach else
+            "ABOVE_HIGH over palm at transit height"
+        )
+        run_movel(args, approach, label=approach_motion_label,
                   velocity=args.transit_velocity, acceleration=args.transit_acceleration,
                   rpy_deg=preserved_rpy)
-        run_movel(args, above_palm, label="ABOVE_PALM vertical pre-descent",
-                  velocity=args.descent_velocity, acceleration=args.descent_acceleration,
-                  rpy_deg=preserved_rpy)
+        if math.dist(approach, above_palm) > 0.001:
+            run_movel(args, above_palm, label="ABOVE_PALM vertical pre-descent",
+                      velocity=args.descent_velocity, acceleration=args.descent_acceleration,
+                      rpy_deg=preserved_rpy)
+        else:
+            print("[Azas] ABOVE_PALM equals approach target; skipping duplicate pre-descent move")
 
         # Hand must still be where we planned; people move. This can be skipped
         # when the camera re-check is known to jump after arm motion.
@@ -655,7 +681,7 @@ def main() -> int:
                 )
                 if contact_candidate:
                     if args.release_on_contact:
-                        print("[Azas] contact candidate detected; confirming before opening RG2")
+                        print("[Azas] contact candidate detected; checking confirmation samples before RG2 open")
                         candidate_reference_force = list(previous_force)
                         candidate_reference_mag = math.sqrt(sum(v * v for v in candidate_reference_force))
                         if not force_contact_confirmed(
@@ -666,9 +692,13 @@ def main() -> int:
                             axis_delta_n=args.force_axis_delta_n,
                             contact_axis=args.contact_axis,
                             samples=args.contact_confirm_samples,
+                            min_hits=args.contact_confirm_min_hits or args.contact_confirm_samples,
                             interval_sec=args.contact_confirm_interval_sec,
                         ):
-                            print("[Azas] contact candidate rejected as transient force noise; continuing descent")
+                            print(
+                                "[Azas] contact candidate was not confirmed; "
+                                "treating it as force noise and continuing descent"
+                            )
                             previous_force = force
                             continue
                         contact_release = True
@@ -676,7 +706,7 @@ def main() -> int:
                             "[Azas] contact trigger during descent: "
                             f"delta_mag={mag_delta:.2f}N(limit {args.force_abort_delta_n:.2f}), "
                             f"max_{args.contact_axis}_axis={max_axis_delta:.2f}N(limit {args.force_axis_delta_n:.2f}); "
-                            "opening RG2 at the confirmed contact pose"
+                            "opening RG2 at the contact candidate pose"
                         )
                         break
                     print("[ABORT] force spike during descent (palm contact or obstruction); retreating with cup")

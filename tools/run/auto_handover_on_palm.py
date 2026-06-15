@@ -240,6 +240,9 @@ def main() -> int:
                         help="with --release-on-contact, retreat with the cup if contact is never detected")
     parser.add_argument("--contact-confirm-samples", type=int, default=5,
                         help="consecutive above-threshold force samples required before opening RG2")
+    parser.add_argument("--contact-confirm-min-hits", type=int, default=0,
+                        help="minimum hit samples needed within --contact-confirm-samples; "
+                             "0 means all samples")
     parser.add_argument("--contact-confirm-interval-sec", type=float, default=0.12,
                         help="delay between force confirmation samples")
     parser.add_argument("--contact-relief-lift-m", type=float, default=0.0,
@@ -303,6 +306,7 @@ def main() -> int:
         "--force-baseline-interval-sec", f"{args.force_baseline_interval_sec:.3f}",
         "--force-read-settle-sec", f"{args.force_read_settle_sec:.3f}",
         "--contact-confirm-samples", str(args.contact_confirm_samples),
+        "--contact-confirm-min-hits", str(args.contact_confirm_min_hits),
         "--contact-confirm-interval-sec", f"{args.contact_confirm_interval_sec:.3f}",
         "--contact-relief-lift-m", f"{args.contact_relief_lift_m:.3f}",
         "--contact-search-below-release-m", f"{args.contact_search_below_release_m:.3f}",
