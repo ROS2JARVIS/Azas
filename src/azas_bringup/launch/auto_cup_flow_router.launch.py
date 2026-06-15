@@ -39,6 +39,26 @@ def generate_launch_description():
         DeclareLaunchArgument("cup_holder_rz_offset_deg", default_value="-1.0"),
         DeclareLaunchArgument("cup_holder_z_min_m", default_value="0.06"),
         DeclareLaunchArgument("lid_shake_after_recipe", default_value="true"),
+        DeclareLaunchArgument("human_handover_after_shake", default_value="true"),
+        DeclareLaunchArgument("human_handover_command", default_value=""),
+        DeclareLaunchArgument("human_handover_auto_start_camera", default_value="true"),
+        DeclareLaunchArgument("human_handover_auto_start_detection", default_value="true"),
+        DeclareLaunchArgument(
+            "human_handover_camera_command",
+            default_value="tools/run/with_azas_ros_env.sh ros2 launch realsense2_camera rs_align_depth_launch.py",
+        ),
+        DeclareLaunchArgument(
+            "human_handover_detection_command",
+            default_value=(
+                "tools/run/with_azas_ros_env.sh bash tools/run/run_human_hand_detection.sh "
+                "--process-width-px 320 --overlay-width-px 640 --max-rate-hz 20 "
+                "--min-detection-confidence 0.35 --min-tracking-confidence 0.35 "
+                "--min-extended-fingers 3 --depth-window-px 21 --stable-radius-m 0.12 "
+                "--stable-min-samples 2 --stable-window-seconds 1.0"
+            ),
+        ),
+        DeclareLaunchArgument("human_handover_camera_ready_timeout_sec", default_value="30.0"),
+        DeclareLaunchArgument("human_handover_detection_ready_timeout_sec", default_value="30.0"),
         DeclareLaunchArgument("holder_pick_shake_command", default_value=""),
         DeclareLaunchArgument("shake_only_command", default_value=""),
         DeclareLaunchArgument("resume_mode", default_value="normal"),
@@ -92,6 +112,29 @@ def generate_launch_description():
                 "cup_holder_rz_offset_deg": ParameterValue(LaunchConfiguration("cup_holder_rz_offset_deg"), value_type=float),
                 "cup_holder_z_min_m": ParameterValue(LaunchConfiguration("cup_holder_z_min_m"), value_type=float),
                 "lid_shake_after_recipe": ParameterValue(LaunchConfiguration("lid_shake_after_recipe"), value_type=bool),
+                "human_handover_after_shake": ParameterValue(
+                    LaunchConfiguration("human_handover_after_shake"),
+                    value_type=bool,
+                ),
+                "human_handover_command": LaunchConfiguration("human_handover_command"),
+                "human_handover_auto_start_camera": ParameterValue(
+                    LaunchConfiguration("human_handover_auto_start_camera"),
+                    value_type=bool,
+                ),
+                "human_handover_auto_start_detection": ParameterValue(
+                    LaunchConfiguration("human_handover_auto_start_detection"),
+                    value_type=bool,
+                ),
+                "human_handover_camera_command": LaunchConfiguration("human_handover_camera_command"),
+                "human_handover_detection_command": LaunchConfiguration("human_handover_detection_command"),
+                "human_handover_camera_ready_timeout_sec": ParameterValue(
+                    LaunchConfiguration("human_handover_camera_ready_timeout_sec"),
+                    value_type=float,
+                ),
+                "human_handover_detection_ready_timeout_sec": ParameterValue(
+                    LaunchConfiguration("human_handover_detection_ready_timeout_sec"),
+                    value_type=float,
+                ),
                 "holder_pick_shake_command": LaunchConfiguration("holder_pick_shake_command"),
                 "shake_only_command": LaunchConfiguration("shake_only_command"),
                 "resume_mode": LaunchConfiguration("resume_mode"),

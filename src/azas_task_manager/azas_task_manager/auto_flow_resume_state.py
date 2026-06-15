@@ -19,6 +19,7 @@ FLOW_STAGES = (
     "cup_pick",
     "recipe",
     "lid_shake",
+    "human_handover",
 )
 
 STAGE_LABELS = {
@@ -28,6 +29,7 @@ STAGE_LABELS = {
     "cup_pick": "cup route and pick",
     "recipe": "measured dispenser recipe",
     "lid_shake": "lid close and shake",
+    "human_handover": "MediaPipe palm handover",
 }
 
 
@@ -152,6 +154,7 @@ class AutoFlowResumeStore:
                 "lid_grasped": False,
                 "lid_closed": False,
                 "shake_done": False,
+                "human_handover_done": False,
             },
             "stop_reason": None,
             "blocker": None,

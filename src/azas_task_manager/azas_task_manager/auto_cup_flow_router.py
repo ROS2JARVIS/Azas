@@ -127,6 +127,30 @@ class AutoCupFlowRouter(Node):
             "lid_shake_command",
             "bash /home/ssu/Azas/tools/run/run_lid_close_then_shake_chain.sh",
         )
+        self.declare_parameter("human_handover_after_shake", True)
+        self.declare_parameter("human_handover_command", "")
+        self.declare_parameter("human_handover_auto_start_camera", True)
+        self.declare_parameter("human_handover_auto_start_detection", True)
+        self.declare_parameter(
+            "human_handover_camera_command",
+            "tools/run/with_azas_ros_env.sh ros2 launch realsense2_camera rs_align_depth_launch.py",
+        )
+        self.declare_parameter(
+            "human_handover_detection_command",
+            "tools/run/with_azas_ros_env.sh bash tools/run/run_human_hand_detection.sh "
+            "--process-width-px 320 "
+            "--overlay-width-px 640 "
+            "--max-rate-hz 20 "
+            "--min-detection-confidence 0.35 "
+            "--min-tracking-confidence 0.35 "
+            "--min-extended-fingers 3 "
+            "--depth-window-px 21 "
+            "--stable-radius-m 0.12 "
+            "--stable-min-samples 2 "
+            "--stable-window-seconds 1.0",
+        )
+        self.declare_parameter("human_handover_camera_ready_timeout_sec", 30.0)
+        self.declare_parameter("human_handover_detection_ready_timeout_sec", 30.0)
         self.declare_parameter("holder_pick_shake_command", "")
         self.declare_parameter("shake_only_command", "")
         self.declare_parameter("resume_mode", "normal")
@@ -194,6 +218,13 @@ class AutoCupFlowRouter(Node):
                 self._run_lid_shake_sequence,
                 verified={"lid_closed": True, "shake_done": True},
                 held_objects={"cup": "gripper", "lid": "on_cup"},
+            ):
+                return 1
+            if not self._run_resumable_stage(
+                "human_handover",
+                self._run_human_handover_sequence,
+                verified={"human_handover_done": True},
+                held_objects={"cup": "human", "lid": "on_cup"},
             ):
                 return 1
             if self._resume_store is not None:
@@ -711,6 +742,143 @@ class AutoCupFlowRouter(Node):
         self.get_logger().info("recipe succeeded; starting lid close -> holder re-pick -> shake chain")
         return self._run_process(["bash", "-c", command], "lid_shake")
 
+    def _run_human_handover_sequence(self) -> bool:
+        if not bool(self.get_parameter("human_handover_after_shake").value):
+            self.get_logger().info("human_handover_after_shake=false; skipping MediaPipe palm handover")
+            return True
+        command = self._human_handover_command()
+        if not command:
+            self.get_logger().warning("human_handover_command is empty; skipping MediaPipe palm handover")
+            return True
+        helpers = self._start_human_handover_support_processes()
+        self.get_logger().info("shake succeeded; starting MediaPipe palm handover")
+        try:
+            return self._run_process(["bash", "-c", command], "human_handover")
+        finally:
+            for proc, label in helpers:
+                self._stop_process(proc, label)
+
+    def _start_human_handover_support_processes(self) -> list[tuple[subprocess.Popen[str], str]]:
+        helpers: list[tuple[subprocess.Popen[str], str]] = []
+        color_topic = "/camera/camera/color/image_raw"
+        depth_topic = "/camera/camera/aligned_depth_to_color/image_raw"
+        hand_overlay_topic = "/azas/human_hand_detection/overlay"
+
+        if bool(self.get_parameter("human_handover_auto_start_camera").value):
+            if self._topic_has_publishers(color_topic) and self._topic_has_publishers(depth_topic):
+                self.get_logger().info("human handover camera topics already have publishers")
+            else:
+                command = str(self.get_parameter("human_handover_camera_command").value or "").strip()
+                if command:
+                    self.get_logger().info("starting human handover camera support process")
+                    helpers.append((self._popen(shlex.split(command), "human_handover_camera"), "human_handover_camera"))
+                if not self._wait_for_topic_publishers(
+                    [color_topic, depth_topic],
+                    timeout_sec=float(self.get_parameter("human_handover_camera_ready_timeout_sec").value),
+                    label="human handover camera",
+                ):
+                    raise RuntimeError("human handover camera topics did not become ready")
+
+        if bool(self.get_parameter("human_handover_auto_start_detection").value):
+            if self._topic_has_publishers(hand_overlay_topic):
+                self.get_logger().info("human hand detection overlay already has a publisher")
+            else:
+                command = str(self.get_parameter("human_handover_detection_command").value or "").strip()
+                if command:
+                    self.get_logger().info("starting MediaPipe human hand detection support process")
+                    helpers.append((self._popen(shlex.split(command), "human_hand_detection"), "human_hand_detection"))
+                if not self._wait_for_topic_publishers(
+                    [hand_overlay_topic],
+                    timeout_sec=float(self.get_parameter("human_handover_detection_ready_timeout_sec").value),
+                    label="MediaPipe human hand detection",
+                ):
+                    raise RuntimeError("MediaPipe human hand detection overlay did not become ready")
+        return helpers
+
+    def _topic_has_publishers(self, topic: str) -> bool:
+        try:
+            return bool(self.get_publishers_info_by_topic(topic))
+        except Exception as exc:
+            self.get_logger().warn(f"topic publisher check failed for {topic}: {exc}")
+            return False
+
+    def _wait_for_topic_publishers(self, topics: list[str], *, timeout_sec: float, label: str) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout_sec)
+        missing = list(topics)
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            missing = [topic for topic in topics if not self._topic_has_publishers(topic)]
+            if not missing:
+                self.get_logger().info(f"{label}: topic publishers ready")
+                return True
+            time.sleep(0.2)
+        self.get_logger().error(f"{label}: missing topic publishers: {', '.join(missing)}")
+        return False
+
+    def _human_handover_command(self) -> str:
+        configured = str(self.get_parameter("human_handover_command").value or "").strip()
+        if configured:
+            return configured
+        prefix = self._motion_service_prefix()
+        return (
+            "cd /home/ssu/Azas && "
+            "tools/run/with_azas_ros_env.sh python3 tools/run/auto_handover_on_palm.py "
+            f"--service-prefix {shlex.quote(prefix)} "
+            "--no-service-prefix-fallback "
+            "--execute "
+            "--confirm AUTO_HANDOVER_ON_PALM "
+            "--trigger-stable-count 2 "
+            "--trigger-window-sec 1.5 "
+            "--trigger-min-stable-sec 1.0 "
+            "--trigger-min-depth-m 0.30 "
+            "--trigger-max-depth-m 0.75 "
+            "--skip-observe "
+            "--hand-sample-count 1 "
+            "--hand-sample-timeout-sec 5 "
+            "--hand-sample-spread-max-m 0.05 "
+            "--skip-hand-recheck "
+            "--release-on-contact "
+            "--no-require-contact-for-release "
+            "--force-search-start-above-palm-m 0.16 "
+            "--force-search-below-palm-m 0.10 "
+            "--max-descent-steps 10 "
+            "--contact-axis z "
+            "--contact-z-direction positive "
+            "--force-baseline-samples 5 "
+            "--force-baseline-interval-sec 0.05 "
+            "--force-read-settle-sec 0.08 "
+            "--force-abort-delta-n 3.5 "
+            "--force-axis-delta-n 3.5 "
+            "--contact-step-delta-n 2.5 "
+            "--require-force-magnitude-delta "
+            "--force-magnitude-delta-n 2.0 "
+            "--contact-confirm-samples 3 "
+            "--contact-confirm-min-hits 3 "
+            "--contact-confirm-interval-sec 0.08 "
+            "--descent-step-m 0.030 "
+            "--transit-velocity 55 "
+            "--transit-acceleration 75 "
+            "--descent-velocity 22 "
+            "--descent-acceleration 32 "
+            "--move-timeout-sec 90 "
+            "--verify-timeout-sec 120 "
+            "--target-tolerance-mm 35 "
+            "--ikin-timeout-sec 25 "
+            "--ikin-retries 2 "
+            "--ikin-sol-spaces 2,0,1,3,4,5,6,7 "
+            "--j5-min-deg -160 "
+            "--j5-max-deg 160 "
+            "--gripper-open-retries 5 "
+            "--gripper-open-retry-sleep-sec 1.5 "
+            "--x-min 0.10 "
+            "--x-max 1.50 "
+            "--y-min -0.65 "
+            "--y-max 0.75 "
+            "--z-min 0.02 "
+            "--z-max 0.75 "
+            "--palm-z-max-m 0.50"
+        )
+
     def _lid_shake_command_for_current_resume_state(self) -> str:
         if self._resume_store is None:
             return str(self.get_parameter("lid_shake_command").value).strip()
@@ -891,6 +1059,8 @@ class AutoCupFlowRouter(Node):
             self._record_side_grasp_progress(text)
         if label == "lid_shake":
             self._record_lid_shake_progress(text)
+        if label == "human_handover":
+            self._record_human_handover_progress(text)
 
     def _record_side_grasp_progress(self, text: str) -> None:
         if "Could not find a connection between 'world' and 'camera_" in text:
@@ -946,6 +1116,29 @@ class AutoCupFlowRouter(Node):
         elif "Refusing real robot shake" in text:
             self._stage_failure_reasons["lid_shake"] = "lid_shake_hardware_blocked"
             self._resume_store.update_progress("lid_shake", "hardware_blocked")
+
+    def _record_human_handover_progress(self, text: str) -> None:
+        if self._resume_store is None:
+            return
+        if "손 대기 시작" in text:
+            self._resume_store.update_progress(
+                "human_handover",
+                "waiting_for_open_palm",
+                held_objects={"cup": "gripper", "lid": "on_cup"},
+            )
+        elif "손 트리거 충족" in text:
+            self._resume_store.update_progress(
+                "human_handover",
+                "palm_triggered",
+                held_objects={"cup": "gripper", "lid": "on_cup"},
+            )
+        elif "[PASS] 자동 핸드오버 완료." in text or "[PASS] palm handover sequence completed" in text:
+            self._resume_store.update_progress(
+                "human_handover",
+                "handover_done",
+                verified={"human_handover_done": True},
+                held_objects={"cup": "human", "lid": "on_cup"},
+            )
 
     @staticmethod
     def _lid_status_payload(text: str) -> dict[str, object] | None:
