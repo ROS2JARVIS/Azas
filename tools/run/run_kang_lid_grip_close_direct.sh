@@ -79,6 +79,8 @@ launch_args=(
   model_path:="${MODEL_PATH}" \
   marker_type:=aruco require_lid_detection:=true \
   allow_aruco_only_after_grip_request:=true aruco_only_after_grip_request_sec:=20.0 \
+  auto_grip_on_stable_detection:=true auto_grip_required_samples:=5 auto_grip_min_stable_sec:=0.8 \
+  auto_grip_cooldown_sec:=30.0 auto_grip_once:=true \
   aruco_dictionary:="${ARUCO_DICTIONARY}" aruco_marker_id:="${ARUCO_MARKER_ID}" \
   aruco_marker_length_m:="${ARUCO_MARKER_LENGTH_M}" \
   use_aruco_axis_for_orientation:=true aruco_finger_axis_quarter_turns:=0 \

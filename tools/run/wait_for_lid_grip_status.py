@@ -106,11 +106,22 @@ class LidGripStatusWaiter(Node):
     def _should_ignore_failure(self, payload: dict) -> bool:
         if not self._ignore_pretrigger_failures:
             return False
+        if self._sequence_started and self._is_rejected_no_valid_lid_request(payload):
+            return True
         if self._sequence_started:
             return False
         if payload.get("real_motion") is True:
             return False
         return True
+
+    @staticmethod
+    def _is_rejected_no_valid_lid_request(payload: dict) -> bool:
+        request = payload.get("request")
+        if not isinstance(request, dict):
+            return False
+        if request.get("accepted") is not False:
+            return False
+        return str(request.get("status", "")).strip() == "no_valid_lid_detection"
 
 
 def main() -> int:
