@@ -26,6 +26,16 @@ def _as_bool(value):
 def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params):
     controller_name = LaunchConfiguration("moveit_controller_name").perform(context)
     runtime_moveit_params = deepcopy(moveit_params)
+    trajectory_execution = runtime_moveit_params.setdefault("trajectory_execution", {})
+    trajectory_execution["allowed_execution_duration_scaling"] = float(
+        LaunchConfiguration("trajectory_execution_allowed_duration_scaling").perform(context)
+    )
+    trajectory_execution["allowed_goal_duration_margin"] = float(
+        LaunchConfiguration("trajectory_execution_allowed_goal_duration_margin").perform(context)
+    )
+    trajectory_execution["allowed_start_tolerance"] = float(
+        LaunchConfiguration("trajectory_execution_allowed_start_tolerance").perform(context)
+    )
     runtime_moveit_params["moveit_simple_controller_manager"] = {
         "controller_names": [controller_name],
         controller_name: {
@@ -1053,6 +1063,21 @@ def generate_launch_description():
         default_value="true",
         description="Start /dsr01/joint_states -> /joint_states relay. Disable if another relay already runs.",
     )
+    trajectory_execution_allowed_duration_scaling_arg = DeclareLaunchArgument(
+        "trajectory_execution_allowed_duration_scaling",
+        default_value="3.0",
+        description="MoveIt execution timeout scaling for real-controller low side-grip moves.",
+    )
+    trajectory_execution_allowed_goal_duration_margin_arg = DeclareLaunchArgument(
+        "trajectory_execution_allowed_goal_duration_margin",
+        default_value="3.0",
+        description="Extra seconds MoveIt waits past expected trajectory duration before cancelling.",
+    )
+    trajectory_execution_allowed_start_tolerance_arg = DeclareLaunchArgument(
+        "trajectory_execution_allowed_start_tolerance",
+        default_value="0.01",
+        description="Allowed start-state tolerance for trajectory execution.",
+    )
 
     return LaunchDescription(
         [
@@ -1181,6 +1206,9 @@ def generate_launch_description():
             auto_pick_arg,
             moveit_controller_name_arg,
             start_joint_state_relay_arg,
+            trajectory_execution_allowed_duration_scaling_arg,
+            trajectory_execution_allowed_goal_duration_margin_arg,
+            trajectory_execution_allowed_start_tolerance_arg,
             OpaqueFunction(
                 function=_runtime_nodes,
                 args=[moveit_params, moveit_py_params, side_prepose_params],

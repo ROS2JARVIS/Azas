@@ -138,13 +138,13 @@ MSG
 
 start_panel_server() {
   cd "$ROOT"
-  setsid env AZAS_ROOT="$ROOT" ROS_DOMAIN_ID="$PANEL_ROS_DOMAIN_ID" ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}" bash -lc '
+  setsid env AZAS_ROOT="$ROOT" ROS_DOMAIN_ID="$PANEL_ROS_DOMAIN_ID" ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}" bash -lc '
     cd "$AZAS_ROOT"
     source /opt/ros/humble/setup.bash
     source /home/ssu/ros2_ws/install/setup.bash
     source "$AZAS_ROOT/install/local_setup.bash"
-    export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-15}"
-    export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
+    export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
+    export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}"
     exec python3 tools/run/robot_pipeline_control_server.py
   ' >> "$LOG_FILE" 2>&1 < /dev/null &
   echo "$!" > "$PID_FILE"

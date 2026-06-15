@@ -1,4 +1,8 @@
-from azas_voice.llm_recipe_mapper_node import _sanitize_llm_decision
+from azas_voice.llm_recipe_mapper_node import (
+    _extract_elevenlabs_recipe_payload,
+    _json_object_from_text,
+    _sanitize_llm_decision,
+)
 from azas_voice.recipe_catalog import RECIPE_DISPENSERS
 
 
@@ -66,6 +70,28 @@ def test_sanitize_llm_decision_fills_recipe_dispenser_ids():
     assert "진행할까요" in decision.confirmation
 
 
+def test_sanitize_llm_decision_accepts_expanded_catalog_recipe_amounts():
+    decision = _sanitize_llm_decision(
+        "딥 럼 펀치 만들어줘",
+        {
+            "intent": "make_cocktail",
+            "recipe_id": "recipe_12",
+            "dispenser_ids": [],
+            "confirmation": "",
+        },
+    )
+
+    assert decision.valid
+    assert decision.recipe_id == "recipe_12"
+    assert decision.dispenser_ids == ("red", "yellow", "blue")
+    assert decision.dispenser_amounts == {
+        "red": 1,
+        "yellow": 1,
+        "green": 0,
+        "blue": 3,
+    }
+
+
 def test_sanitize_llm_decision_preserves_recommendation_wording():
     decision = _sanitize_llm_decision(
         "추천해줘",
@@ -84,7 +110,8 @@ def test_sanitize_llm_decision_preserves_recommendation_wording():
     assert "추천" in decision.confirmation
     assert "진행할까요" in decision.confirmation
     assert decision.profile is None
-    assert decision.dispenser_amounts is None
+    if decision.dispenser_amounts is not None:
+        assert all(color in {"red", "yellow", "green", "blue"} for color in decision.dispenser_amounts)
 
 
 def test_sanitize_llm_decision_prefers_local_preference_recommendation():
@@ -285,3 +312,58 @@ def test_sanitize_llm_decision_repairs_nonstandard_preference_profile():
         "liqueur": "많게",
         "juice": "적게",
     }
+
+
+def test_json_object_from_text_extracts_fenced_json():
+    payload = _json_object_from_text(
+        """```json
+{"intent": "make_cocktail", "recipe_id": "recipe_03"}
+```"""
+    )
+
+    assert payload["intent"] == "make_cocktail"
+    assert payload["recipe_id"] == "recipe_03"
+
+
+def test_json_object_from_text_extracts_embedded_json():
+    payload = _json_object_from_text(
+        '알겠습니다. {"intent": "make_cocktail", "dispenser_ids": ["yellow"]}'
+    )
+
+    assert payload["intent"] == "make_cocktail"
+    assert payload["dispenser_ids"] == ["yellow"]
+
+
+def test_extract_elevenlabs_recipe_payload_from_agent_message():
+    payload = _extract_elevenlabs_recipe_payload(
+        {
+            "simulated_conversation": [
+                {"role": "user", "message": "아무거나 추천해줘"},
+                {
+                    "role": "agent",
+                    "message": '{"intent": "make_cocktail", "recipe_id": "recipe_03", "confirmation": "진행할까요?"}',
+                },
+            ]
+        }
+    )
+
+    assert payload["intent"] == "make_cocktail"
+    assert payload["recipe_id"] == "recipe_03"
+
+
+def test_extract_elevenlabs_recipe_payload_from_data_collection_result():
+    payload = _extract_elevenlabs_recipe_payload(
+        {
+            "analysis": {
+                "data_collection_results_list": [
+                    {
+                        "data_collection_id": "recipe",
+                        "value": {"intent": "make_cocktail", "dispenser_ids": ["green"]},
+                    }
+                ]
+            }
+        }
+    )
+
+    assert payload["intent"] == "make_cocktail"
+    assert payload["dispenser_ids"] == ["green"]

@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Stop the entire Azas field stack in one shot: the azas tmux logic sessions,
 # every ROS-related process (robot bringup, gripper, camera, relays, MoveIt,
-# RViz, perception/preview nodes, stray ros2 CLI zombies), the ros2 daemon,
-# and stale FastDDS shared-memory segments left behind by killed nodes.
+# RViz, perception/preview/voice nodes, stray ros2 CLI zombies), the ros2
+# daemon, and stale FastDDS shared-memory segments left behind by killed nodes.
 #
 # Protected and never killed: the control panel (unless KILL_PANEL=1), the
 # tmux server itself, and Codex/OMX/Claude agent processes plus this script's
@@ -19,10 +19,10 @@ set -euo pipefail
 DRY_RUN="${DRY_RUN:-0}"
 KILL_PANEL="${KILL_PANEL:-0}"
 CLEAN_FASTDDS_SHM="${CLEAN_FASTDDS_SHM:-1}"
-SESSIONS="${SESSIONS:-azas-logic azas-rviz-exact}"
+SESSIONS="${SESSIONS:-azas-logic azas-rviz-exact azas-voice}"
 GRACE_SEC="${GRACE_SEC:-6}"
 
-ROS_PATTERN='run_doosan_real_m0609\.sh|dsr_bringup2|run_emulator|/DRCF|ros2_control_node|robot_state_publisher|move_group|rviz2|rg2_trigger|rg2_gripper_node|rs_launch\.py|realsense2_camera_node|joint_state_relay\.py|yolo_cup_pick_node|hand_eye_static_tf_node|static_transform_publisher|link6_gripper_collision_node|measured_dispenser_collision_scene_node|workspace_collision_scene_node|yolo_cup_uprighting|collision_scene_rviz_publisher\.py|publish_color_recipe_sequence_rviz_preview\.py|publish_collision_scene_rviz\.py|lid_sticker_detector_node|lid_grip_planner_node|lid_detection_pose_bridge_node|dispenser_sequence|run_changhyun_side_grip_direct\.sh|run_kang_lid_grip_close_direct\.sh|run_somyeong_cup_uprighting_direct\.sh|run_tmux_logic_sequence\.sh|run_color_recipe_sequence\.py|run_measured_dispenser_recipe_sequence\.py|run_minimal_dispenser_cycle\.py|/opt/ros/humble/bin/ros2 |ros2cli\.daemon'
+ROS_PATTERN='run_doosan_real_m0609\.sh|dsr_bringup2|run_emulator|/DRCF|ros2_control_node|robot_state_publisher|move_group|rviz2|rg2_trigger|rg2_gripper_node|rs_launch\.py|realsense2_camera_node|joint_state_relay\.py|yolo_cup_pick_node|hand_eye_static_tf_node|static_transform_publisher|link6_gripper_collision_node|measured_dispenser_collision_scene_node|workspace_collision_scene_node|yolo_cup_uprighting|collision_scene_rviz_publisher\.py|publish_color_recipe_sequence_rviz_preview\.py|publish_collision_scene_rviz\.py|lid_sticker_detector_node|lid_grip_planner_node|lid_detection_pose_bridge_node|dispenser_sequence|azas_voice\.launch\.py|/azas_voice/(recipe_mapper_node|llm_recipe_mapper_node|conversation_manager_node|voice_pipeline_executor_node|voice_dispenser_executor_node|tts_node|voice_screen_node|stt_node)|run_voice_auto_cup_flow\.sh|start_azas_voice_stack\.sh|run_changhyun_side_grip_direct\.sh|run_kang_lid_grip_close_direct\.sh|run_somyeong_cup_uprighting_direct\.sh|run_tmux_logic_sequence\.sh|run_color_recipe_sequence\.py|run_measured_dispenser_recipe_sequence\.py|run_minimal_dispenser_cycle\.py|/opt/ros/humble/bin/ros2 |ros2cli\.daemon'
 
 PROTECT_PATTERN='codex|oh-my-codex|omx|claude|bwrap|stop_azas_all\.sh|grep -E|(^|[ /])tmux( |$|:)'
 if [[ "${KILL_PANEL}" != "1" && "${KILL_PANEL}" != "true" ]]; then

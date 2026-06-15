@@ -74,6 +74,162 @@ recipes:
     mood_tags: [relaxed, playful]
     sweetness: 4
     acidity: 1
-    strength: 0
+    strength: 3
     color: blue
     description: 시원하고 부드러운 블루 계열 메뉴
+
+  recipe_05:
+    name: 선셋 하이볼
+    aliases: [5번, 오번, 레시피5, 선셋, 선셋하이볼, 노을, 과일하이볼]
+    dispenser_ids: [red, yellow, blue]
+    dispenser_amounts: {red: 2, yellow: 1, green: 0, blue: 1}
+    tags: [fruity, sweet, highball]
+    mood_tags: [cheerful, bright]
+    sweetness: 4
+    acidity: 3
+    strength: 2
+    color: red
+    description: 주스의 과일감에 시럽과 럼을 살짝 더한 밝은 하이볼
+
+  recipe_06:
+    name: 허브 토닉
+    aliases: [6번, 육번, 레시피6, 허브토닉, 허브, 깔끔한허브, 향좋은거]
+    dispenser_ids: [red, yellow, green]
+    dispenser_amounts: {red: 1, yellow: 1, green: 2, blue: 0}
+    tags: [herbal, clean, aromatic]
+    mood_tags: [calm, clean]
+    sweetness: 2
+    acidity: 3
+    strength: 0
+    color: green
+    description: 리큐르 향을 중심으로 산뜻하게 마무리되는 논알콜 허브 톤
+
+  recipe_07:
+    name: 베리 스위트
+    aliases: [7번, 칠번, 레시피7, 베리스위트, 베리, 달달한베리, 달콤한거]
+    dispenser_ids: [red, yellow]
+    dispenser_amounts: {red: 2, yellow: 2, green: 0, blue: 0}
+    tags: [sweet, fruity, soft]
+    mood_tags: [comfort, cheerful]
+    sweetness: 5
+    acidity: 2
+    strength: 0
+    color: red
+    description: 주스와 시럽을 균형 있게 섞은 달콤한 베리 계열
+
+  recipe_08:
+    name: 블루 라군
+    aliases: [8번, 팔번, 레시피8, 블루라군, 라군, 시원한거, 파란칵테일]
+    dispenser_ids: [red, yellow, blue]
+    dispenser_amounts: {red: 1, yellow: 1, green: 0, blue: 2}
+    tags: [cool, blue, balanced]
+    mood_tags: [relaxed, playful]
+    sweetness: 3
+    acidity: 2
+    strength: 3
+    color: blue
+    description: 럼의 존재감에 과일감과 달콤함을 얹은 시원한 블루 믹스
+
+  recipe_09:
+    name: 프루트 펀치
+    aliases: [9번, 구번, 레시피9, 프루트펀치, 과일펀치, 무알콜펀치, 논알콜펀치]
+    dispenser_ids: [red, yellow, green]
+    dispenser_amounts: {red: 3, yellow: 1, green: 1, blue: 0}
+    tags: [non_alcoholic, fruity, fresh]
+    mood_tags: [refreshing, bright]
+    sweetness: 3
+    acidity: 4
+    strength: 0
+    color: red
+    description: 럼 없이 주스 중심으로 상큼하게 만든 과일 펀치
+
+  recipe_10:
+    name: 드라이 허브 쿨러
+    aliases: [10번, 십번, 레시피10, 드라이허브, 허브쿨러, 덜단거, 드라이한거]
+    dispenser_ids: [red, green, blue]
+    dispenser_amounts: {red: 1, yellow: 0, green: 2, blue: 1}
+    tags: [dry, herbal, light_alcohol]
+    mood_tags: [calm, focused]
+    sweetness: 1
+    acidity: 3
+    strength: 2
+    color: green
+    description: 단맛을 낮추고 허브 향과 약한 럼 감을 살린 드라이 계열
+
+  recipe_11:
+    name: 시트러스 스플래시
+    aliases: [11번, 십일번, 레시피11, 시트러스, 스플래시, 상큼한거, 새콤한거]
+    dispenser_ids: [red, yellow, green]
+    dispenser_amounts: {red: 1, yellow: 2, green: 1, blue: 0}
+    tags: [fresh, citrus, bright]
+    mood_tags: [refreshing, energetic]
+    sweetness: 3
+    acidity: 5
+    strength: 0
+    color: yellow
+    description: 시럽의 밝은 단맛과 리큐르 향을 곁들인 상큼한 논알콜 믹스
+
+  recipe_12:
+    name: 딥 럼 펀치
+    aliases: [12번, 십이번, 레시피12, 딥럼, 럼펀치, 강한거, 도수있는거]
+    dispenser_ids: [red, yellow, blue]
+    dispenser_amounts: {red: 1, yellow: 1, green: 0, blue: 3}
+    tags: [strong, rum, deep]
+    mood_tags: [bold, relaxed]
+    sweetness: 3
+    acidity: 1
+    strength: 5
+    color: blue
+    description: 럼을 강하게 잡고 주스와 시럽으로 마무리한 진한 펀치
+
+  recipe_13:
+    name: 릴랙스 가든
+    aliases: [13번, 십삼번, 레시피13, 릴랙스, 가든, 편한거, 부드러운허브]
+    dispenser_ids: [yellow, green, blue]
+    dispenser_amounts: {red: 0, yellow: 2, green: 2, blue: 1}
+    tags: [soft, herbal, relaxed]
+    mood_tags: [relaxed, calm]
+    sweetness: 4
+    acidity: 1
+    strength: 2
+    color: green
+    description: 부드러운 시럽과 허브 향에 럼을 약하게 더한 차분한 메뉴
+
+  recipe_14:
+    name: 라이트 과일 소다
+    aliases: [14번, 십사번, 레시피14, 라이트소다, 과일소다, 가벼운거, 부담없는거]
+    dispenser_ids: [red, green]
+    dispenser_amounts: {red: 2, yellow: 0, green: 1, blue: 0}
+    tags: [light, fruity, non_alcoholic]
+    mood_tags: [easy, refreshing]
+    sweetness: 2
+    acidity: 3
+    strength: 0
+    color: red
+    description: 주스 중심에 향만 가볍게 얹은 부담 없는 논알콜 과일 소다
+
+  recipe_15:
+    name: 스위트 아로마
+    aliases: [15번, 십오번, 레시피15, 스위트아로마, 향달달, 향좋고달달한거]
+    dispenser_ids: [red, yellow, green]
+    dispenser_amounts: {red: 1, yellow: 2, green: 2, blue: 0}
+    tags: [sweet, aromatic, soft]
+    mood_tags: [comfort, cheerful]
+    sweetness: 5
+    acidity: 2
+    strength: 0
+    color: yellow
+    description: 달콤함과 리큐르 향을 함께 살린 부드러운 아로마 메뉴
+
+  recipe_16:
+    name: 클린 그린
+    aliases: [16번, 십육번, 레시피16, 클린그린, 그린논알콜, 깔끔한논알콜, 쓴맛덜한허브]
+    dispenser_ids: [red, yellow, green]
+    dispenser_amounts: {red: 1, yellow: 1, green: 2, blue: 0}
+    tags: [clean, herbal, non_alcoholic]
+    mood_tags: [clean, calm]
+    sweetness: 2
+    acidity: 3
+    strength: 0
+    color: green
+    description: 럼 없이 허브 향을 깔끔하게 살린 그린 계열 논알콜 메뉴

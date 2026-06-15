@@ -404,7 +404,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gripper-service", default="/jarvis/rg2/set_width")
     parser.add_argument("--gripper-open-width-m", type=float, default=0.110)
     parser.add_argument("--gripper-grasp-width-m", type=float, default=0.075)
-    parser.add_argument("--gripper-force-n", type=float, default=25.0)
+    parser.add_argument("--gripper-force-n", type=float, default=20.0)
     parser.add_argument("--gripper-timeout-sec", type=float, default=12.0)
     parser.add_argument("--joint1-clearance-deg", type=float, default=0.0)
     parser.add_argument("--joint1-clearance-velocity", type=float, default=20.0)

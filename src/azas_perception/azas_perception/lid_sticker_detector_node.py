@@ -127,6 +127,11 @@ class LidStickerDetectorNode(Node):
         self.declare_parameter("show_preview", True)
         self.declare_parameter("preview_window_name", "Azas Lid Detection - p grip, ESC quit")
         self.declare_parameter("preview_wait_ms", 1)
+        self.declare_parameter("auto_grip_on_stable_detection", False)
+        self.declare_parameter("auto_grip_required_samples", 5)
+        self.declare_parameter("auto_grip_min_stable_sec", 0.8)
+        self.declare_parameter("auto_grip_cooldown_sec", 30.0)
+        self.declare_parameter("auto_grip_once", True)
 
         self._latest_depth: Optional[np.ndarray] = None
         self._latest_depth_encoding = ""
@@ -136,6 +141,9 @@ class LidStickerDetectorNode(Node):
         self._latest_valid_status = ""
         self._latest_valid_stamp = None
         self._last_accepted_grip_request_time: float | None = None
+        self._accepted_grip_request_sent = False
+        self._auto_grip_stable_count = 0
+        self._auto_grip_stable_since: float | None = None
         self._preview_window_created = False
         self._model = self._load_model()
 
@@ -330,6 +338,7 @@ class LidStickerDetectorNode(Node):
         self._pub.publish(output)
         self._latest_valid_status = output.status
         self._latest_valid_stamp = output.header.stamp
+        self._maybe_publish_auto_grip_request(output.status)
         if bool(self.get_parameter("log_detections").value):
             self.get_logger().info(
                 "Published lid marker detection: "
@@ -766,6 +775,7 @@ class LidStickerDetectorNode(Node):
     def _publish_invalid(self, msg: Image, status: str) -> None:
         self._latest_valid_status = ""
         self._latest_valid_stamp = None
+        self._reset_auto_grip_stability()
         output = CupDetection()
         output.header.stamp = msg.header.stamp
         output.header.frame_id = msg.header.frame_id
@@ -859,13 +869,63 @@ class LidStickerDetectorNode(Node):
         cv2.imshow(window, frame)
         key = cv2.waitKey(max(int(self.get_parameter("preview_wait_ms").value), 1)) & 0xFF
         if key in (ord("p"), ord("P")):
-            self._publish_grip_request()
+            self._publish_grip_request(trigger_source="p_key")
         elif key in (27, ord("q"), ord("Q")):
             cv2.destroyWindow(window)
             if rclpy.ok():
                 rclpy.shutdown()
 
-    def _publish_grip_request(self) -> None:
+    def _maybe_publish_auto_grip_request(self, status: str) -> None:
+        if not bool(self.get_parameter("auto_grip_on_stable_detection").value):
+            return
+        if bool(self.get_parameter("auto_grip_once").value) and self._accepted_grip_request_sent:
+            return
+        if not self._grip_request_would_be_accepted(status):
+            self._reset_auto_grip_stability()
+            return
+
+        now = time.monotonic()
+        if self._auto_grip_stable_count <= 0 or self._auto_grip_stable_since is None:
+            self._auto_grip_stable_since = now
+            self._auto_grip_stable_count = 0
+        self._auto_grip_stable_count += 1
+
+        required_samples = max(int(self.get_parameter("auto_grip_required_samples").value), 1)
+        min_stable_sec = max(float(self.get_parameter("auto_grip_min_stable_sec").value), 0.0)
+        stable_sec = now - self._auto_grip_stable_since
+        if self._auto_grip_stable_count < required_samples or stable_sec < min_stable_sec:
+            return
+
+        cooldown_sec = max(float(self.get_parameter("auto_grip_cooldown_sec").value), 0.0)
+        if (
+            self._last_accepted_grip_request_time is not None
+            and now - self._last_accepted_grip_request_time < cooldown_sec
+        ):
+            return
+
+        self._publish_grip_request(
+            trigger_source="auto_stable_detection",
+            stable_samples=self._auto_grip_stable_count,
+            stable_sec=stable_sec,
+        )
+
+    def _reset_auto_grip_stability(self) -> None:
+        self._auto_grip_stable_count = 0
+        self._auto_grip_stable_since = None
+
+    def _grip_request_would_be_accepted(self, status: str) -> bool:
+        accepted = bool(status.startswith("detected:lid"))
+        if bool(self.get_parameter("require_lid_detection").value):
+            accepted = accepted and not self._status_is_aruco_only(status)
+        return accepted
+
+    def _publish_grip_request(
+        self,
+        *,
+        trigger_source: str,
+        stable_samples: int | None = None,
+        stable_sec: float | None = None,
+    ) -> None:
         accepted = bool(self._latest_valid_status.startswith("detected:lid"))
         if bool(self.get_parameter("require_lid_detection").value):
             accepted = accepted and not self._status_is_aruco_only(self._latest_valid_status)
@@ -874,18 +934,30 @@ class LidStickerDetectorNode(Node):
             "command": "grip_lid",
             "accepted": accepted,
             "source": "lid_sticker_detector_node",
+            "trigger_source": trigger_source,
             "status": self._latest_valid_status if accepted else "no_valid_lid_detection",
         }
         if stamp is not None:
             payload["stamp"] = f"{stamp.sec}.{stamp.nanosec:09d}"
+        if stable_samples is not None:
+            payload["stable_samples"] = int(stable_samples)
+        if stable_sec is not None:
+            payload["stable_sec"] = round(float(stable_sec), 3)
         msg = String()
         msg.data = json.dumps(payload, sort_keys=True)
         self._grip_request_pub.publish(msg)
         if accepted:
             self._last_accepted_grip_request_time = time.monotonic()
-            self.get_logger().warn(
-                "Published supervised lid grip request from p key; downstream motion remains gated"
-            )
+            self._accepted_grip_request_sent = True
+            if trigger_source == "auto_stable_detection":
+                self.get_logger().warn(
+                    "Published automatic supervised lid grip request after stable detection; "
+                    "downstream motion remains gated"
+                )
+            else:
+                self.get_logger().warn(
+                    "Published supervised lid grip request from p key; downstream motion remains gated"
+                )
         else:
             self.get_logger().warn("Ignored p key because there is no valid detected:lid frame")
 

@@ -19,7 +19,7 @@ CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M="${CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M:-0.0}"
 # Negative values lower the final grasp pose; calibration.yaml is not modified.
 CUP_HOLDER_PICK_Z_OFFSET_M="${CUP_HOLDER_PICK_Z_OFFSET_M:--0.020}"
 CUP_HOLDER_PICK_WIDTH_M="${CUP_HOLDER_PICK_WIDTH_M:-0.068}"
-CUP_HOLDER_PICK_FORCE_N="${CUP_HOLDER_PICK_FORCE_N:-35.0}"
+CUP_HOLDER_PICK_FORCE_N="${CUP_HOLDER_PICK_FORCE_N:-25.0}"
 USE_CURRENT_TCP_AS_SHAKE_CENTER="${USE_CURRENT_TCP_AS_SHAKE_CENTER:-false}"
 REQUIRE_JOINT_LIMITS="${REQUIRE_JOINT_LIMITS:-true}"
 REQUIRE_ROBOT_STANDBY="${REQUIRE_ROBOT_STANDBY:-true}"
@@ -48,6 +48,8 @@ APPROACH_LINE_TIME="${APPROACH_LINE_TIME:-3.5}"
 SHAKE_LINE_TIME="${SHAKE_LINE_TIME:-0.40}"
 SERVICE_WAIT_TIMEOUT_SEC="${SERVICE_WAIT_TIMEOUT_SEC:-5.0}"
 MOTION_RESPONSE_TIMEOUT_SEC="${MOTION_RESPONSE_TIMEOUT_SEC:-10.0}"
+ROBOT_STATE_TIMEOUT_SEC="${ROBOT_STATE_TIMEOUT_SEC:-8.0}"
+ROBOT_STATE_RETRIES="${ROBOT_STATE_RETRIES:-3}"
 RX="${RX:-180.0}"
 RY="${RY:-0.0}"
 RZ="${RZ:-180.0}"
@@ -158,8 +160,21 @@ prefixed_service() {
 if [[ "${REQUIRE_ROBOT_STANDBY}" == "true" ]]; then
   echo "[Azas] Checking Doosan robot state before real motion."
   robot_state_service="$(prefixed_service system/get_robot_state)"
-  if ! robot_state_output="$(timeout 5s ros2 service call "${robot_state_service}" dsr_msgs2/srv/GetRobotState "{}")"; then
-    echo "[Azas] Refusing real robot shake: ${robot_state_service} did not respond."
+  robot_state_output=""
+  robot_state_ok=false
+  for attempt in $(seq 1 "${ROBOT_STATE_RETRIES}"); do
+    if robot_state_output="$(
+      timeout "${ROBOT_STATE_TIMEOUT_SEC}s" \
+        ros2 service call "${robot_state_service}" dsr_msgs2/srv/GetRobotState "{}"
+    )"; then
+      robot_state_ok=true
+      break
+    fi
+    echo "[Azas] ${robot_state_service} did not respond (attempt ${attempt}/${ROBOT_STATE_RETRIES}); retrying..."
+    sleep 0.5
+  done
+  if [[ "${robot_state_ok}" != "true" ]]; then
+    echo "[Azas] Refusing real robot shake: ${robot_state_service} did not respond after ${ROBOT_STATE_RETRIES} attempts."
     echo "[Azas] Start Doosan real bringup and confirm the robot network is connected."
     exit 1
   fi
@@ -280,9 +295,9 @@ if [[ "${SKIP_CUP_HOLDER_PICK}" != "true" ]]; then
   python3 "${ROOT_DIR}/tools/run/pick_from_cup_holder_side_grip.py" \
     --service-prefix "${SERVICE_PREFIX}" \
     --config "${CUP_HOLDER_PICK_CONFIG}" \
-    --approach-velocity 12.0 --approach-acceleration 16.0 \
-    --descend-velocity 6.0 --descend-acceleration 10.0 \
-    --lift-velocity 12.0 --lift-acceleration 16.0 \
+    --approach-velocity 40.0 --approach-acceleration 40.0 \
+    --descend-velocity 40.0 --descend-acceleration 40.0 \
+    --lift-velocity 40.0 --lift-acceleration 40.0 \
     --place-final-z-offset-m "${CUP_HOLDER_PICK_Z_OFFSET_M}" \
     --timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 \
     --ikin-timeout-sec 20.0 --ikin-retries 2 \

@@ -30,6 +30,10 @@ Thumbs.db
 tmp/
 /tmp/
 
+# 로컬 비밀 환경변수
+.env
+.env.local
+
 # 모델 가중치 (용량 큰 파일 - LFS 사용 권장)
 *.pt
 *.pth

@@ -66,6 +66,11 @@ def generate_launch_description():
         DeclareLaunchArgument("log_pose_plans", default_value="false"),
         DeclareLaunchArgument("log_korean_status", default_value="true"),
         DeclareLaunchArgument("log_json_status", default_value="false"),
+        DeclareLaunchArgument("auto_grip_on_stable_detection", default_value="false"),
+        DeclareLaunchArgument("auto_grip_required_samples", default_value="5"),
+        DeclareLaunchArgument("auto_grip_min_stable_sec", default_value="0.8"),
+        DeclareLaunchArgument("auto_grip_cooldown_sec", default_value="30.0"),
+        DeclareLaunchArgument("auto_grip_once", default_value="true"),
         DeclareLaunchArgument("lid_detection_topic", default_value="/azas/lid_detection"),
         DeclareLaunchArgument("lid_pose_topic", default_value="/jarvis/lid_gripper/lid_pose"),
         DeclareLaunchArgument("grip_request_topic", default_value="/jarvis/lid_gripper/grip_request"),
@@ -329,6 +334,26 @@ def generate_launch_description():
                     value_type=bool,
                 ),
                 "show_preview": ParameterValue(LaunchConfiguration("show_preview"), value_type=bool),
+                "auto_grip_on_stable_detection": ParameterValue(
+                    LaunchConfiguration("auto_grip_on_stable_detection"),
+                    value_type=bool,
+                ),
+                "auto_grip_required_samples": ParameterValue(
+                    LaunchConfiguration("auto_grip_required_samples"),
+                    value_type=int,
+                ),
+                "auto_grip_min_stable_sec": ParameterValue(
+                    LaunchConfiguration("auto_grip_min_stable_sec"),
+                    value_type=float,
+                ),
+                "auto_grip_cooldown_sec": ParameterValue(
+                    LaunchConfiguration("auto_grip_cooldown_sec"),
+                    value_type=float,
+                ),
+                "auto_grip_once": ParameterValue(
+                    LaunchConfiguration("auto_grip_once"),
+                    value_type=bool,
+                ),
             }],
         ),
         Node(

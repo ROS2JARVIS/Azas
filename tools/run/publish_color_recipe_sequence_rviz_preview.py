@@ -345,7 +345,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--move-release-offset-z-m", type=float, default=0.0)
     parser.add_argument("--press-pre-lift-retreat-x-m", type=float, default=-0.050)
     parser.add_argument("--press-pre-lift-retreat-y-m", type=float, default=0.0)
-    parser.add_argument("--press-min-transit-z-m", type=float, default=0.500)
+    parser.add_argument("--press-min-transit-z-m", type=float, default=0.350)
     parser.add_argument("--press-transit-height-m", type=float, default=0.080)
     parser.add_argument("--press-pre-lift-m", type=float, default=0.080)
     parser.add_argument("--press-depth-m", type=float, default=0.060)

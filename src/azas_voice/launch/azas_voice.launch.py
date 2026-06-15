@@ -17,6 +17,12 @@ def generate_launch_description():
     tts_speech_rate = LaunchConfiguration("tts_speech_rate")
     tts_startup_prompt = LaunchConfiguration("tts_startup_prompt")
     stt_topic = LaunchConfiguration("stt_topic")
+    stt_language = LaunchConfiguration("stt_language")
+    stt_device_index = LaunchConfiguration("stt_device_index")
+    stt_energy_threshold = LaunchConfiguration("stt_energy_threshold")
+    stt_pause_threshold = LaunchConfiguration("stt_pause_threshold")
+    stt_phrase_time_limit = LaunchConfiguration("stt_phrase_time_limit")
+    stt_ambient_duration = LaunchConfiguration("stt_ambient_duration")
 
     return LaunchDescription(
         [
@@ -25,6 +31,9 @@ def generate_launch_description():
             DeclareLaunchArgument("use_conversation_manager", default_value="true"),
             DeclareLaunchArgument("use_dispenser_executor", default_value="false"),
             DeclareLaunchArgument("enable_dispenser_hardware_execution", default_value="false"),
+            DeclareLaunchArgument("use_pipeline_executor", default_value="false"),
+            DeclareLaunchArgument("enable_pipeline_hardware_execution", default_value="false"),
+            DeclareLaunchArgument("pipeline_service_prefix", default_value="dsr01"),
             DeclareLaunchArgument("dispenser_service_prefix", default_value="/"),
             DeclareLaunchArgument("dispenser_tcp_name", default_value=""),
             DeclareLaunchArgument(
@@ -45,11 +54,21 @@ def generate_launch_description():
                 default_value="원하는 맛을 말씀해주시면 추천해드릴게요. 주문하시겠어요?",
             ),
             DeclareLaunchArgument("enable_llm", default_value="false"),
+            DeclareLaunchArgument("llm_provider", default_value="openai_chat"),
             DeclareLaunchArgument("llm_model", default_value="gpt-4o-mini"),
             DeclareLaunchArgument("llm_base_url", default_value="https://api.openai.com/v1"),
             DeclareLaunchArgument("llm_api_key_env", default_value="OPENAI_API_KEY"),
+            DeclareLaunchArgument("elevenlabs_agent_id_env", default_value="ELEVENLABS_AGENT_ID"),
+            DeclareLaunchArgument("elevenlabs_language", default_value="ko"),
+            DeclareLaunchArgument("elevenlabs_new_turns_limit", default_value="2"),
             DeclareLaunchArgument("llm_request_timeout_sec", default_value="20.0"),
             DeclareLaunchArgument("stt_topic", default_value="/stt_result"),
+            DeclareLaunchArgument("stt_language", default_value="ko-KR"),
+            DeclareLaunchArgument("stt_device_index", default_value="-1"),
+            DeclareLaunchArgument("stt_energy_threshold", default_value="300.0"),
+            DeclareLaunchArgument("stt_pause_threshold", default_value="0.8"),
+            DeclareLaunchArgument("stt_phrase_time_limit", default_value="5.0"),
+            DeclareLaunchArgument("stt_ambient_duration", default_value="1.0"),
             Node(
                 package="azas_voice",
                 executable="recipe_mapper_node",
@@ -72,9 +91,15 @@ def generate_launch_description():
                     {
                         "stt_topic": stt_topic,
                         "enable_llm": ParameterValue(LaunchConfiguration("enable_llm"), value_type=bool),
+                        "provider": LaunchConfiguration("llm_provider"),
                         "model": LaunchConfiguration("llm_model"),
                         "base_url": LaunchConfiguration("llm_base_url"),
                         "api_key_env": LaunchConfiguration("llm_api_key_env"),
+                        "elevenlabs_agent_id_env": LaunchConfiguration("elevenlabs_agent_id_env"),
+                        "elevenlabs_language": LaunchConfiguration("elevenlabs_language"),
+                        "elevenlabs_new_turns_limit": ParameterValue(
+                            LaunchConfiguration("elevenlabs_new_turns_limit"), value_type=int
+                        ),
                         "request_timeout_sec": ParameterValue(
                             LaunchConfiguration("llm_request_timeout_sec"), value_type=float
                         ),
@@ -125,10 +150,36 @@ def generate_launch_description():
             ),
             Node(
                 package="azas_voice",
+                executable="voice_pipeline_executor_node",
+                name="voice_pipeline_executor_node",
+                output="screen",
+                parameters=[
+                    {
+                        "enable_hardware_execution": ParameterValue(
+                            LaunchConfiguration("enable_pipeline_hardware_execution"),
+                            value_type=bool,
+                        ),
+                        "service_prefix": LaunchConfiguration("pipeline_service_prefix"),
+                    }
+                ],
+                condition=IfCondition(LaunchConfiguration("use_pipeline_executor")),
+            ),
+            Node(
+                package="azas_voice",
                 executable="stt_node",
                 name="stt_node",
                 output="screen",
-                parameters=[{"stt_topic": stt_topic}],
+                parameters=[
+                    {
+                        "stt_topic": stt_topic,
+                        "language": stt_language,
+                        "device_index": ParameterValue(stt_device_index, value_type=int),
+                        "energy_threshold": ParameterValue(stt_energy_threshold, value_type=float),
+                        "pause_threshold": ParameterValue(stt_pause_threshold, value_type=float),
+                        "phrase_time_limit": ParameterValue(stt_phrase_time_limit, value_type=float),
+                        "ambient_duration": ParameterValue(stt_ambient_duration, value_type=float),
+                    }
+                ],
                 condition=IfCondition(use_live_stt),
             ),
             Node(

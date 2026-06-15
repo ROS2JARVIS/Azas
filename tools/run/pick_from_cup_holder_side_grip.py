@@ -188,8 +188,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--place-final-z-offset-m",
         type=float,
-        default=0.0,
-        help="Same measured adjustment used by place_cup_holder; added only to place_final Z.",
+        default=-0.020,
+        help="Operational Z adjustment for pre-shake cup-holder re-grasp; negative lowers place_final Z.",
     )
     parser.add_argument("--timeout-sec", type=float, default=90.0)
     parser.add_argument("--wait-service-sec", type=float, default=8.0)
@@ -206,7 +206,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gripper-service", default="/jarvis/rg2/set_width")
     parser.add_argument("--gripper-open-width-m", type=float, default=0.110)
     parser.add_argument("--gripper-grasp-width-m", type=float, default=0.068)
-    parser.add_argument("--gripper-force-n", type=float, default=35.0)
+    parser.add_argument("--gripper-force-n", type=float, default=20.0)
     parser.add_argument("--gripper-timeout-sec", type=float, default=12.0)
     parser.add_argument("--post-grasp-settle-sec", type=float, default=0.8)
     parser.add_argument("--execute", action="store_true")

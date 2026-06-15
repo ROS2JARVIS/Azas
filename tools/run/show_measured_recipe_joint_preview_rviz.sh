@@ -62,8 +62,8 @@ else
 fi
 set -u
 
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-15}"
-export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
+export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}"
 export FASTDDS_BUILTIN_TRANSPORTS="${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}"
 
 pkill -f 'publish_measured_recipe_joint_rviz_preview.py' 2>/dev/null || true
