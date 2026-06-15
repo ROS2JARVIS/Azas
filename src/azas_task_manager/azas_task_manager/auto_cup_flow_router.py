@@ -584,13 +584,8 @@ class AutoCupFlowRouter(Node):
             "side_final_slide_enabled:=false",
             "side_move_to_initial_center_before_close:=false",
             "side_linear_approach_enabled:=true",
-<<<<<<< HEAD
             "side_low_retry_lift_m:=0.02",
-            "side_low_retry_attempts:=5",
-=======
-            "side_low_retry_lift_m:=0.03",
             "side_low_retry_attempts:=0",
->>>>>>> a07b1fd (fix bug)
             "workspace_xy_clamp_enabled:=false",
             "table_collision_enabled:=true",
             "workspace_collision_scene_enabled:=false",
