@@ -27,12 +27,21 @@ DEFAULT_DISPENSER_RESUME_STATE_FILE = Path("/home/ssu/Azas/outputs/measured_disp
 # (auto_cup_flow_router의 로그 문구가 바뀌면 여기도 같이 갱신할 것)
 STAGE_MARKERS: tuple[tuple[str, str], ...] = (
     ("auto cup router: color scan", "디스펜서 색 스캔"),
+    ("starting perception with cup classifier", "컵 자세 구분"),
+    ("waiting for stable route", "컵 자세 구분"),
+    ("route candidate stable", "컵 자세 구분"),
     ("route decided: side_grasp", "컵 픽업 (세워진 컵)"),
     ("route decided: cup_uprighting", "컵 픽업 (쓰러진 컵)"),
     ("starting integrated dispenser recipe sequence", "디스펜서 레시피 진행"),
     ("resume_state loaded", "중단 지점 복구"),
     ("resume_state step_start", "디스펜서 레시피 진행"),
     ("starting lid close", "뚜껑 체결 / 쉐이킹"),
+    ("ArUco lid_grip_close 성공 status 확인", "쉐이킹"),
+    ("Cup-holder pick completed; continuing to shake", "쉐이킹"),
+    ("SHAKE START", "쉐이킹"),
+    ("SHAKE DONE", "손 검출 / 핸드오버"),
+    ("starting MediaPipe human hand detection support process", "손 검출 / 핸드오버"),
+    ("shake succeeded; starting MediaPipe palm handover", "손 검출 / 핸드오버"),
     ("selected flow completed", "완료"),
 )
 

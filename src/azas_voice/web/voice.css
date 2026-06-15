@@ -479,9 +479,123 @@ input {
   bottom: 31px;
 }
 
+.robot-scene[data-step="handover"] .robot-cup {
+  left: calc(100% - 104px);
+  bottom: 68px;
+  transform: rotate(4deg);
+}
+
+.robot-scene[data-step="handover"] .robot-gripper {
+  left: calc(100% - 132px);
+  bottom: 86px;
+}
+
+.robot-scene[data-step="handover"] .robot-shaker {
+  right: 22px;
+  bottom: 34px;
+  width: 52px;
+  height: 18px;
+  border-radius: 999px 999px 10px 10px;
+  background: linear-gradient(180deg, #ffd9b0, #f0ae82);
+  opacity: 1;
+}
+
 .robot-status-text {
   margin: 0;
   color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.vision-camera-panel {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: 0 16px 36px rgba(67, 119, 96, 0.1);
+}
+
+.vision-camera-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vision-camera-title-row h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.18;
+}
+
+.vision-camera-badge {
+  flex: 0 0 auto;
+  max-width: 180px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  color: #10745b;
+  background: rgba(178, 245, 216, 0.82);
+  overflow-wrap: anywhere;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.vision-camera-badge[data-stream="cup"] {
+  color: #0f5fa8;
+  background: rgba(176, 219, 255, 0.9);
+}
+
+.vision-camera-badge[data-stream="lid"] {
+  color: #8b5310;
+  background: rgba(255, 226, 143, 0.92);
+}
+
+.vision-camera-badge[data-stream="hand"] {
+  color: #a8253c;
+  background: rgba(255, 196, 206, 0.88);
+}
+
+.vision-camera-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 210px;
+  overflow: hidden;
+  border: 1px solid rgba(38, 54, 49, 0.2);
+  border-radius: 8px;
+  background: #101815;
+}
+
+.vision-camera-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #101815;
+}
+
+.vision-camera-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: rgba(255, 255, 255, 0.78);
+  text-align: center;
+  font-weight: 900;
+}
+
+.vision-camera-empty[hidden] {
+  display: none;
+}
+
+.vision-camera-detail {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 900;
 }

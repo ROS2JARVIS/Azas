@@ -181,12 +181,23 @@ def parse_args() -> argparse.Namespace:
         help="number of /motion/ikin precheck attempts before failing closed",
     )
     parser.add_argument("--ikin-sol-space", type=int, default=2, help="solution space used by --precheck-ikin")
+    parser.add_argument(
+        "--ikin-sol-spaces",
+        default="",
+        help="comma-separated solution spaces to try in order before failing the IK precheck",
+    )
     parser.add_argument("--j5-min-deg", type=float, default=-135.0, help="safe lower limit for joint 5")
     parser.add_argument("--j5-max-deg", type=float, default=135.0, help="safe upper limit for joint 5")
     parser.add_argument("--service-prefix", default="", help="optional namespace before /motion/move_line")
     parser.add_argument("--velocity", type=float, default=20.0, help="line velocity")
     parser.add_argument("--acceleration", type=float, default=20.0, help="line acceleration")
     parser.add_argument("--timeout-sec", type=float, default=10.0, help="service response timeout")
+    parser.add_argument(
+        "--motion-timeout-sec",
+        type=float,
+        default=None,
+        help="compatibility alias accepted from sequenced motion wrappers",
+    )
     parser.add_argument("--wait-service-sec", type=float, default=5.0, help="service availability timeout")
     parser.add_argument("--x-min", type=float, default=0.10)
     parser.add_argument("--x-max", type=float, default=0.70)
@@ -207,11 +218,28 @@ def parse_args() -> argparse.Namespace:
         help="actually call MoveLine; without this, only prints the request",
     )
     parser.add_argument(
+        "--fallback-movej-on-verify-fail",
+        action="store_true",
+        help="compatibility flag only; this tool keeps failing closed on MoveLine verification failure",
+    )
+    parser.add_argument("--fallback-movej-velocity", type=float, default=20.0)
+    parser.add_argument("--fallback-movej-acceleration", type=float, default=20.0)
+    parser.add_argument(
         "--confirm",
         default="",
         help=f"must equal {CONFIRM_PHRASE} when --execute is used",
     )
     return parser.parse_args()
+
+
+def parse_ikin_sol_spaces(args: argparse.Namespace) -> list[int]:
+    raw_value = str(args.ikin_sol_spaces).strip()
+    if not raw_value:
+        return [int(args.ikin_sol_space)]
+    values = [int(part.strip()) for part in raw_value.split(",") if part.strip()]
+    if not values:
+        raise ValueError("--ikin-sol-spaces did not contain any solution spaces")
+    return values
 
 
 def main() -> int:
@@ -269,41 +297,68 @@ def main() -> int:
         assert node is not None
 
         if args.precheck_ikin:
+            try:
+                sol_spaces = parse_ikin_sol_spaces(args)
+            except ValueError as exc:
+                print(f"[BLOCKED] {exc}")
+                return 2
+
             response = None
+            selected_sol_space = None
+            last_failure = ""
             attempts = max(int(args.ikin_retries), 1)
             for attempt in range(1, attempts + 1):
-                req = Ikin.Request()
-                req.pos = pos_mm_deg
-                req.sol_space = int(args.ikin_sol_space)
-                req.ref = DR_BASE
-                try:
-                    response = call_service(
-                        node,
-                        Ikin,
-                        prefixed_service(args.service_prefix, "motion/ikin"),
-                        req,
-                        timeout_sec=max(args.ikin_timeout_sec, 0.1),
-                        label="Ikin",
-                    )
+                for sol_space in sol_spaces:
+                    req = Ikin.Request()
+                    req.pos = pos_mm_deg
+                    req.sol_space = int(sol_space)
+                    req.ref = DR_BASE
+                    try:
+                        candidate = call_service(
+                            node,
+                            Ikin,
+                            prefixed_service(args.service_prefix, "motion/ikin"),
+                            req,
+                            timeout_sec=max(args.ikin_timeout_sec, 0.1),
+                            label=f"Ikin sol_space={sol_space}",
+                        )
+                    except RuntimeError as exc:
+                        last_failure = str(exc)
+                        print(
+                            f"[WARN] Ikin attempt {attempt}/{attempts} "
+                            f"sol_space={sol_space} failed: {exc}"
+                        )
+                        continue
+                    if not candidate.success:
+                        last_failure = f"Ikin sol_space={sol_space} returned success=false"
+                        print(f"[WARN] {last_failure}")
+                        continue
+                    if len(candidate.conv_posj) >= 5:
+                        joint5 = float(candidate.conv_posj[4])
+                        if not float(args.j5_min_deg) <= joint5 <= float(args.j5_max_deg):
+                            last_failure = (
+                                f"Ikin sol_space={sol_space} predicted joint_5={joint5:.3f} deg outside "
+                                f"[{float(args.j5_min_deg):.3f}, {float(args.j5_max_deg):.3f}] deg"
+                            )
+                            print(f"[WARN] {last_failure}")
+                            continue
+                    response = candidate
+                    selected_sol_space = int(sol_space)
                     break
-                except RuntimeError as exc:
-                    if attempt >= attempts:
-                        raise
-                    print(f"[WARN] Ikin attempt {attempt}/{attempts} failed: {exc}; retrying")
+                if response is not None:
+                    break
+                if attempt < attempts:
                     time.sleep(1.0)
-            if not response.success:
-                print("[FAIL] Ikin returned success=false")
+            if response is None:
+                print("[FAIL] Ikin precheck failed for all configured solution spaces")
+                if last_failure:
+                    print(f"[FAIL] last failure: {last_failure}")
                 return 1
-            print("[Azas] Ikin precheck success: joints_deg=[" + ", ".join(f"{value:.1f}" for value in response.conv_posj) + "]")
-            if len(response.conv_posj) >= 5:
-                joint5 = float(response.conv_posj[4])
-                if not float(args.j5_min_deg) <= joint5 <= float(args.j5_max_deg):
-                    print(
-                        f"[BLOCKED] Ikin predicted joint_5={joint5:.3f} deg outside "
-                        f"[{float(args.j5_min_deg):.3f}, {float(args.j5_max_deg):.3f}] deg; "
-                        "refusing MoveLine."
-                    )
-                    return 2
+            print(
+                f"[Azas] Ikin precheck success: sol_space={selected_sol_space} joints_deg=["
+                + ", ".join(f"{value:.1f}" for value in response.conv_posj)
+                + "]"
+            )
 
         client = node.create_client(MoveLine, move_service)
         if not client.wait_for_service(timeout_sec=max(args.wait_service_sec, 0.1)):

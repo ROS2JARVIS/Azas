@@ -233,7 +233,6 @@ def run_movel(
     velocity: float,
     acceleration: float,
     rpy_deg: list[float],
-    fallback_movej: bool = True,
 ) -> None:
     cmd = [
         sys.executable, str(DIRECT_MOVEL),
@@ -258,12 +257,6 @@ def run_movel(
     ]
     if args.execute:
         cmd += ["--precheck-ikin", "--verify-target", "--execute", "--confirm", DIRECT_CONFIRM_PHRASE]
-        if fallback_movej:
-            cmd += [
-                "--fallback-movej-on-verify-fail",
-                "--fallback-movej-velocity", f"{min(max(velocity, 5.0), args.transit_velocity):.3f}",
-                "--fallback-movej-acceleration", f"{min(max(acceleration, 10.0), args.transit_acceleration):.3f}",
-            ]
     print(f"[Azas] MOVE {label}: xyz_m=[{xyz_m[0]:.3f}, {xyz_m[1]:.3f}, {xyz_m[2]:.3f}] vel={velocity:.1f}")
     rc = subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
     if rc != 0:

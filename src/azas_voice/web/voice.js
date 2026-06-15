@@ -26,6 +26,12 @@ const statAcidity = document.querySelector("#stat-acidity");
 const statStrength = document.querySelector("#stat-strength");
 const robotScene = document.querySelector("#robot-scene");
 const robotStatusText = document.querySelector("#robot-status-text");
+const visionCameraPanel = document.querySelector("#vision-camera-panel");
+const visionCameraTitle = document.querySelector("#vision-camera-title");
+const visionCameraBadge = document.querySelector("#vision-camera-badge");
+const visionCameraImage = document.querySelector("#vision-camera-image");
+const visionCameraEmpty = document.querySelector("#vision-camera-empty");
+const visionCameraDetail = document.querySelector("#vision-camera-detail");
 
 const INGREDIENTS = {
   red: { label: "주스", color: "#ff7e96" },
@@ -57,18 +63,52 @@ let catalogSignature = "";
 // 라우터 단계명(/azas/voice/pipeline_status의 stage) -> 진행 스텝 인덱스
 const STAGE_TO_STEP = {
   "디스펜서 색 스캔": 0,
+  "컵 자세 구분": 1,
   "컵 픽업 (세워진 컵)": 1,
   "컵 픽업 (쓰러진 컵)": 1,
   "디스펜서 레시피 진행": 2,
   "중단 지점 복구": 2,
   "뚜껑 체결 / 쉐이킹": 3,
-  "완료": 4,
+  "쉐이킹": 3,
+  "손 검출 / 핸드오버": 4,
+  "완료": 5,
+};
+
+const CUP_CAMERA_STAGES = new Set(["컵 자세 구분"]);
+
+const CAMERA_MODES = {
+  realsense: {
+    stream: "realsense",
+    title: "Realsense 실시간 화면",
+    badge: "실시간",
+    detail: "/camera/camera/color/image_raw",
+  },
+  cup: {
+    stream: "cup",
+    title: "컵 자세 검출",
+    badge: "upright / lying",
+    detail: "/azas/cup_detection + Realsense",
+  },
+  lid: {
+    stream: "lid",
+    title: "뚜껑 검출",
+    badge: "lid detection",
+    detail: "/azas/lid_detection + Realsense",
+  },
+  hand: {
+    stream: "hand",
+    title: "손 검출",
+    badge: "open palm",
+    detail: "/azas/human_hand_detection/overlay",
+  },
 };
 
 // 잔 내부(clip-path 기준): y 30~167, x 33~127
 const GLASS_TOP = 30;
 const GLASS_BOTTOM = 167;
 const FILL_RATIO = 0.86;
+let cupCameraHoldUntil = 0;
+let currentCameraStream = "";
 
 function amountsFromDecision(decision) {
   const amounts = {};
@@ -219,8 +259,15 @@ function renderRobot(activeIndex, pipeline, hasMenu) {
     robotStatusText.textContent = "완료";
     return;
   }
-  const stepNames = ["scan", "pick", "dispense", "shake", "done"];
-  const statusText = ["디스펜서 색 스캔", "컵 픽업", "디스펜서 토출", "뚜껑 체결 / 쉐이킹", "완료"];
+  const stepNames = ["scan", "pick", "dispense", "shake", "handover", "done"];
+  const statusText = [
+    "디스펜서 색 스캔",
+    "컵 픽업",
+    "디스펜서 토출",
+    "뚜껑 체결 / 쉐이킹",
+    "손 검출 / 핸드오버",
+    "완료",
+  ];
   const index = activeIndex >= 0 ? activeIndex : 0;
   robotScene.dataset.step = stepNames[Math.min(index, stepNames.length - 1)];
   robotStatusText.textContent = pipeline.stage || statusText[Math.min(index, statusText.length - 1)];
@@ -358,6 +405,55 @@ function renderMenu(state) {
   } else {
     setBadge("recommended", "추천 메뉴 · \"응\" 하시면 시작해요");
   }
+}
+
+function selectCameraMode(state) {
+  const pipeline = state.pipeline_status || {};
+  const status = pipeline.status || "";
+  const stage = String(pipeline.stage || "");
+  const now = Date.now();
+
+  if (status === "running" && CUP_CAMERA_STAGES.has(stage)) {
+    cupCameraHoldUntil = now + 2000;
+    return CAMERA_MODES.cup;
+  }
+  if (status === "running" && stage === "뚜껑 체결 / 쉐이킹") {
+    return CAMERA_MODES.lid;
+  }
+  if (status === "running" && stage === "손 검출 / 핸드오버") {
+    return CAMERA_MODES.hand;
+  }
+  if (cupCameraHoldUntil > now) {
+    return CAMERA_MODES.cup;
+  }
+  return CAMERA_MODES.realsense;
+}
+
+function renderVisionCamera(state) {
+  if (!visionCameraPanel) return;
+
+  const mode = selectCameraMode(state);
+  const cameraStatus = state.camera_status || {};
+  const frames = cameraStatus.frames || {};
+  const sourceAvailable =
+    mode.stream === "hand" ? Boolean(frames.hand || frames.realsense) : Boolean(frames.realsense);
+
+  visionCameraTitle.textContent = mode.title;
+  visionCameraBadge.textContent = mode.badge;
+  visionCameraBadge.dataset.stream = mode.stream;
+  visionCameraDetail.textContent = mode.detail;
+  visionCameraEmpty.hidden = sourceAvailable;
+  visionCameraImage.hidden = !sourceAvailable;
+
+  if (!sourceAvailable) {
+    currentCameraStream = "";
+    visionCameraImage.removeAttribute("src");
+    return;
+  }
+
+  const nextSrc = `/api/camera/${mode.stream}.jpg?t=${Date.now()}`;
+  currentCameraStream = mode.stream;
+  visionCameraImage.src = nextSrc;
 }
 
 let analyser = null;
@@ -529,6 +625,7 @@ async function refreshState() {
   intent.textContent = decision.intent || "대기";
   confirmed.textContent = confirmedDecision.confirmed ? "확정됨" : "대기";
   renderMenu(state);
+  renderVisionCamera(state);
 }
 
 async function postUtterance(text) {
@@ -563,6 +660,14 @@ testForm.addEventListener("submit", async (event) => {
     await refreshState();
   } catch (error) {
     azasText.textContent = error.message || String(error);
+  }
+});
+
+visionCameraImage.addEventListener("error", () => {
+  visionCameraImage.hidden = true;
+  visionCameraEmpty.hidden = false;
+  if (currentCameraStream) {
+    visionCameraEmpty.textContent = `${currentCameraStream} 프레임 대기`;
   }
 });
 
