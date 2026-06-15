@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import rclpy
-from dsr_msgs2.srv import GetCurrentPosx, GetLastAlarm, Ikin, MoveLine
+from dsr_msgs2.srv import CheckMotion, GetCurrentPosx, GetLastAlarm, Ikin, MoveJoint, MoveLine, MoveWait
 
 
 DR_BASE = 0
@@ -173,6 +173,109 @@ def wait_for_target(
     return False
 
 
+def check_target_once(
+    node: Any,
+    prefix: str,
+    target_pos_mm_deg: list[float],
+    *,
+    tolerance_mm: float,
+) -> bool:
+    actual = current_posx(node, prefix, timeout_sec=5.0)
+    distance = xyz_distance_mm(actual, target_pos_mm_deg)
+    print(
+        "[Azas] verify xyz="
+        f"[{actual[0]:.1f}, {actual[1]:.1f}, {actual[2]:.1f}] "
+        f"target=[{target_pos_mm_deg[0]:.1f}, {target_pos_mm_deg[1]:.1f}, {target_pos_mm_deg[2]:.1f}] "
+        f"distance={distance:.1f}mm tolerance={tolerance_mm:.1f}mm"
+    )
+    return distance <= tolerance_mm
+
+
+def wait_until_motion_done(node: Any, prefix: str, timeout_sec: float) -> tuple[bool, str]:
+    """Wait until the Doosan controller finishes the accepted MoveLine command."""
+    timeout_sec = max(timeout_sec, 0.1)
+    move_wait_name = prefixed_service(prefix, "motion/move_wait")
+    move_wait_client = node.create_client(MoveWait, move_wait_name)
+    if move_wait_client.wait_for_service(timeout_sec=1.0):
+        future = move_wait_client.call_async(MoveWait.Request())
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_sec)
+        if not future.done():
+            return False, f"MoveWait timeout after {timeout_sec:.1f}s"
+        if future.exception() is not None:
+            return False, f"MoveWait exception: {future.exception()}"
+        response = future.result()
+        if response is None:
+            return False, "MoveWait returned no response"
+        if not bool(getattr(response, "success", True)):
+            return False, f"MoveWait returned success=false: {response}"
+        return True, "MoveWait completed"
+
+    check_name = prefixed_service(prefix, "motion/check_motion")
+    check_client = node.create_client(CheckMotion, check_name)
+    if not check_client.wait_for_service(timeout_sec=1.0):
+        return False, f"neither MoveWait nor CheckMotion is available: {move_wait_name}, {check_name}"
+
+    future = check_client.call_async(CheckMotion.Request())
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_sec)
+    if not future.done():
+        return False, f"CheckMotion timeout after {timeout_sec:.1f}s"
+    if future.exception() is not None:
+        return False, f"CheckMotion exception: {future.exception()}"
+    response = future.result()
+    status = int(getattr(response, "status", -1))
+    success = bool(getattr(response, "success", True))
+    if success and status == 0:
+        return True, "CheckMotion status=0"
+    return False, f"CheckMotion not complete: status={status} success={success}"
+
+
+def run_movej_fallback(
+    node: Any,
+    prefix: str,
+    joints_deg: list[float],
+    *,
+    velocity: float,
+    acceleration: float,
+    wait_service_sec: float,
+    timeout_sec: float,
+) -> bool:
+    service = prefixed_service(prefix, "motion/move_joint")
+    client = node.create_client(MoveJoint, service)
+    if not client.wait_for_service(timeout_sec=max(wait_service_sec, 0.1)):
+        print(f"[FAIL] MoveJoint fallback service not available: {service}")
+        return False
+    req = MoveJoint.Request()
+    req.pos = joints_deg
+    req.vel = float(velocity)
+    req.acc = float(acceleration)
+    req.time = 0.0
+    req.radius = 0.0
+    req.mode = MOVE_MODE_ABSOLUTE
+    req.blend_type = BLENDING_SPEED_TYPE_DUPLICATE
+    req.sync_type = SYNC
+    print(
+        "[Azas] MoveJoint fallback target joints_deg=["
+        + ", ".join(f"{value:.1f}" for value in joints_deg)
+        + f"] vel={velocity:.1f} acc={acceleration:.1f}"
+    )
+    future = client.call_async(req)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=max(timeout_sec, 0.1))
+    if not future.done():
+        print(f"[FAIL] MoveJoint fallback response timeout after {timeout_sec:.1f}s")
+        return False
+    if future.exception() is not None:
+        print(f"[FAIL] MoveJoint fallback exception: {future.exception()}")
+        return False
+    response = future.result()
+    if response is None or not response.success:
+        print("[FAIL] MoveJoint fallback returned success=false")
+        return False
+    print("[PASS] MoveJoint fallback accepted by service")
+    done, wait_output = wait_until_motion_done(node, prefix, timeout_sec=timeout_sec)
+    print(f"[Azas] MoveJoint fallback completion wait: {wait_output}")
+    return done
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Move directly to one supplied XYZ/RPY target via Doosan MoveLine."
@@ -216,8 +319,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--service-prefix", default="", help="optional namespace before /motion/move_line")
     parser.add_argument("--velocity", type=float, default=20.0, help="line velocity")
     parser.add_argument("--acceleration", type=float, default=20.0, help="line acceleration")
+    parser.add_argument(
+        "--fallback-movej-on-verify-fail",
+        action="store_true",
+        help="if MoveLine accepts but target verification fails, move to the accepted IK joint target with MoveJoint",
+    )
+    parser.add_argument("--fallback-movej-velocity", type=float, default=25.0)
+    parser.add_argument("--fallback-movej-acceleration", type=float, default=35.0)
     parser.add_argument("--timeout-sec", type=float, default=10.0, help="service response timeout")
     parser.add_argument("--wait-service-sec", type=float, default=5.0, help="service availability timeout")
+    parser.add_argument(
+        "--motion-timeout-sec",
+        type=float,
+        default=90.0,
+        help="time to wait until the robot reports motion complete after MoveLine is accepted",
+    )
+    parser.add_argument(
+        "--no-wait-motion",
+        action="store_true",
+        help="return/verify immediately after MoveLine is accepted",
+    )
     parser.add_argument("--x-min", type=float, default=0.10)
     parser.add_argument("--x-max", type=float, default=0.70)
     parser.add_argument("--y-min", type=float, default=-0.45)
@@ -298,6 +419,7 @@ def main() -> int:
 
         assert node is not None
 
+        accepted_ikin_joints = None
         if args.precheck_ikin:
             attempts = max(int(args.ikin_retries), 1)
             sol_spaces = parse_int_list(args.ikin_sol_spaces) if args.ikin_sol_spaces else [int(args.ikin_sol_space)]
@@ -354,6 +476,7 @@ def main() -> int:
                         print(f"[WARN] {last_ikin_error}; trying next solution space")
                         continue
                 accepted_ikin = (sol_space, normalized_joints)
+                accepted_ikin_joints = normalized_joints
                 break
             if accepted_ikin is None:
                 if last_ikin_error:
@@ -407,14 +530,57 @@ def main() -> int:
             print("[FAIL] MoveLine returned success=false")
             return 1
         print("[PASS] MoveLine accepted by service")
-        if args.verify_target and not wait_for_target(
-            node,
-            args.service_prefix,
-            pos_mm_deg,
-            tolerance_mm=max(args.target_tolerance_mm, 0.1),
-            timeout_sec=max(args.verify_timeout_sec, 0.1),
-        ):
-            return 1
+        if not args.no_wait_motion:
+            done, wait_output = wait_until_motion_done(
+                node,
+                args.service_prefix,
+                timeout_sec=float(args.motion_timeout_sec),
+            )
+            print(f"[Azas] motion completion wait: {wait_output}")
+            if not done:
+                return 1
+        if args.verify_target:
+            tolerance_mm = max(args.target_tolerance_mm, 0.1)
+            if args.fallback_movej_on_verify_fail and accepted_ikin_joints is not None:
+                try:
+                    reached = check_target_once(
+                        node,
+                        args.service_prefix,
+                        pos_mm_deg,
+                        tolerance_mm=tolerance_mm,
+                    )
+                except RuntimeError as exc:
+                    print(f"[WARN] immediate target verification failed: {exc}")
+                    reached = False
+            else:
+                reached = wait_for_target(
+                    node,
+                    args.service_prefix,
+                    pos_mm_deg,
+                    tolerance_mm=tolerance_mm,
+                    timeout_sec=max(args.verify_timeout_sec, 0.1),
+                )
+            if not reached:
+                if args.fallback_movej_on_verify_fail and accepted_ikin_joints is not None:
+                    print("[WARN] MoveLine accepted but target is not reached; trying MoveJoint IK fallback now")
+                    if run_movej_fallback(
+                        node,
+                        args.service_prefix,
+                        accepted_ikin_joints,
+                        velocity=float(args.fallback_movej_velocity),
+                        acceleration=float(args.fallback_movej_acceleration),
+                        wait_service_sec=float(args.wait_service_sec),
+                        timeout_sec=float(args.motion_timeout_sec),
+                    ) and wait_for_target(
+                        node,
+                        args.service_prefix,
+                        pos_mm_deg,
+                        tolerance_mm=tolerance_mm,
+                        timeout_sec=max(args.verify_timeout_sec, 0.1),
+                    ):
+                        print("[PASS] target reached after MoveJoint IK fallback")
+                        return 0
+                return 1
         return 0
     except RuntimeError as exc:
         print(f"[FAIL] {exc}")
