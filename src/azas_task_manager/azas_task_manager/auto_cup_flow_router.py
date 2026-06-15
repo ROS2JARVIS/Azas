@@ -539,6 +539,14 @@ class AutoCupFlowRouter(Node):
         self.get_logger().info(f"route=side_grasp: launching existing side grasp flow ({decision.status})")
         helpers = self._start_side_grasp_support_processes()
         cmd = self._launch_command(str(self.get_parameter("side_launch").value))
+        configured_axes = str(self.get_parameter("side_candidate_axes").value or "y").strip()
+        if configured_axes != "y":
+            self.get_logger().warn(
+                f"side_candidate_axes={configured_axes!r} requested, but side grasp is locked to Y-axis only"
+            )
+        side_y_tool_roll_candidates = str(
+            self.get_parameter("side_y_tool_roll_candidates_deg").value or "configured"
+        ).strip() or "configured"
         cmd.extend([
             "auto_pick:=true",
             "grasp_mode:=side",
@@ -549,13 +557,10 @@ class AutoCupFlowRouter(Node):
             "side_tcp_stage_offset_m:=0.200",
             "side_tcp_pre_offset_m:=0.100",
             "side_tcp_close_offset_m:=0.055",
-            f"side_candidate_axes:={self.get_parameter('side_candidate_axes').value}",
+            "side_candidate_axes:=y",
             f"side_secondary_axis_score_penalty_m:={float(self.get_parameter('side_secondary_axis_score_penalty_m').value)}",
-            f"side_joint_seed_candidates_enabled:={str(self._bool_launch_arg(self.get_parameter('side_joint_seed_candidates_enabled').value)).lower()}",
-            f"side_joint_seed_offsets_deg:={self.get_parameter('side_joint_seed_offsets_deg').value}",
-            f"side_joint_seed_positions_deg:={self.get_parameter('side_joint_seed_positions_deg').value}",
-            f"side_y_tool_roll_candidates_deg:={self.get_parameter('side_y_tool_roll_candidates_deg').value}",
-            f"side_x_tool_roll_candidates_deg:={self.get_parameter('side_x_tool_roll_candidates_deg').value}",
+            "side_joint_seed_candidates_enabled:=false",
+            f"side_y_tool_roll_candidates_deg:={side_y_tool_roll_candidates}",
             f"side_tool_roll_score_penalty_m:={float(self.get_parameter('side_tool_roll_score_penalty_m').value)}",
             f"side_cup_collision_enabled:={str(self._bool_launch_arg(self.get_parameter('side_cup_collision_enabled').value)).lower()}",
             f"side_cup_collision_radius_m:={float(self.get_parameter('side_cup_collision_radius_m').value)}",
