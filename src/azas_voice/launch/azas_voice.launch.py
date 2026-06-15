@@ -54,9 +54,13 @@ def generate_launch_description():
                 default_value="원하는 맛을 말씀해주시면 추천해드릴게요. 주문하시겠어요?",
             ),
             DeclareLaunchArgument("enable_llm", default_value="false"),
+            DeclareLaunchArgument("llm_provider", default_value="openai_chat"),
             DeclareLaunchArgument("llm_model", default_value="gpt-4o-mini"),
             DeclareLaunchArgument("llm_base_url", default_value="https://api.openai.com/v1"),
             DeclareLaunchArgument("llm_api_key_env", default_value="OPENAI_API_KEY"),
+            DeclareLaunchArgument("elevenlabs_agent_id_env", default_value="ELEVENLABS_AGENT_ID"),
+            DeclareLaunchArgument("elevenlabs_language", default_value="ko"),
+            DeclareLaunchArgument("elevenlabs_new_turns_limit", default_value="2"),
             DeclareLaunchArgument("llm_request_timeout_sec", default_value="20.0"),
             DeclareLaunchArgument("stt_topic", default_value="/stt_result"),
             DeclareLaunchArgument("stt_language", default_value="ko-KR"),
@@ -87,9 +91,15 @@ def generate_launch_description():
                     {
                         "stt_topic": stt_topic,
                         "enable_llm": ParameterValue(LaunchConfiguration("enable_llm"), value_type=bool),
+                        "provider": LaunchConfiguration("llm_provider"),
                         "model": LaunchConfiguration("llm_model"),
                         "base_url": LaunchConfiguration("llm_base_url"),
                         "api_key_env": LaunchConfiguration("llm_api_key_env"),
+                        "elevenlabs_agent_id_env": LaunchConfiguration("elevenlabs_agent_id_env"),
+                        "elevenlabs_language": LaunchConfiguration("elevenlabs_language"),
+                        "elevenlabs_new_turns_limit": ParameterValue(
+                            LaunchConfiguration("elevenlabs_new_turns_limit"), value_type=int
+                        ),
                         "request_timeout_sec": ParameterValue(
                             LaunchConfiguration("llm_request_timeout_sec"), value_type=float
                         ),

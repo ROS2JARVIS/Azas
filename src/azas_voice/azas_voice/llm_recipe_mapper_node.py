@@ -1,6 +1,6 @@
 import json
 import os
-from urllib import request
+from urllib import error, request
 
 try:
     import rclpy
@@ -32,6 +32,8 @@ ALLOWED_INTENTS = {
     "clear_recovery",
     "unknown",
 }
+OPENAI_CHAT_PROVIDERS = {"openai", "openai_chat", "chat_completions"}
+ELEVENLABS_AGENT_PROVIDERS = {"elevenlabs", "elevenlabs_agent", "elevenlabs_convai"}
 ALLOWED_CUSTOM_RECIPE_IDS = {"custom_color_selection", "custom_preference_mix"}
 DISPENSER_NUMBER_TO_COLOR = {
     "1": "red",
@@ -40,6 +42,22 @@ DISPENSER_NUMBER_TO_COLOR = {
     "4": "blue",
 }
 ALLOWED_TRAITS = set().union(*DISPENSER_TRAITS.values())
+RECIPE_JSON_INSTRUCTIONS = (
+    "Return only JSON for Azas cocktail intent parsing. "
+    "Allowed fields: valid, intent, recipe_id, dispenser_ids, confirmation, wanted_traits, avoided_traits. "
+    "Allowed intents: make_cocktail, confirm, cancel, resume_flow, restart_flow, recheck_recovery, clear_recovery, unknown. "
+    "For descriptive preference or recommendation requests, extract wanted_traits and avoided_traits instead of calculating amounts. "
+    "Allowed traits: sweetness, fruitiness, freshness, aroma, alcohol, bitterness, softness, light, depth, herbal. "
+    "Examples of preferences: not too strong, light, easy to drink, rich aroma, sweet, not sweet, fruity. "
+    "For a plain recommendation with no preferences, choose one of these recipe_id values: "
+    f"{', '.join(RECIPE_DISPENSERS)}. "
+    "Only choose a catalog recipe when the user explicitly asks for a numbered/named menu or gives no preferences. "
+    "Allowed dispenser_ids values: red, yellow, green, blue only. "
+    "For recovery commands such as 이어서 해줘, 복구 다시 확인, 처음부터 다시, or 복구 기록 초기화, "
+    "use intents resume_flow, recheck_recovery, restart_flow, or clear_recovery. "
+    "Do not output dispenser_amounts; the application calculates amounts from traits. "
+    "Never output robot coordinates, calibration values, trajectories, or safety approvals."
+)
 
 
 def _normalize_dispenser_id(value: object) -> str:
@@ -225,6 +243,94 @@ def _sanitize_llm_decision(text: str, payload: dict) -> RecipeDecision:
     )
 
 
+def _strip_markdown_json_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) >= 3 and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
+def _json_object_from_text(text: object) -> dict:
+    if isinstance(text, dict):
+        return text
+    if text is None:
+        raise ValueError("empty recipe payload")
+    raw = _strip_markdown_json_fence(str(text))
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(raw):
+            if char != "{":
+                continue
+            try:
+                payload, _ = decoder.raw_decode(raw[index:])
+                break
+            except json.JSONDecodeError:
+                continue
+        else:
+            raise ValueError("no JSON object found in model response")
+    if not isinstance(payload, dict):
+        raise ValueError("recipe payload is not a JSON object")
+    return payload
+
+
+def _extract_elevenlabs_recipe_payload(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("ElevenLabs response is not a JSON object")
+    if "intent" in payload or "recipe_id" in payload:
+        return payload
+
+    analysis = payload.get("analysis")
+    if isinstance(analysis, dict):
+        for result in analysis.get("data_collection_results_list", []) or []:
+            if isinstance(result, dict) and result.get("value") is not None:
+                try:
+                    return _json_object_from_text(result.get("value"))
+                except ValueError:
+                    pass
+        data_results = analysis.get("data_collection_results")
+        if isinstance(data_results, dict):
+            for value in data_results.values():
+                try:
+                    return _json_object_from_text(value)
+                except ValueError:
+                    pass
+
+    conversation = payload.get("simulated_conversation", [])
+    if isinstance(conversation, list):
+        for turn in reversed(conversation):
+            if not isinstance(turn, dict):
+                continue
+            for key in ("message", "original_message"):
+                if turn.get(key):
+                    try:
+                        return _json_object_from_text(turn[key])
+                    except ValueError:
+                        pass
+            multivoice = turn.get("multivoice_message")
+            if isinstance(multivoice, dict):
+                parts = multivoice.get("parts", [])
+                if isinstance(parts, list):
+                    for part in reversed(parts):
+                        if isinstance(part, dict) and part.get("text"):
+                            try:
+                                return _json_object_from_text(part["text"])
+                            except ValueError:
+                                pass
+            for result in turn.get("tool_results", []) or []:
+                if isinstance(result, dict) and result.get("result_value"):
+                    try:
+                        return _json_object_from_text(result["result_value"])
+                    except ValueError:
+                        pass
+
+    raise ValueError("no recipe JSON found in ElevenLabs response")
+
+
 class LlmRecipeMapperNode(Node):
     """Map STT text to symbolic recipe decisions with an optional LLM.
 
@@ -239,9 +345,13 @@ class LlmRecipeMapperNode(Node):
         self.declare_parameter("decision_topic", "/azas/voice/recipe_decision")
         self.declare_parameter("confirmation_topic", "/azas/voice/confirmation")
         self.declare_parameter("enable_llm", False)
+        self.declare_parameter("provider", "openai_chat")
         self.declare_parameter("api_key_env", "OPENAI_API_KEY")
         self.declare_parameter("base_url", "https://api.openai.com/v1")
         self.declare_parameter("model", "gpt-4o-mini")
+        self.declare_parameter("elevenlabs_agent_id_env", "ELEVENLABS_AGENT_ID")
+        self.declare_parameter("elevenlabs_language", "ko")
+        self.declare_parameter("elevenlabs_new_turns_limit", 2)
         self.declare_parameter("request_timeout_sec", 8.0)
         self.declare_parameter("publish_confirmation", True)
 
@@ -265,6 +375,7 @@ class LlmRecipeMapperNode(Node):
         self.get_logger().info(
             "LLM recipe mapper ready: "
             f"enable_llm={bool(self.get_parameter('enable_llm').value)} "
+            f"provider={self.get_parameter('provider').value} "
             f"stt_topic={self.get_parameter('stt_topic').value}"
         )
 
@@ -288,14 +399,23 @@ class LlmRecipeMapperNode(Node):
         if not bool(self.get_parameter("enable_llm").value):
             return parse_recipe_command(text)
 
-        api_key = os.environ.get(str(self.get_parameter("api_key_env").value), "").strip()
+        provider = str(self.get_parameter("provider").value).strip().lower()
+        api_key_env = str(self.get_parameter("api_key_env").value).strip()
+        if provider in ELEVENLABS_AGENT_PROVIDERS and api_key_env == "OPENAI_API_KEY":
+            api_key_env = "ELEVENLABS_API_KEY"
+        api_key = os.environ.get(api_key_env, "").strip()
         if not api_key:
-            return _fallback_decision(text, "missing_api_key")
+            return _fallback_decision(text, f"missing_api_key:{api_key_env}")
 
         try:
-            payload = self._call_chat_api(text, api_key)
-            content = payload["choices"][0]["message"]["content"]
-            return _sanitize_llm_decision(text, json.loads(content))
+            if provider in OPENAI_CHAT_PROVIDERS:
+                payload = self._call_chat_api(text, api_key)
+                content = payload["choices"][0]["message"]["content"]
+                return _sanitize_llm_decision(text, _json_object_from_text(content))
+            if provider in ELEVENLABS_AGENT_PROVIDERS:
+                payload = self._call_elevenlabs_agent_api(text, api_key)
+                return _sanitize_llm_decision(text, _extract_elevenlabs_recipe_payload(payload))
+            return _fallback_decision(text, f"unsupported_provider:{provider}")
         except Exception as exc:
             self.get_logger().warn(f"LLM mapping failed; using deterministic parser: {exc}")
             return _fallback_decision(text, exc.__class__.__name__)
@@ -307,22 +427,7 @@ class LlmRecipeMapperNode(Node):
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "Return only JSON for Azas cocktail intent parsing. "
-                        "Allowed fields: valid, intent, recipe_id, dispenser_ids, confirmation, wanted_traits, avoided_traits. "
-                        "Allowed intents: make_cocktail, confirm, cancel, unknown. "
-                        "For descriptive preference or recommendation requests, extract wanted_traits and avoided_traits instead of calculating amounts. "
-                        "Allowed traits: sweetness, fruitiness, freshness, aroma, alcohol, bitterness, softness, light, depth, herbal. "
-                        "Examples of preferences: not too strong, light, easy to drink, rich aroma, sweet, not sweet, fruity. "
-                        "For a plain recommendation with no preferences, choose one of these recipe_id values: "
-                        f"{', '.join(RECIPE_DISPENSERS)}. "
-                        "Only choose a catalog recipe when the user explicitly asks for a numbered/named menu or gives no preferences. "
-                        "Allowed dispenser_ids values: red, yellow, green, blue only. "
-                        "For recovery commands such as 이어서 해줘, 복구 다시 확인, 처음부터 다시, or 복구 기록 초기화, "
-                        "use intents resume_flow, recheck_recovery, restart_flow, or clear_recovery. "
-                        "Do not output dispenser_amounts; the application calculates amounts from traits. "
-                        "Never output robot coordinates, calibration values, trajectories, or safety approvals."
-                    ),
+                    "content": RECIPE_JSON_INSTRUCTIONS,
                 },
                 {"role": "user", "content": text},
             ],
@@ -342,6 +447,53 @@ class LlmRecipeMapperNode(Node):
         timeout = float(self.get_parameter("request_timeout_sec").value)
         with request.urlopen(req, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    def _call_elevenlabs_agent_api(self, text: str, api_key: str) -> dict:
+        agent_id_env = str(self.get_parameter("elevenlabs_agent_id_env").value).strip()
+        agent_id = os.environ.get(agent_id_env, "").strip()
+        if not agent_id:
+            raise ValueError(f"missing {agent_id_env}")
+
+        base_url = str(self.get_parameter("base_url").value).rstrip("/")
+        if base_url == "https://api.openai.com/v1":
+            base_url = "https://api.elevenlabs.io/v1"
+        language = str(self.get_parameter("elevenlabs_language").value).strip() or "ko"
+        try:
+            new_turns_limit = max(1, int(self.get_parameter("elevenlabs_new_turns_limit").value))
+        except (TypeError, ValueError):
+            new_turns_limit = 2
+        user_message = (
+            f"{RECIPE_JSON_INSTRUCTIONS}\n\n"
+            "Customer utterance follows. Interpret only this customer utterance:\n"
+            f"{text}"
+        )
+        body = {
+            "simulation_specification": {
+                "simulated_user_config": {
+                    "first_message": user_message,
+                    "language": language,
+                    "disable_first_message_interruptions": True,
+                }
+            },
+            "new_turns_limit": new_turns_limit,
+        }
+        data = json.dumps(body).encode("utf-8")
+        req = request.Request(
+            f"{base_url}/convai/agents/{agent_id}/simulate-conversation",
+            data=data,
+            headers={
+                "xi-api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        timeout = float(self.get_parameter("request_timeout_sec").value)
+        try:
+            with request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"ElevenLabs HTTP {exc.code}: {detail}") from exc
 
 
 def main(args=None):
