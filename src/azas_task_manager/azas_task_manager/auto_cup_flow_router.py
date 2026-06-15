@@ -88,6 +88,16 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("side_target_x_offset_m", -0.02)
         self.declare_parameter("side_trajectory_execution_duration_scaling", 3.0)
         self.declare_parameter("side_trajectory_execution_goal_margin_sec", 3.0)
+        self.declare_parameter("side_cup_collision_enabled", True)
+        self.declare_parameter("side_cup_collision_radius_m", 0.045)
+        self.declare_parameter("side_cup_collision_height_m", 0.120)
+        self.declare_parameter("side_cup_collision_padding_m", 0.015)
+        self.declare_parameter("side_lid_collision_enabled", True)
+        self.declare_parameter("side_lid_collision_radius_m", 0.055)
+        self.declare_parameter("side_lid_collision_height_m", 0.025)
+        self.declare_parameter("side_lid_collision_padding_m", 0.010)
+        self.declare_parameter("side_cup_collision_clear_before_close", True)
+        self.declare_parameter("side_cup_collision_update_wait_sec", 0.15)
 
         self.declare_parameter("color_scan_at_start", True)
         self.declare_parameter(
@@ -536,6 +546,12 @@ class AutoCupFlowRouter(Node):
                 parts.append(f"{key}={value}")
         return "  ".join(parts) if parts else status[:120]
 
+    @staticmethod
+    def _bool_launch_arg(value) -> bool:
+        if isinstance(value, str):
+            return str(value).strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
     def _run_side_grasp(self, decision: RouteDecision) -> bool:
         self.get_logger().info(f"route=side_grasp: launching existing side grasp flow ({decision.status})")
         helpers = self._start_side_grasp_support_processes()
@@ -543,6 +559,15 @@ class AutoCupFlowRouter(Node):
         cmd.extend([
             "auto_pick:=true",
             "grasp_mode:=side",
+            "motion_link:=gripper_tcp",
+            "camera_reference_link:=link_6",
+            "side_tcp_compensation_enabled:=true",
+            "side_tcp_reach_m:=0.213",
+            "side_tcp_stage_offset_m:=0.200",
+            "side_tcp_pre_offset_m:=0.100",
+            "side_tcp_close_offset_m:=0.055",
+            "side_candidate_axes:=y_axis",
+            "side_grasp_axis:=y_axis",
             "exit_after_pick:=true",
             "move_to_camera_home:=false",
             "skip_initial_home_move:=true",
@@ -565,7 +590,17 @@ class AutoCupFlowRouter(Node):
             "side_move_to_initial_center_before_close:=false",
             "side_linear_approach_enabled:=true",
             "side_low_retry_lift_m:=0.03",
-            "side_low_retry_attempts:=5",
+            "side_low_retry_attempts:=0",
+            f"side_cup_collision_enabled:={str(self._bool_launch_arg(self.get_parameter('side_cup_collision_enabled').value)).lower()}",
+            f"side_cup_collision_radius_m:={float(self.get_parameter('side_cup_collision_radius_m').value)}",
+            f"side_cup_collision_height_m:={float(self.get_parameter('side_cup_collision_height_m').value)}",
+            f"side_cup_collision_padding_m:={float(self.get_parameter('side_cup_collision_padding_m').value)}",
+            f"side_lid_collision_enabled:={str(self._bool_launch_arg(self.get_parameter('side_lid_collision_enabled').value)).lower()}",
+            f"side_lid_collision_radius_m:={float(self.get_parameter('side_lid_collision_radius_m').value)}",
+            f"side_lid_collision_height_m:={float(self.get_parameter('side_lid_collision_height_m').value)}",
+            f"side_lid_collision_padding_m:={float(self.get_parameter('side_lid_collision_padding_m').value)}",
+            f"side_cup_collision_clear_before_close:={str(self._bool_launch_arg(self.get_parameter('side_cup_collision_clear_before_close').value)).lower()}",
+            f"side_cup_collision_update_wait_sec:={float(self.get_parameter('side_cup_collision_update_wait_sec').value)}",
             "workspace_xy_clamp_enabled:=false",
             "table_collision_enabled:=true",
             "workspace_collision_scene_enabled:=false",

@@ -28,7 +28,8 @@ from .onrobot import RG
 
 GROUP_NAME = "manipulator"
 BASE_FRAME = "base_link"
-EE_LINK = "link_6"
+DEFAULT_MOTION_LINK = "gripper_tcp"
+DEFAULT_CAMERA_REFERENCE_LINK = "link_6"
 
 HOME_JOINTS = {
     "joint_1": math.radians(0.0),
@@ -92,6 +93,14 @@ class SideGraspPlan:
     place_approach_z: float
     side_direction: float
     close_backoff_m: float
+    stage_offset_m: float
+    pre_offset_m: float
+    guarded_offset_m: float
+    detected_cup_xyz: np.ndarray | None = None
+    target_offset_xy: np.ndarray | None = None
+    tcp_compensated: bool = False
+    legacy_stage_offset_m: float = 0.0
+    legacy_guarded_offset_m: float = 0.0
     score: float = 0.0
 
 
@@ -193,15 +202,15 @@ def quat_dict_from_euler(roll_deg, pitch_deg, yaw_deg):
     }
 
 
-def get_ee_matrix(moveit_robot):
+def get_link_matrix(moveit_robot, link_name):
     psm = moveit_robot.get_planning_scene_monitor()
     with psm.read_only() as scene:
-        transform = scene.current_state.get_global_link_transform(EE_LINK)
+        transform = scene.current_state.get_global_link_transform(link_name)
     return np.asarray(transform, dtype=float)
 
 
-def get_ee_matrix_from_robot_state(robot_state):
-    transform = robot_state.get_global_link_transform(EE_LINK)
+def get_link_matrix_from_robot_state(robot_state, link_name):
+    transform = robot_state.get_global_link_transform(link_name)
     return np.asarray(transform, dtype=float)
 
 
@@ -227,8 +236,16 @@ class YoloCupPickNode(Node):
         self.declare_parameter("redetect_on_approach", True)
         self.declare_parameter("redetect_settle_sec", 0.5)
         self.declare_parameter("grasp_mode", "side")
+        self.declare_parameter("motion_link", DEFAULT_MOTION_LINK)
+        self.declare_parameter("camera_reference_link", DEFAULT_CAMERA_REFERENCE_LINK)
+        self.declare_parameter("side_tcp_compensation_enabled", True)
+        self.declare_parameter("side_tcp_reach_m", 0.213)
+        self.declare_parameter("side_tcp_stage_offset_m", 0.120)
+        self.declare_parameter("side_tcp_pre_offset_m", 0.100)
+        self.declare_parameter("side_tcp_close_offset_m", 0.055)
         dynamic_param = ParameterDescriptor(dynamic_typing=True)
         self.declare_parameter("side_grasp_axis", "y_axis", dynamic_param)
+        self.declare_parameter("side_candidate_axes", "y", dynamic_param)
         self.declare_parameter("side_grasp_direction", 1.0)
         self.declare_parameter("side_approach_offset", 0.16)
         self.declare_parameter("side_staging_offset", 0.30)
@@ -242,14 +259,26 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_grasp_stop_backoff_m", 0.04)
         self.declare_parameter("side_close_underreach_m", 0.03)
         self.declare_parameter("side_low_retry_lift_m", 0.03)
-        self.declare_parameter("side_low_retry_attempts", 5)
+        self.declare_parameter("side_low_retry_attempts", 0)
         self.declare_parameter("side_auto_direction_by_cup_y", False)
         self.declare_parameter("side_candidate_plan_check_enabled", True)
         self.declare_parameter("side_linear_approach_enabled", True)
         self.declare_parameter("side_final_slide_enabled", False)
-        self.declare_parameter("side_fixed_grasp_z_enabled", False)
+        self.declare_parameter("side_fixed_grasp_z_enabled", True)
         self.declare_parameter("side_fixed_grasp_z", 0.07)
         self.declare_parameter("side_project_bbox_center_to_fixed_z", True)
+        self.declare_parameter("side_cup_collision_enabled", True)
+        self.declare_parameter("side_cup_collision_id", "side_grip_detected_cup")
+        self.declare_parameter("side_cup_collision_radius_m", 0.045)
+        self.declare_parameter("side_cup_collision_height_m", 0.120)
+        self.declare_parameter("side_cup_collision_padding_m", 0.015)
+        self.declare_parameter("side_lid_collision_enabled", True)
+        self.declare_parameter("side_lid_collision_id", "side_grip_detected_lid")
+        self.declare_parameter("side_lid_collision_radius_m", 0.055)
+        self.declare_parameter("side_lid_collision_height_m", 0.025)
+        self.declare_parameter("side_lid_collision_padding_m", 0.010)
+        self.declare_parameter("side_cup_collision_clear_before_close", True)
+        self.declare_parameter("side_cup_collision_update_wait_sec", 0.15)
         self.declare_parameter("table_collision_enabled", True)
         self.declare_parameter("table_collision_id", "side_grip_table")
         self.declare_parameter("table_surface_z", 0.0)
@@ -399,7 +428,37 @@ class YoloCupPickNode(Node):
         )
         self.redetect_settle_sec = float(self.get_parameter("redetect_settle_sec").value)
         self.grasp_mode = str(self.get_parameter("grasp_mode").value).strip().lower()
+        self.motion_link = (
+            str(self.get_parameter("motion_link").value).strip()
+            or DEFAULT_MOTION_LINK
+        )
+        self.camera_reference_link = (
+            str(self.get_parameter("camera_reference_link").value).strip()
+            or DEFAULT_CAMERA_REFERENCE_LINK
+        )
+        self.side_tcp_compensation_enabled = parse_bool(
+            self.get_parameter("side_tcp_compensation_enabled").value
+        )
+        self.side_tcp_reach_m = max(
+            0.0,
+            float(self.get_parameter("side_tcp_reach_m").value),
+        )
+        self.side_tcp_stage_offset_m = max(
+            0.0,
+            float(self.get_parameter("side_tcp_stage_offset_m").value),
+        )
+        self.side_tcp_pre_offset_m = max(
+            0.0,
+            float(self.get_parameter("side_tcp_pre_offset_m").value),
+        )
+        self.side_tcp_close_offset_m = max(
+            0.0,
+            float(self.get_parameter("side_tcp_close_offset_m").value),
+        )
         self.side_grasp_axis = parse_axis(self.get_parameter("side_grasp_axis").value)
+        self.side_candidate_axes = parse_axis(
+            self.get_parameter("side_candidate_axes").value
+        )
         self.side_grasp_direction = float(
             self.get_parameter("side_grasp_direction").value
         )
@@ -434,7 +493,7 @@ class YoloCupPickNode(Node):
             0.0, float(self.get_parameter("side_low_retry_lift_m").value)
         )
         self.side_low_retry_attempts = max(
-            0, int(self.get_parameter("side_low_retry_attempts").value)
+            0, int(float(self.get_parameter("side_low_retry_attempts").value))
         )
         self.side_auto_direction_by_cup_y = parse_bool(
             self.get_parameter("side_auto_direction_by_cup_y").value
@@ -456,6 +515,49 @@ class YoloCupPickNode(Node):
         )
         self.side_project_bbox_center_to_fixed_z = parse_bool(
             self.get_parameter("side_project_bbox_center_to_fixed_z").value
+        )
+        self.side_cup_collision_enabled = parse_bool(
+            self.get_parameter("side_cup_collision_enabled").value
+        )
+        self.side_cup_collision_id = str(
+            self.get_parameter("side_cup_collision_id").value
+        ).strip()
+        self.side_cup_collision_radius_m = max(
+            0.001,
+            float(self.get_parameter("side_cup_collision_radius_m").value),
+        )
+        self.side_cup_collision_height_m = max(
+            0.001,
+            float(self.get_parameter("side_cup_collision_height_m").value),
+        )
+        self.side_cup_collision_padding_m = max(
+            0.0,
+            float(self.get_parameter("side_cup_collision_padding_m").value),
+        )
+        self.side_lid_collision_enabled = parse_bool(
+            self.get_parameter("side_lid_collision_enabled").value
+        )
+        self.side_lid_collision_id = str(
+            self.get_parameter("side_lid_collision_id").value
+        ).strip()
+        self.side_lid_collision_radius_m = max(
+            0.001,
+            float(self.get_parameter("side_lid_collision_radius_m").value),
+        )
+        self.side_lid_collision_height_m = max(
+            0.001,
+            float(self.get_parameter("side_lid_collision_height_m").value),
+        )
+        self.side_lid_collision_padding_m = max(
+            0.0,
+            float(self.get_parameter("side_lid_collision_padding_m").value),
+        )
+        self.side_cup_collision_clear_before_close = parse_bool(
+            self.get_parameter("side_cup_collision_clear_before_close").value
+        )
+        self.side_cup_collision_update_wait_sec = max(
+            0.0,
+            float(self.get_parameter("side_cup_collision_update_wait_sec").value),
         )
         self.table_collision_enabled = parse_bool(
             self.get_parameter("table_collision_enabled").value
@@ -617,8 +719,18 @@ class YoloCupPickNode(Node):
             raise ValueError("grasp_mode must be 'side' or 'top'")
         if self.camera_home_mode not in {"joint", "pose"}:
             raise ValueError("camera_home_mode must be 'joint' or 'pose'")
-        if self.side_grasp_axis not in {"x", "y"}:
-            raise ValueError("side_grasp_axis must be 'x' or 'y'")
+        if self.side_grasp_axis != "y":
+            self.get_logger().warning(
+                f"side_grasp_axis={self.side_grasp_axis!r} is no longer supported; "
+                "forcing y-axis side grasp."
+            )
+            self.side_grasp_axis = "y"
+        if self.side_candidate_axes != "y":
+            self.get_logger().warning(
+                f"side_candidate_axes={self.side_candidate_axes!r} requested; "
+                "X-axis side-grip candidates are disabled, using y-axis only."
+            )
+            self.side_candidate_axes = "y"
         self.side_grasp_direction = 1.0 if self.side_grasp_direction >= 0 else -1.0
         if self.side_orientation_mode not in {"approach", "euler", "home"}:
             raise ValueError(
@@ -641,6 +753,13 @@ class YoloCupPickNode(Node):
                 "to avoid pushing the cup after reaching the side close pose."
             )
             self.side_final_slide_enabled = False
+        if self.side_fixed_grasp_z_enabled and self.side_low_retry_attempts > 0:
+            self.get_logger().warning(
+                "side_low_retry_attempts was requested with fixed side grasp Z; "
+                "disabling raised-Z retries to keep the close pose at "
+                f"side_fixed_grasp_z={self.side_fixed_grasp_z:.3f} m."
+            )
+            self.side_low_retry_attempts = 0
         if (
             self.side_fixed_grasp_z_enabled
             and self.side_fixed_grasp_z < self.min_motion_z
@@ -653,12 +772,34 @@ class YoloCupPickNode(Node):
         if self.side_fixed_grasp_z_enabled:
             self.get_logger().info(
                 "side_fixed_grasp_z is interpreted as a base_link Z target for "
-                f"{EE_LINK}; table/cup/lid geometry is not inferred from it."
+                f"{self.motion_link}; table/cup/lid geometry is not inferred from it."
+            )
+        self.get_logger().info(
+            f"Motion pose targets use link {self.motion_link!r}; "
+            f"camera hand-eye transforms use link {self.camera_reference_link!r}."
+        )
+        if self.side_tcp_compensation_active():
+            self.get_logger().info(
+                "side TCP compensation enabled: legacy link_6 side offsets will be "
+                f"converted for {self.motion_link!r} "
+                f"(reach={self.side_tcp_reach_m:.3f} m, "
+                f"stage_min={self.side_tcp_stage_offset_m:.3f} m, "
+                f"pre_min={self.side_tcp_pre_offset_m:.3f} m, "
+                f"close_min={self.side_tcp_close_offset_m:.3f} m)."
             )
         if abs(self.side_target_x_offset_m) > 1e-6:
             self.get_logger().warning(
                 "side_target_x_offset_m applies only to side-grip motion planning; "
                 f"detected cup poses are left unchanged (offset={self.side_target_x_offset_m:.3f} m)."
+            )
+        if self.side_cup_collision_enabled:
+            self.get_logger().info(
+                "Temporary detected cup/lid collision is enabled for side gross motion "
+                f"(cup_id={self.side_cup_collision_id!r}, "
+                f"cup_radius={self.side_cup_collision_radius_m + self.side_cup_collision_padding_m:.3f} m, "
+                f"cup_height={self.side_cup_collision_height_m:.3f} m, "
+                f"lid_enabled={self.side_lid_collision_enabled}, "
+                f"clear_before_close={self.side_cup_collision_clear_before_close})."
             )
         if not self.table_collision_enabled:
             self.get_logger().warning(
@@ -670,6 +811,7 @@ class YoloCupPickNode(Node):
         self.depth_image = None
         self.intrinsics = None
         self.last_detection = None
+        self.last_detections = []
         self.picking = False
         self.has_picked_once = False
         self.last_pick_time = 0.0
@@ -859,6 +1001,149 @@ class YoloCupPickNode(Node):
         collision_object.primitive_poses.append(pose)
         collision_object.operation = CollisionObject.ADD
         return collision_object
+
+    def make_cylinder_collision_object(self, object_id, center_xyz, height, radius):
+        collision_object = CollisionObject()
+        collision_object.id = object_id
+        collision_object.header.frame_id = BASE_FRAME
+
+        primitive = SolidPrimitive()
+        primitive.type = SolidPrimitive.CYLINDER
+        primitive.dimensions = [float(height), float(radius)]
+
+        pose = Pose()
+        pose.position.x = float(center_xyz[0])
+        pose.position.y = float(center_xyz[1])
+        pose.position.z = float(center_xyz[2])
+        pose.orientation.w = 1.0
+
+        collision_object.primitives.append(primitive)
+        collision_object.primitive_poses.append(pose)
+        collision_object.operation = CollisionObject.ADD
+        return collision_object
+
+    def make_remove_collision_object(self, object_id):
+        collision_object = CollisionObject()
+        collision_object.id = object_id
+        collision_object.header.frame_id = BASE_FRAME
+        collision_object.operation = CollisionObject.REMOVE
+        return collision_object
+
+    def side_lid_collision_xyz_for_cup(self, cup_base_xyz):
+        cup_xyz = np.array([float(v) for v in cup_base_xyz], dtype=float)
+        detections = [
+            det for det in getattr(self, "last_detections", [])
+            if det.get("class_name") == "lid"
+        ]
+        if not detections:
+            return cup_xyz
+
+        candidates = []
+        for det in detections:
+            projected = self.bbox_center_to_fixed_base_z(
+                det["bbox"],
+                self.side_fixed_grasp_z,
+            )
+            lid_xyz = None
+            if projected is not None:
+                lid_xyz = np.array(projected[0], dtype=float)
+            else:
+                depth_info = self.depth_from_bbox(det["bbox"], log_reason=False)
+                if depth_info is not None:
+                    u, v, z_m = depth_info
+                    lid_xyz = self.camera_to_base(self.pixel_to_camera(u, v, z_m))
+            if lid_xyz is None:
+                continue
+            score = float(np.linalg.norm(lid_xyz[:2] - cup_xyz[:2]))
+            candidates.append((score, lid_xyz))
+
+        if not candidates:
+            return cup_xyz
+        return min(candidates, key=lambda item: item[0])[1]
+
+    def publish_side_cup_collision_if_enabled(self, cup_base_xyz):
+        if not self.side_cup_collision_enabled:
+            return False
+        if self.collision_object_pub is None:
+            self.get_logger().warning(
+                "side cup/lid collision requested but collision publisher is not ready"
+            )
+            return False
+
+        cup_xyz = np.array([float(v) for v in cup_base_xyz], dtype=float)
+        collision_objects = []
+
+        cup_id = self.side_cup_collision_id or "side_grip_detected_cup"
+        cup_radius = self.side_cup_collision_radius_m + self.side_cup_collision_padding_m
+        cup_height = self.side_cup_collision_height_m
+        cup_center_z = self.table_surface_z + cup_height * 0.5
+        collision_objects.append(
+            self.make_cylinder_collision_object(
+                cup_id,
+                [cup_xyz[0], cup_xyz[1], cup_center_z],
+                cup_height,
+                cup_radius,
+            )
+        )
+
+        if self.side_lid_collision_enabled:
+            lid_xyz = self.side_lid_collision_xyz_for_cup(cup_xyz)
+            lid_id = self.side_lid_collision_id or "side_grip_detected_lid"
+            lid_radius = self.side_lid_collision_radius_m + self.side_lid_collision_padding_m
+            lid_height = self.side_lid_collision_height_m
+            lid_center_z = (
+                self.table_surface_z
+                + self.side_cup_collision_height_m
+                + lid_height * 0.5
+            )
+            collision_objects.append(
+                self.make_cylinder_collision_object(
+                    lid_id,
+                    [lid_xyz[0], lid_xyz[1], lid_center_z],
+                    lid_height,
+                    lid_radius,
+                )
+            )
+
+        for _ in range(self.table_publish_repeats):
+            for collision_object in collision_objects:
+                self.collision_object_pub.publish(collision_object)
+            time.sleep(0.05)
+        if self.side_cup_collision_update_wait_sec > 0.0:
+            time.sleep(self.side_cup_collision_update_wait_sec)
+
+        details = []
+        for collision_object in collision_objects:
+            pose = collision_object.primitive_poses[0].position
+            radius = collision_object.primitives[0].dimensions[1]
+            height = collision_object.primitives[0].dimensions[0]
+            details.append(
+                f"{collision_object.id}=({pose.x:.3f}, {pose.y:.3f}, {pose.z:.3f}, "
+                f"r={radius:.3f}, h={height:.3f})"
+            )
+        self.get_logger().info(
+            "Added temporary side cup/lid collision objects: " + "; ".join(details)
+        )
+        return True
+
+    def remove_side_cup_collision_if_enabled(self):
+        if not self.side_cup_collision_enabled:
+            return
+        if self.collision_object_pub is None:
+            return
+        object_ids = [self.side_cup_collision_id or "side_grip_detected_cup"]
+        if self.side_lid_collision_enabled:
+            object_ids.append(self.side_lid_collision_id or "side_grip_detected_lid")
+        remove_objects = [self.make_remove_collision_object(object_id) for object_id in object_ids]
+        for _ in range(self.table_publish_repeats):
+            for remove_object in remove_objects:
+                self.collision_object_pub.publish(remove_object)
+            time.sleep(0.05)
+        if self.side_cup_collision_update_wait_sec > 0.0:
+            time.sleep(self.side_cup_collision_update_wait_sec)
+        self.get_logger().info(
+            "Removed temporary side cup/lid collision objects: " + ", ".join(object_ids)
+        )
 
     def publish_table_collision_if_enabled(self):
         if not self.table_collision_enabled:
@@ -1141,11 +1426,11 @@ class YoloCupPickNode(Node):
         start_state = self.current_robot_state_from_joint_states(timeout_sec=1.0)
         if start_state is not None:
             self.arm.set_start_state(robot_state=start_state)
-            start_matrix = get_ee_matrix_from_robot_state(start_state)
+            start_matrix = get_link_matrix_from_robot_state(start_state, self.motion_link)
         else:
             log.warning("Could not seed MoveIt start state from /joint_states; falling back to current state")
             self.arm.set_start_state_to_current_state()
-            start_matrix = get_ee_matrix(self.robot)
+            start_matrix = get_link_matrix(self.robot, self.motion_link)
         start_xyz = start_matrix[:3, 3].copy()
         goal_xyz = None
 
@@ -1171,7 +1456,7 @@ class YoloCupPickNode(Node):
                 f"Planning pose goal -> ({x:.3f}, {y:.3f}, {z:.3f}) "
                 f"from ({start_xyz[0]:.3f}, {start_xyz[1]:.3f}, {start_xyz[2]:.3f})"
             )
-            self.arm.set_goal_state(pose_stamped_msg=pose_goal, pose_link=EE_LINK)
+            self.arm.set_goal_state(pose_stamped_msg=pose_goal, pose_link=self.motion_link)
         elif state_goal is not None:
             log.info(
                 f"Planning joint/state goal from EE "
@@ -1199,10 +1484,10 @@ class YoloCupPickNode(Node):
 
         end_state = self.current_robot_state_from_joint_states(timeout_sec=1.0)
         if end_state is not None:
-            end_matrix = get_ee_matrix_from_robot_state(end_state)
+            end_matrix = get_link_matrix_from_robot_state(end_state, self.motion_link)
         else:
             log.warning("Could not verify EE pose from /joint_states; falling back to planning scene")
-            end_matrix = get_ee_matrix(self.robot)
+            end_matrix = get_link_matrix(self.robot, self.motion_link)
         end_xyz = end_matrix[:3, 3].copy()
         moved = float(np.linalg.norm(end_xyz - start_xyz))
         requested_pose_delta = (
@@ -1275,7 +1560,7 @@ class YoloCupPickNode(Node):
         if not self.validate_workspace_goal(x, y, z, label):
             return False
         log.info(f"{label}: plan-check pose -> ({x:.3f}, {y:.3f}, {z:.3f})")
-        self.arm.set_goal_state(pose_stamped_msg=pose_goal, pose_link=EE_LINK)
+        self.arm.set_goal_state(pose_stamped_msg=pose_goal, pose_link=self.motion_link)
         plan_result = self.arm.plan(parameters=params) if params else self.arm.plan()
         if not plan_result:
             log.warning(f"{label}: plan-check failed")
@@ -1334,7 +1619,7 @@ class YoloCupPickNode(Node):
         ):
             return False
 
-        transform = get_ee_matrix(self.robot)
+        transform = get_link_matrix(self.robot, self.motion_link)
         self.update_home_orientation_from_matrix(transform)
         return True
 
@@ -1364,7 +1649,7 @@ class YoloCupPickNode(Node):
         ):
             return False
 
-        transform = get_ee_matrix(self.robot)
+        transform = get_link_matrix(self.robot, self.motion_link)
         self.update_home_orientation_from_matrix(transform)
         return True
 
@@ -1495,7 +1780,7 @@ class YoloCupPickNode(Node):
                 continue
 
             self.camera_home_z = z
-            transform = get_ee_matrix(self.robot)
+            transform = get_link_matrix(self.robot, self.motion_link)
             self.update_home_orientation_from_matrix(transform)
             return True
 
@@ -1545,6 +1830,7 @@ class YoloCupPickNode(Node):
         boxes = results[0].boxes
         if boxes is None or len(boxes) == 0:
             self.last_detection = None
+            self.last_detections = []
             return []
 
         detections = []
@@ -1574,6 +1860,7 @@ class YoloCupPickNode(Node):
                 key=lambda det: det["conf"],
             )
 
+        self.last_detections = detections
         return detections
 
     def depth_candidates_from_bbox(self, bbox):
@@ -1645,8 +1932,8 @@ class YoloCupPickNode(Node):
 
     def camera_to_base(self, camera_xyz):
         coord = np.append(camera_xyz, 1.0)
-        base2ee = get_ee_matrix(self.robot)
-        base2cam = base2ee @ self.gripper2cam
+        base2camera_reference = get_link_matrix(self.robot, self.camera_reference_link)
+        base2cam = base2camera_reference @ self.gripper2cam
         return (base2cam @ coord)[:3]
 
     def bbox_center_to_fixed_base_z(self, bbox, base_z):
@@ -1660,8 +1947,8 @@ class YoloCupPickNode(Node):
         cx = self.intrinsics["cx"]
         cy = self.intrinsics["cy"]
         ray_camera = np.array([(u - cx) / fx, (v - cy) / fy, 1.0], dtype=float)
-        base2ee = get_ee_matrix(self.robot)
-        base2cam = base2ee @ self.gripper2cam
+        base2camera_reference = get_link_matrix(self.robot, self.camera_reference_link)
+        base2cam = base2camera_reference @ self.gripper2cam
         origin_base = base2cam[:3, 3]
         ray_base = base2cam[:3, :3] @ ray_camera
         if abs(float(ray_base[2])) < 1e-6:
@@ -1675,43 +1962,40 @@ class YoloCupPickNode(Node):
 
     def side_direction_for_cup(self, cup_base_xyz):
         direction = self.side_grasp_direction
-        if self.side_grasp_axis == "y" and self.side_auto_direction_by_cup_y:
+        if self.side_auto_direction_by_cup_y:
             direction = -1.0 if float(cup_base_xyz[1]) >= self.side_prepose_split_y else 1.0
 
-        if self.side_grasp_axis == "y":
-            cup_y = float(cup_base_xyz[1])
-            candidates = [direction, -direction]
-            stage_offset = (
-                self.side_staging_offset
-                if self.side_far_stage_enabled
-                else self.side_approach_offset + self.side_short_stage_backoff_m
+        cup_y = float(cup_base_xyz[1])
+        candidates = [direction, -direction]
+        stage_offset = (
+            self.side_staging_offset
+            if self.side_far_stage_enabled
+            else self.side_approach_offset + self.side_short_stage_backoff_m
+        )
+
+        def y_violation(candidate_direction):
+            stage_y = cup_y + candidate_direction * stage_offset
+            return max(
+                self.side_stage_y_min - stage_y,
+                0.0,
+                stage_y - self.side_stage_y_max,
             )
 
-            def y_violation(candidate_direction):
-                stage_y = cup_y + candidate_direction * stage_offset
-                return max(
-                    self.side_stage_y_min - stage_y,
-                    0.0,
-                    stage_y - self.side_stage_y_max,
-                )
-
-            best_direction = min(candidates, key=y_violation)
-            if best_direction != direction and y_violation(best_direction) < y_violation(direction):
-                old_stage_y = cup_y + direction * stage_offset
-                new_stage_y = cup_y + best_direction * stage_offset
-                self.get_logger().warning(
-                    "side staging Y would leave reachable workspace; "
-                    f"flipping side direction {direction:.0f}->{best_direction:.0f} "
-                    f"(stage_y {old_stage_y:.3f}->{new_stage_y:.3f}, "
-                    f"limit=[{self.side_stage_y_min:.3f}, {self.side_stage_y_max:.3f}])"
-                )
-                return best_direction
+        best_direction = min(candidates, key=y_violation)
+        if best_direction != direction and y_violation(best_direction) < y_violation(direction):
+            old_stage_y = cup_y + direction * stage_offset
+            new_stage_y = cup_y + best_direction * stage_offset
+            self.get_logger().warning(
+                "side staging Y would leave reachable workspace; "
+                f"flipping side direction {direction:.0f}->{best_direction:.0f} "
+                f"(stage_y {old_stage_y:.3f}->{new_stage_y:.3f}, "
+                f"limit=[{self.side_stage_y_min:.3f}, {self.side_stage_y_max:.3f}])"
+            )
+            return best_direction
         return direction
 
     def side_direction_candidates(self, cup_base_xyz):
-        first = self.side_direction_for_cup(cup_base_xyz)
-        second = -first
-        return [first, second]
+        return [self.side_direction_for_cup(cup_base_xyz)]
 
     def side_unit_vector(self, cup_base_xyz=None, direction=None):
         if direction is None:
@@ -1720,8 +2004,6 @@ class YoloCupPickNode(Node):
                 if cup_base_xyz is not None
                 else self.side_grasp_direction
             )
-        if self.side_grasp_axis == "x":
-            return np.array([direction, 0.0], dtype=float)
         return np.array([0.0, direction], dtype=float)
 
     def side_grasp_orientation(self, side_vec):
@@ -1771,9 +2053,6 @@ class YoloCupPickNode(Node):
             dtype=float,
         )
         distance_score = float(np.linalg.norm(stage_goal - current_xyz))
-        if self.side_grasp_axis != "y":
-            return distance_score
-
         y_values = [
             float(plan.stage_xy[1]),
             float(plan.pre_xy[1]),
@@ -1784,6 +2063,16 @@ class YoloCupPickNode(Node):
             for y_value in y_values
         )
         return distance_score + 10.0 * y_violation
+
+    def side_tcp_compensation_active(self):
+        return (
+            self.side_tcp_compensation_enabled
+            and self.motion_link != self.camera_reference_link
+            and self.side_tcp_reach_m > 1e-6
+        )
+
+    def tcp_compensated_side_offset(self, legacy_offset, minimum_offset):
+        return max(float(legacy_offset) - self.side_tcp_reach_m, float(minimum_offset))
 
     def compute_side_grasp_plan(self, cup_base_xyz, side_direction=None) -> SideGraspPlan:
         cup_xyz = np.array([float(v) for v in cup_base_xyz], dtype=float)
@@ -1798,10 +2087,41 @@ class YoloCupPickNode(Node):
             if self.side_far_stage_enabled
             else self.side_approach_offset + self.side_short_stage_backoff_m
         )
+        legacy_stage_offset = stage_offset
+        legacy_pre_offset = self.side_approach_offset
+        legacy_grasp_offset = self.side_grasp_offset
+        legacy_close_backoff_m = (
+            self.side_grasp_stop_backoff_m + self.side_close_underreach_m
+        )
+        legacy_guarded_offset = legacy_grasp_offset + legacy_close_backoff_m
+        tcp_compensated = self.side_tcp_compensation_active()
+        if tcp_compensated:
+            stage_offset = self.tcp_compensated_side_offset(
+                legacy_stage_offset,
+                self.side_tcp_stage_offset_m,
+            )
+            pre_offset = self.tcp_compensated_side_offset(
+                legacy_pre_offset,
+                self.side_tcp_pre_offset_m,
+            )
+            guarded_offset = self.tcp_compensated_side_offset(
+                legacy_guarded_offset,
+                self.side_tcp_close_offset_m,
+            )
+            grasp_offset = min(
+                max(legacy_grasp_offset - self.side_tcp_reach_m, 0.0),
+                guarded_offset,
+            )
+            close_backoff_m = max(0.0, guarded_offset - grasp_offset)
+        else:
+            pre_offset = legacy_pre_offset
+            grasp_offset = legacy_grasp_offset
+            close_backoff_m = legacy_close_backoff_m
+            guarded_offset = legacy_guarded_offset
+
         stage_xy = cup_xy + side_vec * stage_offset
-        pre_xy = cup_xy + side_vec * self.side_approach_offset
-        grasp_xy = cup_xy + side_vec * self.side_grasp_offset
-        close_backoff_m = self.side_grasp_stop_backoff_m + self.side_close_underreach_m
+        pre_xy = cup_xy + side_vec * pre_offset
+        grasp_xy = cup_xy + side_vec * grasp_offset
         guarded_grasp_xy = grasp_xy + side_vec * close_backoff_m
         if self.side_fixed_grasp_z_enabled:
             grasp_z = max(self.side_fixed_grasp_z, self.min_motion_z)
@@ -1826,30 +2146,46 @@ class YoloCupPickNode(Node):
             place_approach_z=place_approach_z,
             side_direction=side_direction,
             close_backoff_m=close_backoff_m,
+            stage_offset_m=stage_offset,
+            pre_offset_m=pre_offset,
+            guarded_offset_m=guarded_offset,
+            tcp_compensated=tcp_compensated,
+            legacy_stage_offset_m=legacy_stage_offset,
+            legacy_guarded_offset_m=legacy_guarded_offset,
         )
 
     def build_side_grasp_candidates(self, cup_base_xyz):
-        current_xyz = get_ee_matrix(self.robot)[:3, 3].copy()
+        current_xyz = get_link_matrix(self.robot, self.motion_link)[:3, 3].copy()
         candidates = []
         for direction in self.side_direction_candidates(cup_base_xyz):
             plan = self.compute_side_grasp_plan(cup_base_xyz, direction)
+            plan.detected_cup_xyz = np.array([float(v) for v in cup_base_xyz], dtype=float)
+            plan.target_offset_xy = np.array([0.0, 0.0], dtype=float)
             plan.score = self.side_plan_score(plan, current_xyz)
             candidates.append(plan)
         return sorted(candidates, key=lambda candidate: candidate.score)
 
     def log_side_grasp_plan(self, plan: SideGraspPlan, prefix="Side grasp target"):
         bx, by, bz = [float(v) for v in plan.cup_xyz]
+        compensation_detail = ""
+        if plan.tcp_compensated:
+            compensation_detail = (
+                f", tcp_comp=on(stage {plan.legacy_stage_offset_m:.3f}->{plan.stage_offset_m:.3f}, "
+                f"close {plan.legacy_guarded_offset_m:.3f}->{plan.guarded_offset_m:.3f})"
+            )
         self.get_logger().info(
             f"{prefix} base=({bx:.3f}, {by:.3f}, {bz:.3f}), "
             f"axis={self.side_grasp_axis}, dir={plan.side_direction:.0f}, "
             f"ori_mode={self.side_orientation_mode}, "
-            f"tool_roll={self.side_tool_roll_deg:.1f}deg, "
+            f"tool_roll={self.side_tool_roll_deg:.1f}deg"
+            f"{compensation_detail}, "
             f"stage=({plan.stage_xy[0]:.3f}, {plan.stage_xy[1]:.3f}, {plan.pre_z:.3f}), "
             f"pre=({plan.pre_xy[0]:.3f}, {plan.pre_xy[1]:.3f}, {plan.pre_z:.3f}), "
             f"grasp=({plan.grasp_xy[0]:.3f}, {plan.grasp_xy[1]:.3f}, {plan.grasp_z:.3f}), "
             f"guarded=({plan.guarded_grasp_xy[0]:.3f}, {plan.guarded_grasp_xy[1]:.3f}, "
             f"{plan.grasp_z:.3f}), close_backoff={plan.close_backoff_m:.3f}m "
-            f"(stop={self.side_grasp_stop_backoff_m:.3f}+underreach={self.side_close_underreach_m:.3f}), "
+            f"offsets(stage={plan.stage_offset_m:.3f}, pre={plan.pre_offset_m:.3f}, "
+            f"guarded={plan.guarded_offset_m:.3f}), "
             f"place_z={plan.place_z:.3f}, "
             f"linear_final={self.side_linear_approach_enabled}, "
             f"final_slide={self.side_final_slide_enabled}, "
@@ -2023,6 +2359,13 @@ class YoloCupPickNode(Node):
         if active_pre_z is None:
             return False
 
+        if self.side_cup_collision_clear_before_close:
+            log.info(
+                "clear temporary side cup/lid collision before final close approach "
+                "so the gripper can intentionally contact the cup"
+            )
+            self.remove_side_cup_collision_if_enabled()
+
         log.info(f"{side_close_label} (z={active_pre_z:.3f})")
         if not self.plan_and_execute(
             pose_goal=make_pose(
@@ -2065,53 +2408,61 @@ class YoloCupPickNode(Node):
 
         refined_base = self.center_check_redetect(initial_base)
         cup_base = initial_base if refined_base is None else np.array(refined_base, dtype=float)
-        planning_cup_base = self.apply_side_target_offset(cup_base)
-        candidates = self.build_side_grasp_candidates(planning_cup_base)
-        if not candidates:
-            log.error("No side-grasp candidates generated")
-            return False
+        cup_collision_added = self.publish_side_cup_collision_if_enabled(cup_base)
+        try:
+            planning_cup_base = self.apply_side_target_offset(cup_base)
+            candidates = self.build_side_grasp_candidates(planning_cup_base)
+            for candidate in candidates:
+                candidate.detected_cup_xyz = np.array(cup_base, dtype=float)
+                candidate.target_offset_xy = planning_cup_base[:2] - cup_base[:2]
+            if not candidates:
+                log.error("No side-grasp candidates generated")
+                return False
 
-        for idx, candidate in enumerate(candidates, start=1):
-            log.info(
-                f"Side candidate {idx}: dir={candidate.side_direction:.0f}, "
-                f"score={candidate.score:.3f}, "
-                f"ready=({candidate.stage_xy[0]:.3f}, {candidate.stage_xy[1]:.3f}, {candidate.lift_z:.3f}), "
-                f"close=({candidate.guarded_grasp_xy[0]:.3f}, {candidate.guarded_grasp_xy[1]:.3f}, {candidate.pre_z:.3f})"
-            )
-
-        if not self.move_to_side_prepose_if_configured(planning_cup_base):
-            return False
-        if not self.move_joint1_clearance_before_side_grip():
-            return False
-
-        for candidate in candidates:
-            if self.side_candidate_plan_check_enabled:
-                ready_pose = make_pose(
-                    candidate.stage_xy[0],
-                    candidate.stage_xy[1],
-                    candidate.lift_z,
-                    candidate.orientation,
+            for idx, candidate in enumerate(candidates, start=1):
+                log.info(
+                    f"Side candidate {idx}: dir={candidate.side_direction:.0f}, "
+                    f"score={candidate.score:.3f}, "
+                    f"ready=({candidate.stage_xy[0]:.3f}, {candidate.stage_xy[1]:.3f}, {candidate.lift_z:.3f}), "
+                    f"close=({candidate.guarded_grasp_xy[0]:.3f}, {candidate.guarded_grasp_xy[1]:.3f}, {candidate.pre_z:.3f})"
                 )
-                if not self.can_plan_pose_goal(
-                    ready_pose,
-                    self.ompl_params,
-                    label=f"side candidate dir={candidate.side_direction:.0f} ready",
-                ):
-                    continue
 
-            self.log_side_grasp_plan(
-                candidate,
-                prefix=f"Selected side-grasp candidate dir={candidate.side_direction:.0f}",
-            )
-            if self.execute_side_grasp_plan(candidate):
-                return True
-            log.warning(
-                f"Side candidate dir={candidate.side_direction:.0f} failed before gripper close; "
-                "trying next candidate if available"
-            )
+            if not self.move_to_side_prepose_if_configured(planning_cup_base):
+                return False
+            if not self.move_joint1_clearance_before_side_grip():
+                return False
 
-        log.error("No feasible side-grasp candidate succeeded")
-        return False
+            for candidate in candidates:
+                if self.side_candidate_plan_check_enabled:
+                    ready_pose = make_pose(
+                        candidate.stage_xy[0],
+                        candidate.stage_xy[1],
+                        candidate.lift_z,
+                        candidate.orientation,
+                    )
+                    if not self.can_plan_pose_goal(
+                        ready_pose,
+                        self.ompl_params,
+                        label=f"side candidate dir={candidate.side_direction:.0f} ready",
+                    ):
+                        continue
+
+                self.log_side_grasp_plan(
+                    candidate,
+                    prefix=f"Selected side-grasp candidate dir={candidate.side_direction:.0f}",
+                )
+                if self.execute_side_grasp_plan(candidate):
+                    return True
+                log.warning(
+                    f"Side candidate dir={candidate.side_direction:.0f} failed before gripper close; "
+                    "trying next candidate if available"
+                )
+
+            log.error("No feasible side-grasp candidate succeeded")
+            return False
+        finally:
+            if cup_collision_added:
+                self.remove_side_cup_collision_if_enabled()
 
     def pick_and_place_top(self, base_xyz):
         log = self.get_logger()
