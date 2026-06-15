@@ -85,34 +85,26 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("side_extra_args", "")
         self.declare_parameter("cup_uprighting_extra_args", "")
         # 사이드 그립에서 base XY가 어긋나는 실측 보정값.
-        # x 보정은 9차 실로봇 성공 브랜치 값을 유지하고, develop의
-        # side-grip 후보/seed/collision 옵션을 함께 노출한다.
+        # x 보정은 9차 실로봇 성공 브랜치 값을 유지하고, side-grip은
+        # 예전 성공 흐름처럼 Y축 후보만 사용한다.
         self.declare_parameter("side_target_x_offset_m", -0.02)
         self.declare_parameter("side_trajectory_execution_duration_scaling", 3.0)
         self.declare_parameter("side_trajectory_execution_goal_margin_sec", 3.0)
         self.declare_parameter("side_target_y_offset_m", 0.09)
         self.declare_parameter("side_target_y_offset_follows_direction", True)
-        self.declare_parameter("side_candidate_axes", "y,x")
+        self.declare_parameter("side_candidate_axes", "y")
         self.declare_parameter("side_secondary_axis_score_penalty_m", 0.15)
-        self.declare_parameter("side_joint_seed_candidates_enabled", True)
+        self.declare_parameter("side_joint_seed_candidates_enabled", False)
         self.declare_parameter(
             "side_joint_seed_offsets_deg",
             "0,0,0,0,0,0",
         )
         self.declare_parameter(
             "side_joint_seed_positions_deg",
-            "62.84,36.44,128.21,91.78,-88.90,72.33;"
-            "62.84,36.44,128.21,91.78,-88.90,87.33;"
-            "62.84,36.44,128.21,91.78,-88.90,57.33;"
-            "54.84,36.44,128.21,76.78,-88.90,82.33;"
-            "70.84,36.44,128.21,106.78,-88.90,62.33;"
-            "62.84,42.44,120.21,91.78,-98.90,72.33;"
-            "62.84,30.44,136.21,91.78,-78.90,72.33;"
-            "58.84,40.44,124.21,81.78,-96.90,87.33;"
-            "66.84,32.44,132.21,101.78,-80.90,57.33",
+            "",
         )
         self.declare_parameter("side_y_tool_roll_candidates_deg", "configured")
-        self.declare_parameter("side_x_tool_roll_candidates_deg", "90,-90,configured,180")
+        self.declare_parameter("side_x_tool_roll_candidates_deg", "configured")
         self.declare_parameter("side_tool_roll_score_penalty_m", 0.005)
         self.declare_parameter("side_cup_collision_enabled", True)
         self.declare_parameter("side_cup_collision_radius_m", 0.045)
@@ -592,8 +584,13 @@ class AutoCupFlowRouter(Node):
             "side_final_slide_enabled:=false",
             "side_move_to_initial_center_before_close:=false",
             "side_linear_approach_enabled:=true",
+<<<<<<< HEAD
             "side_low_retry_lift_m:=0.02",
             "side_low_retry_attempts:=5",
+=======
+            "side_low_retry_lift_m:=0.03",
+            "side_low_retry_attempts:=0",
+>>>>>>> a07b1fd (fix bug)
             "workspace_xy_clamp_enabled:=false",
             "table_collision_enabled:=true",
             "workspace_collision_scene_enabled:=false",

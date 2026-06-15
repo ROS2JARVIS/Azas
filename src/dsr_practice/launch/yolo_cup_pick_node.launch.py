@@ -585,8 +585,8 @@ def generate_launch_description():
     )
     side_candidate_axes_arg = DeclareLaunchArgument(
         "side_candidate_axes",
-        default_value="y,x",
-        description="Comma-separated side-grip candidate axes. y,x keeps left/right first and falls back to front/back approaches.",
+        default_value="y",
+        description="Comma-separated side-grip candidate axes. Side grasp is constrained to the legacy Y-axis approach.",
     )
     side_secondary_axis_score_penalty_m_arg = DeclareLaunchArgument(
         "side_secondary_axis_score_penalty_m",
@@ -595,28 +595,18 @@ def generate_launch_description():
     )
     side_joint_seed_candidates_enabled_arg = DeclareLaunchArgument(
         "side_joint_seed_candidates_enabled",
-        default_value="true",
+        default_value="false",
         description="Try collision-aware joint seed/prepose offsets before side pose candidates.",
     )
     side_joint_seed_offsets_deg_arg = DeclareLaunchArgument(
         "side_joint_seed_offsets_deg",
         default_value="0,0,0,0,0,0",
-        description="Semicolon-separated joint_1..joint_6 seed offsets in degrees, relative to current joints. Applied only to x-axis side candidates.",
+        description="Semicolon-separated joint_1..joint_6 seed offsets in degrees, relative to current joints.",
     )
     side_joint_seed_positions_deg_arg = DeclareLaunchArgument(
         "side_joint_seed_positions_deg",
-        default_value=(
-            "62.84,36.44,128.21,91.78,-88.90,72.33;"
-            "62.84,36.44,128.21,91.78,-88.90,87.33;"
-            "62.84,36.44,128.21,91.78,-88.90,57.33;"
-            "54.84,36.44,128.21,76.78,-88.90,82.33;"
-            "70.84,36.44,128.21,106.78,-88.90,62.33;"
-            "62.84,42.44,120.21,91.78,-98.90,72.33;"
-            "62.84,30.44,136.21,91.78,-78.90,72.33;"
-            "58.84,40.44,124.21,81.78,-96.90,87.33;"
-            "66.84,32.44,132.21,101.78,-80.90,57.33"
-        ),
-        description="Semicolon-separated absolute joint_1..joint_6 seed positions in degrees. Applied only to x-axis side candidates.",
+        default_value="",
+        description="Semicolon-separated absolute joint_1..joint_6 seed positions in degrees.",
     )
     side_grasp_direction_arg = DeclareLaunchArgument(
         "side_grasp_direction",
@@ -693,8 +683,8 @@ def generate_launch_description():
     )
     side_low_retry_attempts_arg = DeclareLaunchArgument(
         "side_low_retry_attempts",
-        default_value="5",
-        description="Number of raised-Z retries for the low side-grip staging pose.",
+        default_value="0",
+        description="Number of raised-Z retries for the low side-grip staging pose. Keep 0 for fixed 7cm side grasp.",
     )
     side_auto_direction_by_cup_y_arg = DeclareLaunchArgument(
         "side_auto_direction_by_cup_y",
@@ -718,7 +708,7 @@ def generate_launch_description():
     )
     side_fixed_grasp_z_enabled_arg = DeclareLaunchArgument(
         "side_fixed_grasp_z_enabled",
-        default_value="false",
+        default_value="true",
         description="Use a fixed base_link Z height for side grasp instead of detected depth Z plus offset.",
     )
     side_fixed_grasp_z_arg = DeclareLaunchArgument(
@@ -912,8 +902,8 @@ def generate_launch_description():
     )
     side_x_tool_roll_candidates_deg_arg = DeclareLaunchArgument(
         "side_x_tool_roll_candidates_deg",
-        default_value="90,-90,configured,180",
-        description="Comma-separated tool-roll candidates for x-axis side grasps; x-axis tries wrist-rotated postures first.",
+        default_value="configured",
+        description="Kept for compatibility; X-axis side grasps are disabled.",
     )
     side_tool_roll_score_penalty_m_arg = DeclareLaunchArgument(
         "side_tool_roll_score_penalty_m",

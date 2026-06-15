@@ -354,9 +354,9 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_tcp_close_offset_m", 0.055)
         dynamic_param = ParameterDescriptor(dynamic_typing=True)
         self.declare_parameter("side_grasp_axis", "y_axis", dynamic_param)
-        self.declare_parameter("side_candidate_axes", "y,x")
+        self.declare_parameter("side_candidate_axes", "y")
         self.declare_parameter("side_secondary_axis_score_penalty_m", 0.15)
-        self.declare_parameter("side_joint_seed_candidates_enabled", True)
+        self.declare_parameter("side_joint_seed_candidates_enabled", False)
         self.declare_parameter(
             "side_joint_seed_offsets_deg",
             "0,0,0,0,0,0",
@@ -388,7 +388,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_grasp_stop_backoff_m", 0.04)
         self.declare_parameter("side_close_underreach_m", 0.03)
         self.declare_parameter("side_low_retry_lift_m", 0.03)
-        self.declare_parameter("side_low_retry_attempts", 5)
+        self.declare_parameter("side_low_retry_attempts", 0)
         self.declare_parameter("side_auto_direction_by_cup_y", False)
         self.declare_parameter("side_candidate_plan_check_enabled", True)
         self.declare_parameter("side_linear_approach_enabled", True)
@@ -500,7 +500,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_orientation_mode", "approach")
         self.declare_parameter("side_tool_roll_deg", 0.0)
         self.declare_parameter("side_y_tool_roll_candidates_deg", "configured")
-        self.declare_parameter("side_x_tool_roll_candidates_deg", "90,-90,configured,180")
+        self.declare_parameter("side_x_tool_roll_candidates_deg", "configured")
         self.declare_parameter("side_tool_roll_score_penalty_m", 0.005)
         self.declare_parameter("side_roll_deg", 0.0)
         self.declare_parameter("side_pitch_deg", 90.0)
@@ -860,8 +860,12 @@ class YoloCupPickNode(Node):
             raise ValueError("grasp_mode must be 'side' or 'top'")
         if self.camera_home_mode not in {"joint", "pose"}:
             raise ValueError("camera_home_mode must be 'joint' or 'pose'")
-        if self.side_grasp_axis not in {"x", "y"}:
-            raise ValueError("side_grasp_axis must be 'x' or 'y'")
+        if self.side_grasp_axis != "y":
+            self.get_logger().warning(
+                f"side_grasp_axis={self.side_grasp_axis!r} is no longer supported; "
+                "forcing y-axis side grasp."
+            )
+            self.side_grasp_axis = "y"
         invalid_candidate_axes = [
             axis for axis in self.side_candidate_axes if axis not in {"x", "y"}
         ]
@@ -869,6 +873,12 @@ class YoloCupPickNode(Node):
             raise ValueError(
                 f"side_candidate_axes contains invalid axes: {invalid_candidate_axes}"
             )
+        if self.side_candidate_axes != ["y"]:
+            self.get_logger().warning(
+                f"side_candidate_axes={self.side_candidate_axes} requested; "
+                "X-axis side-grip candidates are disabled, using ['y'] only."
+            )
+            self.side_candidate_axes = ["y"]
         self.side_grasp_direction = 1.0 if self.side_grasp_direction >= 0 else -1.0
         if self.side_orientation_mode not in {"approach", "euler", "home"}:
             raise ValueError(
@@ -914,9 +924,8 @@ class YoloCupPickNode(Node):
             f"axes={self.side_candidate_axes}, preferred_axis={self.side_grasp_axis!r}, "
             f"secondary_axis_penalty={self.side_secondary_axis_score_penalty_m:.3f} m, "
             f"y_rolls={self.side_y_tool_roll_candidates_deg}, "
-            f"x_rolls={self.side_x_tool_roll_candidates_deg}, "
             f"roll_rank_penalty={self.side_tool_roll_score_penalty_m:.3f} m, "
-            f"x_axis_joint_seed_candidates={'on' if self.side_joint_seed_candidates_enabled else 'off'}"
+            f"joint_seed_candidates={'on' if self.side_joint_seed_candidates_enabled else 'off'}"
             f"(relative={len(self.side_joint_seed_offsets_deg)}, "
             f"absolute={len(self.side_joint_seed_positions_deg)})."
         )
