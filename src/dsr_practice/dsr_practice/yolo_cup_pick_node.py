@@ -363,15 +363,7 @@ class YoloCupPickNode(Node):
         )
         self.declare_parameter(
             "side_joint_seed_positions_deg",
-            "62.84,36.44,128.21,91.78,-88.90,72.33;"
-            "62.84,36.44,128.21,91.78,-88.90,87.33;"
-            "62.84,36.44,128.21,91.78,-88.90,57.33;"
-            "54.84,36.44,128.21,76.78,-88.90,82.33;"
-            "70.84,36.44,128.21,106.78,-88.90,62.33;"
-            "62.84,42.44,120.21,91.78,-98.90,72.33;"
-            "62.84,30.44,136.21,91.78,-78.90,72.33;"
-            "58.84,40.44,124.21,81.78,-96.90,87.33;"
-            "66.84,32.44,132.21,101.78,-80.90,57.33",
+            "",
         )
         self.declare_parameter("side_grasp_direction", 1.0)
         self.declare_parameter("side_approach_offset", 0.16)
@@ -640,7 +632,7 @@ class YoloCupPickNode(Node):
             0.0, float(self.get_parameter("side_low_retry_lift_m").value)
         )
         self.side_low_retry_attempts = max(
-            0, int(self.get_parameter("side_low_retry_attempts").value)
+            0, int(float(self.get_parameter("side_low_retry_attempts").value))
         )
         self.side_auto_direction_by_cup_y = parse_bool(
             self.get_parameter("side_auto_direction_by_cup_y").value
@@ -879,6 +871,12 @@ class YoloCupPickNode(Node):
                 "X-axis side-grip candidates are disabled, using ['y'] only."
             )
             self.side_candidate_axes = ["y"]
+        if self.side_joint_seed_candidates_enabled:
+            self.get_logger().warning(
+                "side_joint_seed_candidates_enabled was requested, but side-grip "
+                "joint seed candidates are disabled in the Y-axis-only flow."
+            )
+            self.side_joint_seed_candidates_enabled = False
         self.side_grasp_direction = 1.0 if self.side_grasp_direction >= 0 else -1.0
         if self.side_orientation_mode not in {"approach", "euler", "home"}:
             raise ValueError(
@@ -901,6 +899,13 @@ class YoloCupPickNode(Node):
                 "to avoid pushing the cup after reaching the side close pose."
             )
             self.side_final_slide_enabled = False
+        if self.side_fixed_grasp_z_enabled and self.side_low_retry_attempts > 0:
+            self.get_logger().warning(
+                "side_low_retry_attempts was requested with fixed side grasp Z; "
+                "disabling raised-Z retries to keep the close pose at "
+                f"side_fixed_grasp_z={self.side_fixed_grasp_z:.3f} m."
+            )
+            self.side_low_retry_attempts = 0
         if (
             self.side_fixed_grasp_z_enabled
             and self.side_fixed_grasp_z < self.min_motion_z
@@ -2145,65 +2150,54 @@ class YoloCupPickNode(Node):
         return base_xyz, int(round(u)), int(round(v))
 
     def side_direction_for_cup(self, cup_base_xyz, side_axis=None):
-        side_axis = side_axis or self.side_grasp_axis
         direction = self.side_grasp_direction
-        if side_axis == "y" and self.side_auto_direction_by_cup_y:
+        if self.side_auto_direction_by_cup_y:
             direction = -1.0 if float(cup_base_xyz[1]) >= self.side_prepose_split_y else 1.0
-        elif side_axis == "x":
-            direction = -1.0 if float(cup_base_xyz[0]) >= self.table_center_x else 1.0
 
-        if side_axis == "y":
-            cup_y = float(cup_base_xyz[1])
-            candidates = [direction, -direction]
-            stage_offset = (
-                self.side_staging_offset
-                if self.side_far_stage_enabled
-                else self.side_approach_offset + self.side_short_stage_backoff_m
+        cup_y = float(cup_base_xyz[1])
+        candidates = [direction, -direction]
+        stage_offset = (
+            self.side_staging_offset
+            if self.side_far_stage_enabled
+            else self.side_approach_offset + self.side_short_stage_backoff_m
+        )
+
+        def y_violation(candidate_direction):
+            stage_y = cup_y + candidate_direction * stage_offset
+            return max(
+                self.side_stage_y_min - stage_y,
+                0.0,
+                stage_y - self.side_stage_y_max,
             )
 
-            def y_violation(candidate_direction):
-                stage_y = cup_y + candidate_direction * stage_offset
-                return max(
-                    self.side_stage_y_min - stage_y,
-                    0.0,
-                    stage_y - self.side_stage_y_max,
-                )
-
-            best_direction = min(candidates, key=y_violation)
-            if best_direction != direction and y_violation(best_direction) < y_violation(direction):
-                old_stage_y = cup_y + direction * stage_offset
-                new_stage_y = cup_y + best_direction * stage_offset
-                self.get_logger().warning(
-                    "side staging Y would leave reachable workspace; "
-                    f"flipping side direction {direction:.0f}->{best_direction:.0f} "
-                    f"(stage_y {old_stage_y:.3f}->{new_stage_y:.3f}, "
-                    f"limit=[{self.side_stage_y_min:.3f}, {self.side_stage_y_max:.3f}])"
-                )
-                return best_direction
+        best_direction = min(candidates, key=y_violation)
+        if best_direction != direction and y_violation(best_direction) < y_violation(direction):
+            old_stage_y = cup_y + direction * stage_offset
+            new_stage_y = cup_y + best_direction * stage_offset
+            self.get_logger().warning(
+                "side staging Y would leave reachable workspace; "
+                f"flipping side direction {direction:.0f}->{best_direction:.0f} "
+                f"(stage_y {old_stage_y:.3f}->{new_stage_y:.3f}, "
+                f"limit=[{self.side_stage_y_min:.3f}, {self.side_stage_y_max:.3f}])"
+            )
+            return best_direction
         return direction
 
     def side_direction_candidates(self, cup_base_xyz, side_axis=None):
-        first = self.side_direction_for_cup(cup_base_xyz, side_axis=side_axis)
-        second = -first
-        return [first, second]
+        return [self.side_direction_for_cup(cup_base_xyz)]
 
     def side_unit_vector(self, cup_base_xyz=None, direction=None, side_axis=None):
-        side_axis = side_axis or self.side_grasp_axis
         if direction is None:
             direction = (
-                self.side_direction_for_cup(cup_base_xyz, side_axis=side_axis)
+                self.side_direction_for_cup(cup_base_xyz)
                 if cup_base_xyz is not None
                 else self.side_grasp_direction
             )
-        if side_axis == "x":
-            return np.array([direction, 0.0], dtype=float)
         return np.array([0.0, direction], dtype=float)
 
     def side_tool_roll_candidates_for_axis(self, side_axis):
         if self.side_orientation_mode != "approach":
             return [self.side_tool_roll_deg]
-        if side_axis == "x":
-            return self.side_x_tool_roll_candidates_deg
         return self.side_y_tool_roll_candidates_deg
 
     def side_grasp_orientation(self, side_vec, tool_roll_deg=None):
@@ -2691,7 +2685,6 @@ class YoloCupPickNode(Node):
         return True
 
     def pick_and_place_side(self, base_xyz):
-        log = self.get_logger()
         initial_base = np.array([float(v) for v in base_xyz], dtype=float)
 
         refined_base = self.center_check_redetect(initial_base)
@@ -2725,95 +2718,43 @@ class YoloCupPickNode(Node):
         if not self.move_joint1_clearance_before_side_grip():
             return False
 
-        x_seed_candidates = None
-
         for candidate in candidates:
-            if candidate.side_axis == "x":
-                if x_seed_candidates is None:
-                    x_seed_candidates = self.build_side_joint_seed_candidates()
-                    if not x_seed_candidates:
-                        x_seed_candidates = [None]
-                seed_candidates = x_seed_candidates
-            else:
-                seed_candidates = [None]
-            for seed_candidate in seed_candidates:
-                seed_label = "current"
-                if seed_candidate is not None:
-                    seed_label = seed_candidate.name
+            seed_label = "current"
+            ready_pose = make_pose(
+                candidate.stage_xy[0],
+                candidate.stage_xy[1],
+                candidate.lift_z,
+                candidate.orientation,
+            )
+            label_prefix = (
+                f"side candidate axis={candidate.side_axis} "
+                f"dir={candidate.side_direction:.0f} "
+                f"roll={candidate.tool_roll_deg:.1f} seed={seed_label}"
+            )
 
-                ready_pose = make_pose(
-                    candidate.stage_xy[0],
-                    candidate.stage_xy[1],
-                    candidate.lift_z,
-                    candidate.orientation,
-                )
-                label_prefix = (
-                    f"side candidate axis={candidate.side_axis} "
+            if self.side_candidate_plan_check_enabled and not self.can_plan_pose_goal(
+                ready_pose,
+                self.ompl_params,
+                label=f"{label_prefix} ready",
+            ):
+                continue
+
+            self.log_side_grasp_plan(
+                candidate,
+                prefix=(
+                    f"Selected side-grasp candidate axis={candidate.side_axis} "
                     f"dir={candidate.side_direction:.0f} "
                     f"roll={candidate.tool_roll_deg:.1f} seed={seed_label}"
-                )
-
-                seed_has_motion = (
-                    seed_candidate is not None
-                    and (
-                        seed_candidate.is_absolute
-                        or any(abs(value) > 1e-6 for value in seed_candidate.values_deg)
-                    )
-                )
-                if self.side_candidate_plan_check_enabled:
-                    if seed_has_motion:
-                        if not self.can_plan_state_goal(
-                            seed_candidate.state,
-                            self.ompl_params,
-                            label=f"{label_prefix} joint-seed",
-                        ):
-                            continue
-                        if not self.can_plan_pose_goal(
-                            ready_pose,
-                            self.ompl_params,
-                            label=f"{label_prefix} ready-from-seed",
-                            start_state=seed_candidate.state,
-                        ):
-                            continue
-                    elif not self.can_plan_pose_goal(
-                        ready_pose,
-                        self.ompl_params,
-                        label=f"{label_prefix} ready",
-                    ):
-                        continue
-
-                if seed_has_motion:
-                    log.info(
-                        f"move to joint seed {seed_candidate.name} before side candidate: "
-                        + seed_candidate.summary()
-                    )
-                    if not self.plan_and_execute(
-                        state_goal=seed_candidate.state,
-                        params=self.ompl_params,
-                        joint_goal_names=ARM_JOINT_ORDER,
-                        joint_goal_positions=seed_candidate.positions_rad,
-                    ):
-                        log.warning(
-                            f"{label_prefix} joint seed execution failed; trying next seed"
-                        )
-                        continue
-
-                self.log_side_grasp_plan(
-                    candidate,
-                    prefix=(
-                        f"Selected side-grasp candidate axis={candidate.side_axis} "
-                        f"dir={candidate.side_direction:.0f} "
-                        f"roll={candidate.tool_roll_deg:.1f} seed={seed_label}"
-                    ),
-                )
-                if self.execute_side_grasp_plan(candidate):
-                    return True
-                log.warning(
-                    f"Side candidate axis={candidate.side_axis} "
-                    f"dir={candidate.side_direction:.0f} "
-                    f"roll={candidate.tool_roll_deg:.1f} seed={seed_label} "
-                    "failed before gripper close; trying next seed/candidate"
-                )
+                ),
+            )
+            if self.execute_side_grasp_plan(candidate):
+                return True
+            log.warning(
+                f"Side candidate axis={candidate.side_axis} "
+                f"dir={candidate.side_direction:.0f} "
+                f"roll={candidate.tool_roll_deg:.1f} seed={seed_label} "
+                "failed before gripper close; trying next candidate"
+            )
 
         log.error("No feasible side-grasp candidate succeeded")
         return False
