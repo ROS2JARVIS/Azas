@@ -1,5 +1,17 @@
 # Robot Operation Rules
 
+## 2026-06-15 Agent Validation Ownership Rule
+
+User directive: 앞으로 점검은 사용자의 몫임. 드라이런, 빌드, 검증 금지.
+
+Required behavior:
+
+- Do not automatically run dry-run, build, lint, test, syntax-check, simulation, smoke-test, or verification commands after edits unless the user explicitly requests that exact check.
+- Read-only inspection needed to understand logs, source code, configuration, and requested edit targets is allowed.
+- After making edits, report that dry-run/build/verification were intentionally not run by user directive.
+- Do not present unverified edits as validated or tested. State the validation gap plainly.
+- Robot-motion acceptance, runtime checks, and final operational confirmation are the user's responsibility.
+
 ## 2026-06-10 Real Motion Rule: Dry-Run Banned
 
 User directive: 드라이런은 앞으로 금지.

@@ -1,5 +1,9 @@
 # Wiki Log
 
+## [2026-06-15] update
+- **Pages:** robot-operation-rules.md
+- **Summary:** Recorded the user directive that future dry-run, build, syntax-check, test, smoke-test, and verification commands are not to be run automatically; the user owns operational checks and the agent must report validation gaps instead.
+
 ## [2026-06-10T16:48:48+09:00] update
 - **Pages:** robot-operation-rules.md
 - **Summary:** Recorded the operator confirmation that dispenser 4 press-only real-motion check also works normally.
@@ -84,4 +88,3 @@
 ## [2026-06-11T23:23:12.252Z] session-end
 - **Pages:** session-log-2026-06-11-6-dnt3rj.md
 - **Summary:** Auto-captured session log for omx-1781218680276-dnt3rj
-

@@ -49,7 +49,7 @@ set +e
 ros2 launch azas_bringup auto_cup_flow_router.launch.py \
   enable_real_motion:=true \
   router_confirm:=ENABLE_AUTO_CUP_ROUTER \
-  cup_holder_place_x_offset_m:=3.0 \
+  cup_holder_place_x_offset_m:=0.010 \
   service_prefix:="${SERVICE_PREFIX}" \
   motion_service_prefix:="${MOTION_SERVICE_PREFIX}" \
   moveit_controller_name:=/${SERVICE_PREFIX}/dsr_moveit_controller \

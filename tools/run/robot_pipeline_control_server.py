@@ -774,10 +774,10 @@ STEPS = [
         "side_grip",
         "PR #20 RealSense 컵 인식 후 side grip",
         "background",
-        "SIDE_TARGET_X_OFFSET_M=-0.020 bash tools/run/run_changhyun_side_grip_direct.sh",
+        "SIDE_TARGET_X_OFFSET_M=-0.020 SIDE_TARGET_JOINT6_INSET_M=0.070 SIDE_TARGET_JOINT6_INSET_SIGN=1.0 bash tools/run/run_changhyun_side_grip_direct.sh",
         True,
         True,
-        "OpenCV 창에서 컵 확인 후 p 키로 side-grip 실행. 패널은 direct runner를 tmux로 띄우며 기본 X 보정은 -20mm",
+        "OpenCV 창에서 컵 확인 후 p 키로 side-grip 실행. 패널은 direct runner를 tmux로 띄우며 기본 X 보정은 -20mm, y축 side-grip target 보정은 컵 방향 70mm",
     ),
     Step(
         "cup_uprighting",
@@ -3556,10 +3556,22 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             or os.environ.get("SIDE_TARGET_X_OFFSET_M")
             or "-0.020"
         )
+        side_target_joint6_inset_m = str(
+            payload.get("side_target_joint6_inset_m")
+            or os.environ.get("SIDE_TARGET_JOINT6_INSET_M")
+            or "0.070"
+        )
+        side_target_joint6_inset_sign = str(
+            payload.get("side_target_joint6_inset_sign")
+            or os.environ.get("SIDE_TARGET_JOINT6_INSET_SIGN")
+            or "1.0"
+        )
         manual_cmd = (
             f"cd {ROOT} && "
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
             f"SIDE_TARGET_X_OFFSET_M={shlex.quote(side_target_x_offset_m)} "
+            f"SIDE_TARGET_JOINT6_INSET_M={shlex.quote(side_target_joint6_inset_m)} "
+            f"SIDE_TARGET_JOINT6_INSET_SIGN={shlex.quote(side_target_joint6_inset_sign)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
             f"bash {shlex.quote(str(direct_script))}"

@@ -86,6 +86,10 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("cup_uprighting_extra_args", "")
         # 사이드 그립에서 base x가 +20mm 정도 어긋나는 실측 보정값
         self.declare_parameter("side_target_x_offset_m", -0.02)
+        self.declare_parameter("side_target_joint6_inset_m", 0.07)
+        self.declare_parameter("side_target_joint6_inset_sign", 1.0)
+        self.declare_parameter("side_pre_pick_joint1_clearance_deg", 12.0)
+        self.declare_parameter("side_return_to_camera_home_after_attempt", True)
         self.declare_parameter("side_trajectory_execution_duration_scaling", 3.0)
         self.declare_parameter("side_trajectory_execution_goal_margin_sec", 3.0)
         self.declare_parameter("side_cup_collision_enabled", True)
@@ -122,13 +126,15 @@ class AutoCupFlowRouter(Node):
         # 키오스크/음성 주문(latest_recipe.json) 없이 색을 직접 내릴 때: 예) "red:2,blue:1"
         self.declare_parameter("recipe_colors", "")
         # 디스펜서 누르기 종료 후 디스펜서 앞의 컵을 마지막으로 재파지할 때 z 실측 보정값
+        self.declare_parameter("final_regrasp_x_offset_m", 0.02)
         self.declare_parameter("final_regrasp_z_offset_m", 0.0)
         # 잡기 직전 pre 위치(cup_place 기준 X offset) 보정값. 스크립트 기본 -0.09에 -30mm 추가
         self.declare_parameter("cup_pre_from_place_x_offset_m", -0.12)
         self.declare_parameter("dispenser_3_cup_pre_extra_x_offset_m", -0.01)
         # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
         self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
-        self.declare_parameter("cup_holder_place_x_offset_m", 0.015)
+        self.declare_parameter("cup_holder_place_x_offset_m", 0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_4_x_extra_offset_m", -0.010)
         self.declare_parameter("cup_holder_place_y_offset_m", -0.010)
         self.declare_parameter("cup_holder_rz_offset_deg", -1.0)
         self.declare_parameter("cup_holder_z_min_m", 0.06)
@@ -572,7 +578,7 @@ class AutoCupFlowRouter(Node):
             "move_to_camera_home:=false",
             "skip_initial_home_move:=true",
             "return_home_after_task:=false",
-            "return_to_camera_home_after_attempt:=false",
+            f"return_to_camera_home_after_attempt:={str(self._bool_launch_arg(self.get_parameter('side_return_to_camera_home_after_attempt').value)).lower()}",
             "center_check_enabled:=false",
             "redetect_on_approach:=false",
             "verify_motion:=true",
@@ -617,6 +623,9 @@ class AutoCupFlowRouter(Node):
             f"{float(self.get_parameter('side_trajectory_execution_goal_margin_sec').value)}",
             f"moveit_controller_name:={self.get_parameter('moveit_controller_name').value}",
             f"side_target_x_offset_m:={float(self.get_parameter('side_target_x_offset_m').value)}",
+            f"side_target_joint6_inset_m:={float(self.get_parameter('side_target_joint6_inset_m').value)}",
+            f"side_target_joint6_inset_sign:={float(self.get_parameter('side_target_joint6_inset_sign').value)}",
+            f"pre_pick_joint1_clearance_deg:={float(self.get_parameter('side_pre_pick_joint1_clearance_deg').value)}",
             "start_joint_state_relay:=false",
             f"model_path:={self.get_parameter('yolo_model_path').value}",
         ])
@@ -749,16 +758,20 @@ class AutoCupFlowRouter(Node):
         command += f" --cup-pre-from-place-x-offset-m {cup_pre_x}"
         dispenser_3_pre_x = float(self.get_parameter("dispenser_3_cup_pre_extra_x_offset_m").value)
         command += f" --dispenser-3-cup-pre-extra-x-offset-m {dispenser_3_pre_x}"
+        regrasp_x = float(self.get_parameter("final_regrasp_x_offset_m").value)
         regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
         place_x = float(self.get_parameter("cup_holder_place_x_offset_m").value)
+        place_d4_x = float(self.get_parameter("cup_holder_place_final_dispenser_4_x_extra_offset_m").value)
         place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)
         place_rz = float(self.get_parameter("cup_holder_rz_offset_deg").value)
         z_min = float(self.get_parameter("cup_holder_z_min_m").value)
         command += (
+            f" --final-regrasp-extra-x-offset-m {regrasp_x}"
             f" --final-regrasp-extra-z-offset-m {regrasp_z}"
             f" --cup-holder-place-final-z-offset-m {place_z}"
             f" --cup-holder-place-final-x-offset-m {place_x}"
+            f" --cup-holder-place-final-dispenser-4-x-extra-offset-m {place_d4_x}"
             f" --cup-holder-place-final-y-offset-m {place_y}"
             f" --cup-holder-rz-offset-deg {place_rz}"
             f" --cup-holder-z-min-m {z_min}"

@@ -98,6 +98,9 @@ class SideGraspPlan:
     guarded_offset_m: float
     detected_cup_xyz: np.ndarray | None = None
     target_offset_xy: np.ndarray | None = None
+    target_joint6_inset_vec: np.ndarray | None = None
+    target_joint6_inset_m: float = 0.0
+    target_joint6_inset_sign: float = 1.0
     tcp_compensated: bool = False
     legacy_stage_offset_m: float = 0.0
     legacy_guarded_offset_m: float = 0.0
@@ -202,6 +205,12 @@ def quat_dict_from_euler(roll_deg, pitch_deg, yaw_deg):
     }
 
 
+def quat_dict_to_matrix(ori):
+    return Rotation.from_quat(
+        [ori["x"], ori["y"], ori["z"], ori["w"]]
+    ).as_matrix()
+
+
 def get_link_matrix(moveit_robot, link_name):
     psm = moveit_robot.get_planning_scene_monitor()
     with psm.read_only() as scene:
@@ -254,6 +263,8 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_stage_y_min", SAFE_Y_MIN)
         self.declare_parameter("side_stage_y_max", SAFE_Y_MAX)
         self.declare_parameter("side_target_x_offset_m", 0.0)
+        self.declare_parameter("side_target_joint6_inset_m", 0.07)
+        self.declare_parameter("side_target_joint6_inset_sign", 1.0)
         self.declare_parameter("side_grasp_offset", 0.035)
         self.declare_parameter("side_grasp_z_offset", 0.05)
         self.declare_parameter("side_grasp_stop_backoff_m", 0.04)
@@ -478,6 +489,15 @@ class YoloCupPickNode(Node):
         self.side_stage_y_max = float(self.get_parameter("side_stage_y_max").value)
         self.side_target_x_offset_m = float(
             self.get_parameter("side_target_x_offset_m").value
+        )
+        self.side_target_joint6_inset_m = max(
+            0.0,
+            float(self.get_parameter("side_target_joint6_inset_m").value),
+        )
+        self.side_target_joint6_inset_sign = (
+            1.0
+            if float(self.get_parameter("side_target_joint6_inset_sign").value) >= 0.0
+            else -1.0
         )
         self.side_grasp_offset = float(self.get_parameter("side_grasp_offset").value)
         self.side_grasp_z_offset = float(
@@ -791,6 +811,14 @@ class YoloCupPickNode(Node):
             self.get_logger().warning(
                 "side_target_x_offset_m applies only to side-grip motion planning; "
                 f"detected cup poses are left unchanged (offset={self.side_target_x_offset_m:.3f} m)."
+            )
+        if self.side_target_joint6_inset_m > 1e-6:
+            self.get_logger().warning(
+                "side_target_joint6_inset_m applies only to side-grip motion pose targets; "
+                "detected cup poses are left unchanged "
+                f"(inset={self.side_target_joint6_inset_m:.3f} m, "
+                f"sign={self.side_target_joint6_inset_sign:.0f}, "
+                "default +1 moves gripper_tcp targets toward the cup for y-axis side grip)."
             )
         if self.side_cup_collision_enabled:
             self.get_logger().info(
@@ -2074,6 +2102,25 @@ class YoloCupPickNode(Node):
     def tcp_compensated_side_offset(self, legacy_offset, minimum_offset):
         return max(float(legacy_offset) - self.side_tcp_reach_m, float(minimum_offset))
 
+    def side_target_joint6_inset_vector(self, orientation):
+        if self.side_target_joint6_inset_m <= 1e-6:
+            return np.zeros(3, dtype=float)
+        tool_z_in_base = quat_dict_to_matrix(orientation)[:, 2]
+        norm = np.linalg.norm(tool_z_in_base)
+        if norm < 1e-6:
+            return np.zeros(3, dtype=float)
+        tool_z_in_base = tool_z_in_base / norm
+        return (
+            tool_z_in_base
+            * self.side_target_joint6_inset_sign
+            * self.side_target_joint6_inset_m
+        )
+
+    def apply_side_target_joint6_inset(self, xy, z, inset_vec, z_min):
+        adjusted_xy = np.array(xy, dtype=float) + inset_vec[:2]
+        adjusted_z = max(float(z) + float(inset_vec[2]), float(z_min))
+        return adjusted_xy, adjusted_z
+
     def compute_side_grasp_plan(self, cup_base_xyz, side_direction=None) -> SideGraspPlan:
         cup_xyz = np.array([float(v) for v in cup_base_xyz], dtype=float)
         if side_direction is None:
@@ -2126,11 +2173,48 @@ class YoloCupPickNode(Node):
         if self.side_fixed_grasp_z_enabled:
             grasp_z = max(self.side_fixed_grasp_z, self.min_motion_z)
         else:
-            grasp_z = max(float(cup_xyz[2]) + self.side_grasp_z_offset, self.min_motion_z)
+            grasp_z = max(
+                float(cup_xyz[2]) + self.side_grasp_z_offset,
+                self.min_motion_z,
+            )
         pre_z = grasp_z
         lift_z = max(grasp_z + self.approach_offset, self.safe_z)
         place_z = max(grasp_z, self.min_motion_z)
         place_approach_z = max(place_z + self.approach_offset, self.safe_z)
+        target_joint6_inset_vec = self.side_target_joint6_inset_vector(side_ori)
+        if np.linalg.norm(target_joint6_inset_vec) > 1e-6:
+            stage_xy, lift_z = self.apply_side_target_joint6_inset(
+                stage_xy,
+                lift_z,
+                target_joint6_inset_vec,
+                self.safe_z,
+            )
+            pre_xy, pre_z = self.apply_side_target_joint6_inset(
+                pre_xy,
+                pre_z,
+                target_joint6_inset_vec,
+                self.min_motion_z,
+            )
+            grasp_xy, grasp_z = self.apply_side_target_joint6_inset(
+                grasp_xy,
+                grasp_z,
+                target_joint6_inset_vec,
+                self.min_motion_z,
+            )
+            guarded_grasp_xy, _ = self.apply_side_target_joint6_inset(
+                guarded_grasp_xy,
+                grasp_z,
+                target_joint6_inset_vec,
+                self.min_motion_z,
+            )
+            place_z = max(
+                place_z + float(target_joint6_inset_vec[2]),
+                self.min_motion_z,
+            )
+            place_approach_z = max(
+                place_approach_z + float(target_joint6_inset_vec[2]),
+                self.safe_z,
+            )
         return SideGraspPlan(
             cup_xyz=cup_xyz,
             side_vec=side_vec,
@@ -2149,6 +2233,9 @@ class YoloCupPickNode(Node):
             stage_offset_m=stage_offset,
             pre_offset_m=pre_offset,
             guarded_offset_m=guarded_offset,
+            target_joint6_inset_vec=target_joint6_inset_vec,
+            target_joint6_inset_m=self.side_target_joint6_inset_m,
+            target_joint6_inset_sign=self.side_target_joint6_inset_sign,
             tcp_compensated=tcp_compensated,
             legacy_stage_offset_m=legacy_stage_offset,
             legacy_guarded_offset_m=legacy_guarded_offset,
@@ -2173,12 +2260,23 @@ class YoloCupPickNode(Node):
                 f", tcp_comp=on(stage {plan.legacy_stage_offset_m:.3f}->{plan.stage_offset_m:.3f}, "
                 f"close {plan.legacy_guarded_offset_m:.3f}->{plan.guarded_offset_m:.3f})"
             )
+        inset_detail = ""
+        if (
+            plan.target_joint6_inset_vec is not None
+            and np.linalg.norm(plan.target_joint6_inset_vec) > 1e-6
+        ):
+            vx, vy, vz = [float(v) for v in plan.target_joint6_inset_vec]
+            inset_detail = (
+                f", joint6_inset={plan.target_joint6_inset_m:.3f}m"
+                f"(sign={plan.target_joint6_inset_sign:.0f}, "
+                f"vec=({vx:.3f}, {vy:.3f}, {vz:.3f}))"
+            )
         self.get_logger().info(
             f"{prefix} base=({bx:.3f}, {by:.3f}, {bz:.3f}), "
             f"axis={self.side_grasp_axis}, dir={plan.side_direction:.0f}, "
             f"ori_mode={self.side_orientation_mode}, "
             f"tool_roll={self.side_tool_roll_deg:.1f}deg"
-            f"{compensation_detail}, "
+            f"{compensation_detail}{inset_detail}, "
             f"stage=({plan.stage_xy[0]:.3f}, {plan.stage_xy[1]:.3f}, {plan.pre_z:.3f}), "
             f"pre=({plan.pre_xy[0]:.3f}, {plan.pre_xy[1]:.3f}, {plan.pre_z:.3f}), "
             f"grasp=({plan.grasp_xy[0]:.3f}, {plan.grasp_xy[1]:.3f}, {plan.grasp_z:.3f}), "

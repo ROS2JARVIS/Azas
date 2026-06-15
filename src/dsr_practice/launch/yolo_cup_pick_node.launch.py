@@ -263,6 +263,12 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "side_target_x_offset_m": LaunchConfiguration(
                         "side_target_x_offset_m"
                     ),
+                    "side_target_joint6_inset_m": LaunchConfiguration(
+                        "side_target_joint6_inset_m"
+                    ),
+                    "side_target_joint6_inset_sign": LaunchConfiguration(
+                        "side_target_joint6_inset_sign"
+                    ),
                     "side_grasp_offset": LaunchConfiguration("side_grasp_offset"),
                     "side_grasp_z_offset": LaunchConfiguration("side_grasp_z_offset"),
                     "side_grasp_stop_backoff_m": LaunchConfiguration(
@@ -612,6 +618,16 @@ def generate_launch_description():
         "side_target_x_offset_m",
         default_value="0.0",
         description="Planning-only base_link X compensation added to side-grip cup targets after vision/refinement.",
+    )
+    side_target_joint6_inset_m_arg = DeclareLaunchArgument(
+        "side_target_joint6_inset_m",
+        default_value="0.070",
+        description="Planning-only side-grip target shift distance from gripper_tcp toward joint_6.",
+    )
+    side_target_joint6_inset_sign_arg = DeclareLaunchArgument(
+        "side_target_joint6_inset_sign",
+        default_value="1.0",
+        description="Tool local Z sign for side_target_joint6_inset_m; +1 moves default y-axis side-grip targets toward the cup.",
     )
     side_grasp_offset_arg = DeclareLaunchArgument(
         "side_grasp_offset", default_value="0.035"
@@ -1067,6 +1083,8 @@ def generate_launch_description():
             side_stage_y_min_arg,
             side_stage_y_max_arg,
             side_target_x_offset_m_arg,
+            side_target_joint6_inset_m_arg,
+            side_target_joint6_inset_sign_arg,
             side_grasp_offset_arg,
             side_grasp_z_offset_arg,
             side_grasp_stop_backoff_m_arg,

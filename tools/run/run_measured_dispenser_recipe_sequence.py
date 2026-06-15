@@ -3731,7 +3731,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--final-regrasp-extra-x-offset-m",
         type=float,
-        default=0.000,
+        default=0.020,
         help=(
             "Only for the final re-grasp before cup-holder placement: add this X offset "
             "to the cup re-grasp target. Positive X moves closer toward the dispenser/cup."
@@ -3749,6 +3749,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cup-holder-place-final-z-offset-m", type=float, default=-0.040)
     parser.add_argument("--cup-holder-place-final-x-offset-m", type=float, default=0.015)
+    parser.add_argument(
+        "--cup-holder-place-final-dispenser-4-x-extra-offset-m",
+        type=float,
+        default=-0.010,
+        help=(
+            "When the final re-grasp is from physical dispenser 4, add this extra X "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
     parser.add_argument("--cup-holder-place-final-y-offset-m", type=float, default=-0.010)
     parser.add_argument(
         "--cup-holder-rz-offset-deg",
@@ -3912,6 +3921,16 @@ def main() -> int:
     print("[Azas] Measured dispenser recipe sequence")
     print(f"[Azas] dispenser_ids={','.join(dispenser_ids)}")
     grouped_dispenser_ids = group_consecutive_dispenser_ids(dispenser_ids)
+    final_dispenser_id = grouped_dispenser_ids[-1][0] if grouped_dispenser_ids else ""
+    if final_dispenser_id == "4":
+        args.cup_holder_place_final_x_offset_m += (
+            args.cup_holder_place_final_dispenser_4_x_extra_offset_m
+        )
+        print(
+            "[Azas] dispenser 4 final cup-holder X extra offset applied: "
+            f"{args.cup_holder_place_final_dispenser_4_x_extra_offset_m:.3f} m, "
+            f"effective_place_final_x_offset_m={args.cup_holder_place_final_x_offset_m:.3f}"
+        )
     print(
         "[Azas] grouped_press_counts="
         + ",".join(f"{dispenser_id}x{count}" for dispenser_id, count in grouped_dispenser_ids)

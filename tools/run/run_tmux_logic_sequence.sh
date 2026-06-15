@@ -161,6 +161,8 @@ run_side_grip() {
       grasp_mode:=side side_far_stage_enabled:=false side_approach_offset:=0.18 \
       side_short_stage_backoff_m:=0.08 side_grasp_stop_backoff_m:=0.04 side_close_underreach_m:=0.03 \
       side_target_x_offset_m:="${SIDE_TARGET_X_OFFSET_M:--0.020}" \
+      side_target_joint6_inset_m:="${SIDE_TARGET_JOINT6_INSET_M:-0.070}" \
+      side_target_joint6_inset_sign:="${SIDE_TARGET_JOINT6_INSET_SIGN:-1.0}" \
       side_low_retry_lift_m:=0.0 side_low_retry_attempts:=0 \
       side_linear_approach_enabled:=true side_final_slide_enabled:=false \
       side_fixed_grasp_z_enabled:=false side_grasp_z_offset:=0.05 side_project_bbox_center_to_fixed_z:=false \
