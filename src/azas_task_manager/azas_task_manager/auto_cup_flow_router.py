@@ -73,8 +73,38 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("controller_action_name", "/dsr_moveit_controller/follow_joint_trajectory")
         self.declare_parameter("side_extra_args", "")
         self.declare_parameter("cup_uprighting_extra_args", "")
-        # 사이드 그립에서 base x가 +20mm 정도 어긋나는 실측 보정값
-        self.declare_parameter("side_target_x_offset_m", -0.02)
+        # 사이드 그립에서 base XY가 어긋나는 실측 보정값
+        self.declare_parameter("side_target_x_offset_m", -0.01)
+        self.declare_parameter("side_target_y_offset_m", 0.09)
+        self.declare_parameter("side_target_y_offset_follows_direction", True)
+        self.declare_parameter("side_candidate_axes", "y,x")
+        self.declare_parameter("side_secondary_axis_score_penalty_m", 0.15)
+        self.declare_parameter("side_joint_seed_candidates_enabled", True)
+        self.declare_parameter(
+            "side_joint_seed_offsets_deg",
+            "0,0,0,0,0,0",
+        )
+        self.declare_parameter(
+            "side_joint_seed_positions_deg",
+            "62.84,36.44,128.21,91.78,-88.90,72.33;"
+            "62.84,36.44,128.21,91.78,-88.90,87.33;"
+            "62.84,36.44,128.21,91.78,-88.90,57.33;"
+            "54.84,36.44,128.21,76.78,-88.90,82.33;"
+            "70.84,36.44,128.21,106.78,-88.90,62.33;"
+            "62.84,42.44,120.21,91.78,-98.90,72.33;"
+            "62.84,30.44,136.21,91.78,-78.90,72.33;"
+            "58.84,40.44,124.21,81.78,-96.90,87.33;"
+            "66.84,32.44,132.21,101.78,-80.90,57.33",
+        )
+        self.declare_parameter("side_y_tool_roll_candidates_deg", "configured")
+        self.declare_parameter("side_x_tool_roll_candidates_deg", "90,-90,configured,180")
+        self.declare_parameter("side_tool_roll_score_penalty_m", 0.005)
+        self.declare_parameter("side_cup_collision_enabled", True)
+        self.declare_parameter("side_cup_collision_radius_m", 0.045)
+        self.declare_parameter("side_cup_collision_height_m", 0.120)
+        self.declare_parameter("side_cup_collision_padding_m", 0.015)
+        self.declare_parameter("side_cup_collision_clear_before_close", True)
+        self.declare_parameter("side_cup_collision_update_wait_sec", 0.15)
 
         self.declare_parameter("color_scan_at_start", True)
         self.declare_parameter(
@@ -86,7 +116,7 @@ class AutoCupFlowRouter(Node):
             "recipe_command",
             "cd /home/ssu/Azas && source /opt/ros/humble/setup.bash && "
             "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
-            "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-9} && "
+            "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-15} && "
             "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0} && "
             "export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4} && "
             "if [ -f /home/ssu/ws_moveit/install/setup.bash ]; then source /home/ssu/ws_moveit/install/setup.bash; fi && "
@@ -98,8 +128,15 @@ class AutoCupFlowRouter(Node):
         )
         # 키오스크/음성 주문(latest_recipe.json) 없이 색을 직접 내릴 때: 예) "red:2,blue:1"
         self.declare_parameter("recipe_colors", "")
-        # 디스펜서 누르기 종료 후 컵홀더에 놓을 때 z를 더 낮추는 실측 보정값
-        self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
+        # 디스펜서 누르기 종료 후 디스펜서 앞의 컵을 마지막으로 재파지할 때 z 실측 보정값
+        self.declare_parameter("final_regrasp_z_offset_m", -0.02)
+        # 잡기 직전 pre 위치(cup_place 기준 X offset) 보정값. 스크립트 기본 -0.09에 -30mm 추가
+        self.declare_parameter("cup_pre_from_place_x_offset_m", -0.12)
+        self.declare_parameter("dispenser_3_cup_pre_extra_x_offset_m", -0.01)
+        # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
+        self.declare_parameter("cup_holder_place_z_offset_m", -0.03)
+        self.declare_parameter("cup_holder_place_y_offset_m", 0.0)
+        self.declare_parameter("cup_holder_z_min_m", 0.08)
         self.declare_parameter("lid_shake_after_recipe", True)
         self.declare_parameter(
             "lid_shake_command",
@@ -402,12 +439,39 @@ class AutoCupFlowRouter(Node):
                 parts.append(f"{key}={value}")
         return "  ".join(parts) if parts else status[:120]
 
+    @staticmethod
+    def _bool_launch_arg(value) -> bool:
+        if isinstance(value, str):
+            return str(value).strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
     def _run_side_grasp(self, decision: RouteDecision) -> bool:
         self.get_logger().info(f"route=side_grasp: launching existing side grasp flow ({decision.status})")
         cmd = self._launch_command(str(self.get_parameter("side_launch").value))
         cmd.extend([
             "auto_pick:=true",
             "grasp_mode:=side",
+            "motion_link:=gripper_tcp",
+            "camera_reference_link:=link_6",
+            "side_tcp_compensation_enabled:=true",
+            "side_tcp_reach_m:=0.213",
+            "side_tcp_stage_offset_m:=0.120",
+            "side_tcp_pre_offset_m:=0.100",
+            "side_tcp_close_offset_m:=0.055",
+            f"side_candidate_axes:={self.get_parameter('side_candidate_axes').value}",
+            f"side_secondary_axis_score_penalty_m:={float(self.get_parameter('side_secondary_axis_score_penalty_m').value)}",
+            f"side_joint_seed_candidates_enabled:={str(self._bool_launch_arg(self.get_parameter('side_joint_seed_candidates_enabled').value)).lower()}",
+            f"side_joint_seed_offsets_deg:={self.get_parameter('side_joint_seed_offsets_deg').value}",
+            f"side_joint_seed_positions_deg:={self.get_parameter('side_joint_seed_positions_deg').value}",
+            f"side_y_tool_roll_candidates_deg:={self.get_parameter('side_y_tool_roll_candidates_deg').value}",
+            f"side_x_tool_roll_candidates_deg:={self.get_parameter('side_x_tool_roll_candidates_deg').value}",
+            f"side_tool_roll_score_penalty_m:={float(self.get_parameter('side_tool_roll_score_penalty_m').value)}",
+            f"side_cup_collision_enabled:={str(self._bool_launch_arg(self.get_parameter('side_cup_collision_enabled').value)).lower()}",
+            f"side_cup_collision_radius_m:={float(self.get_parameter('side_cup_collision_radius_m').value)}",
+            f"side_cup_collision_height_m:={float(self.get_parameter('side_cup_collision_height_m').value)}",
+            f"side_cup_collision_padding_m:={float(self.get_parameter('side_cup_collision_padding_m').value)}",
+            f"side_cup_collision_clear_before_close:={str(self._bool_launch_arg(self.get_parameter('side_cup_collision_clear_before_close').value)).lower()}",
+            f"side_cup_collision_update_wait_sec:={float(self.get_parameter('side_cup_collision_update_wait_sec').value)}",
             "exit_after_pick:=true",
             "move_to_camera_home:=false",
             "skip_initial_home_move:=true",
@@ -442,6 +506,8 @@ class AutoCupFlowRouter(Node):
             "dispenser_collision_enabled:=true",
             f"moveit_controller_name:={self.get_parameter('moveit_controller_name').value}",
             f"side_target_x_offset_m:={float(self.get_parameter('side_target_x_offset_m').value)}",
+            f"side_target_y_offset_m:={float(self.get_parameter('side_target_y_offset_m').value)}",
+            f"side_target_y_offset_follows_direction:={str(self._bool_launch_arg(self.get_parameter('side_target_y_offset_follows_direction').value)).lower()}",
             "start_joint_state_relay:=false",
             f"model_path:={self.get_parameter('yolo_model_path').value}",
         ])
@@ -485,8 +551,20 @@ class AutoCupFlowRouter(Node):
         if colors:
             command += f" --colors {shlex.quote(colors)}"
             self.get_logger().info(f"recipe colors given directly: {colors}")
+        cup_pre_x = float(self.get_parameter("cup_pre_from_place_x_offset_m").value)
+        command += f" --cup-pre-from-place-x-offset-m {cup_pre_x}"
+        dispenser_3_pre_x = float(self.get_parameter("dispenser_3_cup_pre_extra_x_offset_m").value)
+        command += f" --dispenser-3-cup-pre-extra-x-offset-m {dispenser_3_pre_x}"
+        regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
-        command += f" --cup-holder-place-final-z-offset-m {place_z}"
+        place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)
+        z_min = float(self.get_parameter("cup_holder_z_min_m").value)
+        command += (
+            f" --final-regrasp-extra-z-offset-m {regrasp_z}"
+            f" --cup-holder-place-final-z-offset-m {place_z}"
+            f" --cup-holder-place-final-y-offset-m {place_y}"
+            f" --cup-holder-z-min-m {z_min}"
+        )
         self.get_logger().info("pick flow succeeded; starting integrated dispenser recipe sequence")
         return self._run_process(["bash", "-c", command], "recipe")
 
@@ -632,18 +710,24 @@ class AutoCupFlowRouter(Node):
     def _forward_output(self, proc: subprocess.Popen[str], label: str) -> None:
         if proc.stdout is None:
             return
+        # 단계별 출력을 파일로도 남겨 실패 시 터미널 스크롤백 없이 진단할 수 있게 한다.
+        log_dir = "/tmp/azas_router_logs"
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"{label}_{time.strftime('%Y%m%d_%H%M%S')}_{proc.pid}.log")
         shutting_down = False
-        for line in proc.stdout:
-            text = line.rstrip()
-            self.get_logger().info(f"{label}> {text}")
-            if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
-                shutting_down = True
-            match = self._NODE_DIED_PATTERN.search(text)
-            # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)과
-            # 음수 exit code(시그널 종료)는 정상 정리 과정이므로 제외
-            if match and int(match.group("code")) > 0 and not shutting_down:
-                self._child_node_failures.setdefault(label, []).append(
-                    f"{match.group('node')} exit code {match.group('code')}")
+        with open(log_path, "w", encoding="utf-8", errors="replace") as log_file:
+            for line in proc.stdout:
+                text = line.rstrip()
+                self.get_logger().info(f"{label}> {text}")
+                log_file.write(text + "\n")
+                if not shutting_down and self._SHUTDOWN_PATTERN.search(text):
+                    shutting_down = True
+                match = self._NODE_DIED_PATTERN.search(text)
+                # launch 종료 신호 이후의 죽음(SIGINT 받은 KeyboardInterrupt 등)만 정상 정리로
+                # 간주한다. 종료 신호 전이라면 음수 exit code(SIGSEGV -11 등)도 실패다.
+                if match and not shutting_down:
+                    self._child_node_failures.setdefault(label, []).append(
+                        f"{match.group('node')} exit code {match.group('code')}")
 
     def _stop_process(self, proc: Optional[subprocess.Popen[str]], label: str) -> None:
         if proc is None or proc.poll() is not None:

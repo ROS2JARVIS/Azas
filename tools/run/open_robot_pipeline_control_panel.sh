@@ -10,7 +10,7 @@ LOG_FILE="$LOG_DIR/robot_pipeline_control_panel.log"
 PID_FILE="/tmp/azas-panel-8765.pid"
 COMMAND_DIR="${AZAS_PANEL_COMMAND_DIR:-$HOME/.local/bin}"
 COMMAND_PATH="$COMMAND_DIR/azas-panel"
-PANEL_ROS_DOMAIN_ID="${AZAS_PANEL_ROS_DOMAIN_ID:-9}"
+PANEL_ROS_DOMAIN_ID="${AZAS_PANEL_ROS_DOMAIN_ID:-15}"
 SERVER_SCRIPT="$ROOT/tools/run/robot_pipeline_control_server.py"
 RESTART_SERVER=1
 
@@ -143,7 +143,7 @@ start_panel_server() {
     source /opt/ros/humble/setup.bash
     source /home/ssu/ros2_ws/install/setup.bash
     source "$AZAS_ROOT/install/local_setup.bash"
-    export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
+    export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-15}"
     export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}"
     exec python3 tools/run/robot_pipeline_control_server.py
   ' >> "$LOG_FILE" 2>&1 < /dev/null &

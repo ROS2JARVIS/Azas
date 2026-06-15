@@ -288,6 +288,7 @@ def main() -> int:
     parser.add_argument("--move-release-offset-z-m", default="0.010")
     parser.add_argument("--cup-pre-from-place-x-offset-m", default="-0.090")
     parser.add_argument("--cup-pre-from-place-z-offset-m", default="0.030")
+    parser.add_argument("--dispenser-3-cup-pre-extra-x-offset-m", default="-0.010")
     parser.add_argument("--generated-cup-pre-max-joint-delta-deg", default="190.0")
     parser.add_argument(
         "--press-contact-use-joint-move",
@@ -369,6 +370,8 @@ def main() -> int:
     )
     parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.030")
     parser.add_argument("--cup-holder-place-final-y-offset-m", default="-0.010")
+    parser.add_argument("--cup-holder-z-min-m", default="0.08",
+                        help="컵홀더 place 목표 z 안전 하한. place z offset을 크게 낮출 때 함께 내려야 함")
     parser.add_argument("--cup-holder-approach-velocity", default="80.0")
     parser.add_argument("--cup-holder-approach-acceleration", default="20.0")
     parser.add_argument("--cup-holder-place-velocity", default="80.0")
@@ -416,6 +419,7 @@ def main() -> int:
         "--move-release-offset-z-m", str(args.move_release_offset_z_m),
         "--cup-pre-from-place-x-offset-m", str(args.cup_pre_from_place_x_offset_m),
         "--cup-pre-from-place-z-offset-m", str(args.cup_pre_from_place_z_offset_m),
+        "--dispenser-3-cup-pre-extra-x-offset-m", str(args.dispenser_3_cup_pre_extra_x_offset_m),
         "--generated-cup-pre-max-joint-delta-deg", str(args.generated_cup_pre_max_joint_delta_deg),
         "--regrasp-retreat-x-m", str(args.regrasp_retreat_x_m),
         "--regrasp-retreat-y-m", str(args.regrasp_retreat_y_m),
@@ -450,6 +454,7 @@ def main() -> int:
         "--gripper-settle-seconds", str(args.gripper_settle_seconds),
         "--cup-holder-place-final-z-offset-m", str(args.cup_holder_place_final_z_offset_m),
         "--cup-holder-place-final-y-offset-m", str(args.cup_holder_place_final_y_offset_m),
+        "--cup-holder-z-min-m", str(args.cup_holder_z_min_m),
         "--cup-holder-approach-velocity", str(args.cup_holder_approach_velocity),
         "--cup-holder-approach-acceleration", str(args.cup_holder_approach_acceleration),
         "--cup-holder-place-velocity", str(args.cup_holder_place_velocity),

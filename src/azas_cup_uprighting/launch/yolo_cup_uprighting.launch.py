@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, Shutdown
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -54,6 +54,9 @@ def _runtime_nodes(context, moveit_params, moveit_py_params):
                 "controller_action_wait_sec": 60.0,
             },
         ],
+        # exit_after_pick으로 메인 노드가 끝나면 collision/tf 보조 노드들도 함께
+        # 정리해 launch가 종료되도록 한다. 안 그러면 라우터가 영원히 대기한다.
+        on_exit=Shutdown(),
     )
     return [yolo_cup_uprighting_node]
 

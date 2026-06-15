@@ -506,7 +506,7 @@ bash tools/run/stop_cocktail_motion_preview.sh
 
 ```bash
 cd /home/ssu/Azas
-ROS_DOMAIN_ID=79 \
+ROS_DOMAIN_ID=15 \
 TARGET_X=0.430 TARGET_Y=0.080 TARGET_Z=0.135 \
 SHAKE_DELAY_SEC=4.0 \
 SHAKE_CENTER_X=0.430 SHAKE_CENTER_Y=0.080 SHAKE_CENTER_Z=0.620 \
