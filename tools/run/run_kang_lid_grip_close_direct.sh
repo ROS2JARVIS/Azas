@@ -65,14 +65,24 @@ if [[ "${MOVE_TO_LID_VIEW_POSE}" == "true" ]]; then
     --execute --confirm ENABLE_DIRECT_MOVEJ
 fi
 
-ros2 pkg executables azas_perception | grep -q '^azas_perception lid_sticker_detector_node$' || {
-  echo "[Azas][FAIL] missing azas_perception lid_sticker_detector_node" >&2
-  exit 2
+require_ros_executable() {
+  local package="$1"
+  local executable="$2"
+  local exit_code="$3"
+  local executables
+
+  if ! executables="$(ros2 pkg executables "${package}")"; then
+    echo "[Azas][FAIL] cannot list ${package} executables" >&2
+    exit "${exit_code}"
+  fi
+  if ! grep -Fxq "${package} ${executable}" <<<"${executables}"; then
+    echo "[Azas][FAIL] missing ${package} ${executable}" >&2
+    exit "${exit_code}"
+  fi
 }
-ros2 pkg executables azas_motion | grep -q '^azas_motion lid_grip_planner_node$' || {
-  echo "[Azas][FAIL] missing azas_motion lid_grip_planner_node" >&2
-  exit 3
-}
+
+require_ros_executable azas_perception lid_sticker_detector_node 2
+require_ros_executable azas_motion lid_grip_planner_node 3
 
 launch_args=(
   azas_bringup lid_sticker_grip_planning.launch.py

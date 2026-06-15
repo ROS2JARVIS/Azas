@@ -9,10 +9,13 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("enable_real_motion", default_value="false"),
         DeclareLaunchArgument("router_confirm", default_value=""),
-        DeclareLaunchArgument("service_prefix", default_value=""),
-        DeclareLaunchArgument("motion_service_prefix", default_value="auto"),
-        DeclareLaunchArgument("moveit_controller_name", default_value="/dsr_moveit_controller"),
-        DeclareLaunchArgument("controller_action_name", default_value="/dsr_moveit_controller/follow_joint_trajectory"),
+        DeclareLaunchArgument("service_prefix", default_value="dsr01"),
+        DeclareLaunchArgument("motion_service_prefix", default_value="dsr01"),
+        DeclareLaunchArgument("moveit_controller_name", default_value="/dsr01/dsr_moveit_controller"),
+        DeclareLaunchArgument(
+            "controller_action_name",
+            default_value="/dsr01/dsr_moveit_controller/follow_joint_trajectory",
+        ),
         DeclareLaunchArgument("yolo_model_path", default_value="/home/ssu/Azas/local_models/best.pt"),
         DeclareLaunchArgument("classifier_path", default_value="/home/ssu/Azas/cup_classifier_best.pth"),
         DeclareLaunchArgument("classifier_arch", default_value="resnet18"),
@@ -51,7 +54,7 @@ def generate_launch_description():
             "human_handover_detection_command",
             default_value=(
                 "tools/run/with_azas_ros_env.sh bash tools/run/run_human_hand_detection.sh "
-                "--process-width-px 320 --overlay-width-px 640 --max-rate-hz 20 "
+                "--max-rate-hz 20 "
                 "--min-detection-confidence 0.35 --min-tracking-confidence 0.35 "
                 "--min-extended-fingers 3 --depth-window-px 21 --stable-radius-m 0.12 "
                 "--stable-min-samples 2 --stable-window-seconds 1.0"

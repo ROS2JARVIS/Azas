@@ -77,6 +77,14 @@ def bgr_array_to_image_msg(array: np.ndarray, header) -> Image:
     return msg
 
 
+def resize_to_width(array: np.ndarray, width_px: int) -> np.ndarray:
+    if width_px <= 0 or array.shape[1] == width_px:
+        return array
+    scale = float(width_px) / float(array.shape[1])
+    height_px = max(int(round(array.shape[0] * scale)), 1)
+    return cv2.resize(array, (width_px, height_px), interpolation=cv2.INTER_AREA)
+
+
 class HumanHandDetectionNode(Node):
     """Perception-only node: no motion service client is created here."""
 
@@ -132,13 +140,14 @@ class HumanHandDetectionNode(Node):
             return
 
         color = image_msg_to_array(msg)
-        rgb = cv2.cvtColor(color, cv2.COLOR_BGR2RGB)
+        process_color = resize_to_width(color, int(self.args.process_width_px))
+        rgb = cv2.cvtColor(process_color, cv2.COLOR_BGR2RGB)
         timestamp_ms = max(int(now * 1000.0), self.last_timestamp_ms + 1)
         self.last_timestamp_ms = timestamp_ms
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         result = self.landmarker.detect_for_video(mp_image, timestamp_ms)
 
-        overlay = color if self.overlay_pub is not None else None
+        overlay = color.copy() if self.overlay_pub is not None else None
         status: dict[str, object] = {"detected": False}
         try:
             if not result.hand_landmarks:
@@ -147,7 +156,10 @@ class HumanHandDetectionNode(Node):
                 return
             landmarks = result.hand_landmarks[0]
             height, width = color.shape[:2]
-            pixels = [(lm.x * width, lm.y * height) for lm in landmarks]
+            process_height, process_width = process_color.shape[:2]
+            scale_x = float(width) / float(process_width)
+            scale_y = float(height) / float(process_height)
+            pixels = [(lm.x * process_width * scale_x, lm.y * process_height * scale_y) for lm in landmarks]
             open_fingers = self.count_extended_fingers(pixels)
             hand_open = open_fingers >= self.args.min_extended_fingers
             palm_px = (
@@ -199,6 +211,7 @@ class HumanHandDetectionNode(Node):
         finally:
             self.publish_status(status)
             if overlay is not None and self.overlay_pub is not None:
+                overlay = resize_to_width(overlay, int(self.args.overlay_width_px))
                 self.overlay_pub.publish(bgr_array_to_image_msg(overlay, msg.header))
 
     def count_extended_fingers(self, pixels: list[tuple[float, float]]) -> int:
@@ -257,6 +270,10 @@ def parse_bool(value: str) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model-path", default=DEFAULT_MODEL_PATH)
+    parser.add_argument("--process-width-px", type=int, default=0,
+                        help="resize color frames to this width before MediaPipe; 0 keeps camera width")
+    parser.add_argument("--overlay-width-px", type=int, default=0,
+                        help="resize published overlay images to this width; 0 keeps camera width")
     parser.add_argument("--max-rate-hz", type=float, default=15.0)
     parser.add_argument("--min-detection-confidence", type=float, default=0.6)
     parser.add_argument("--min-tracking-confidence", type=float, default=0.6)

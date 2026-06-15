@@ -22,11 +22,31 @@ AUTO_FLOW_RESUME_MODE="${AUTO_FLOW_RESUME_MODE:-normal}"
 AUTO_FLOW_RESUME_STATE_FILE="${AUTO_FLOW_RESUME_STATE_FILE:-/home/ssu/Azas/outputs/auto_cup_flow_resume.json}"
 AUTO_FLOW_RESUME_EVENTS_FILE="${AUTO_FLOW_RESUME_EVENTS_FILE:-/home/ssu/Azas/outputs/auto_cup_flow_events.jsonl}"
 AUTO_FLOW_DISPENSER_RESUME_STATE_FILE="${AUTO_FLOW_DISPENSER_RESUME_STATE_FILE:-/home/ssu/Azas/outputs/measured_dispenser_recipe_resume.json}"
+CUP_HOLDER_PLACE_FINAL_X_OFFSET_M="${CUP_HOLDER_PLACE_FINAL_X_OFFSET_M:-0.003}"
 ROUTER_CONFIRM="${ROUTER_CONFIRM:-}"
 if [[ "${ROUTER_CONFIRM}" != "ENABLE_AUTO_CUP_ROUTER" ]]; then
   echo "[voice_flow] BLOCKED: set ROUTER_CONFIRM=ENABLE_AUTO_CUP_ROUTER to run real motion." >&2
   exit 3
 fi
+
+python3 - "${CUP_HOLDER_PLACE_FINAL_X_OFFSET_M}" <<'PY'
+import sys
+
+value = sys.argv[1]
+try:
+    offset_m = float(value)
+except ValueError:
+    print(f"[voice_flow] invalid CUP_HOLDER_PLACE_FINAL_X_OFFSET_M={value!r}; expected meters", file=sys.stderr)
+    sys.exit(4)
+
+if abs(offset_m) > 0.05:
+    print(
+        "[voice_flow] BLOCKED: CUP_HOLDER_PLACE_FINAL_X_OFFSET_M "
+        f"must be in meters and within +/-0.05m; got {offset_m}m",
+        file=sys.stderr,
+    )
+    sys.exit(4)
+PY
 
 cd /home/ssu/Azas
 set +u
@@ -49,7 +69,7 @@ set +e
 ros2 launch azas_bringup auto_cup_flow_router.launch.py \
   enable_real_motion:=true \
   router_confirm:=ENABLE_AUTO_CUP_ROUTER \
-  cup_holder_place_x_offset_m:=3.0 \
+  cup_holder_place_x_offset_m:="${CUP_HOLDER_PLACE_FINAL_X_OFFSET_M}" \
   service_prefix:="${SERVICE_PREFIX}" \
   motion_service_prefix:="${MOTION_SERVICE_PREFIX}" \
   moveit_controller_name:=/${SERVICE_PREFIX}/dsr_moveit_controller \

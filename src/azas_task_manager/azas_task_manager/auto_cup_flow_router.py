@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from typing import Optional
 
@@ -60,8 +61,8 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("observe_acc", 30.0)
         self.declare_parameter("observe_time", 0.0)
         self.declare_parameter("motion_timeout_sec", 25.0)
-        self.declare_parameter("service_prefix", "")
-        self.declare_parameter("motion_service_prefix", "auto")
+        self.declare_parameter("service_prefix", "dsr01")
+        self.declare_parameter("motion_service_prefix", "dsr01")
         self.declare_parameter("gripper_open_service", "/jarvis/rg2/open")
 
         self.declare_parameter("detection_topic", "/azas/cup_detection")
@@ -80,8 +81,11 @@ class AutoCupFlowRouter(Node):
 
         self.declare_parameter("side_launch", "dsr_practice yolo_cup_pick_node.launch.py")
         self.declare_parameter("cup_uprighting_launch", "azas_cup_uprighting yolo_cup_uprighting.launch.py")
-        self.declare_parameter("moveit_controller_name", "/dsr_moveit_controller")
-        self.declare_parameter("controller_action_name", "/dsr_moveit_controller/follow_joint_trajectory")
+        self.declare_parameter("moveit_controller_name", "/dsr01/dsr_moveit_controller")
+        self.declare_parameter(
+            "controller_action_name",
+            "/dsr01/dsr_moveit_controller/follow_joint_trajectory",
+        )
         self.declare_parameter("side_extra_args", "")
         self.declare_parameter("cup_uprighting_extra_args", "")
         # 사이드 그립에서 base x가 +20mm 정도 어긋나는 실측 보정값
@@ -138,8 +142,6 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter(
             "human_handover_detection_command",
             "tools/run/with_azas_ros_env.sh bash tools/run/run_human_hand_detection.sh "
-            "--process-width-px 320 "
-            "--overlay-width-px 640 "
             "--max-rate-hz 20 "
             "--min-detection-confidence 0.35 "
             "--min-tracking-confidence 0.35 "
@@ -280,7 +282,7 @@ class AutoCupFlowRouter(Node):
         try:
             ok = bool(action())
         except Exception as exc:
-            self.get_logger().exception(f"{stage}: unexpected exception")
+            self.get_logger().error(f"{stage}: unexpected exception: {exc}\n{traceback.format_exc()}")
             if self._resume_store is not None:
                 self._resume_store.fail_stage(stage, f"{stage}_exception:{exc}", auto_recoverable=True)
             return False
