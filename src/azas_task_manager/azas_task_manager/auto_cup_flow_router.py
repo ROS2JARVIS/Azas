@@ -100,7 +100,7 @@ class AutoCupFlowRouter(Node):
             "cd /home/ssu/Azas && source /opt/ros/humble/setup.bash && "
             "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
             "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-9} && "
-            "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0} && "
+            "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-1} && "
             "export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4} && "
             "if [ -f /home/ssu/ws_moveit/install/setup.bash ]; then source /home/ssu/ws_moveit/install/setup.bash; fi && "
             "if [ -f /home/ssu/ros2_ws/install/setup.bash ]; then source /home/ssu/ros2_ws/install/setup.bash; fi && "
@@ -118,6 +118,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("dispenser_3_cup_pre_extra_x_offset_m", -0.01)
         # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
         self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
+        self.declare_parameter("cup_holder_place_x_offset_m", 0.015)
         self.declare_parameter("cup_holder_place_y_offset_m", -0.010)
         self.declare_parameter("cup_holder_rz_offset_deg", -1.0)
         self.declare_parameter("cup_holder_z_min_m", 0.06)
@@ -684,12 +685,14 @@ class AutoCupFlowRouter(Node):
         command += f" --dispenser-3-cup-pre-extra-x-offset-m {dispenser_3_pre_x}"
         regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
+        place_x = float(self.get_parameter("cup_holder_place_x_offset_m").value)
         place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)
         place_rz = float(self.get_parameter("cup_holder_rz_offset_deg").value)
         z_min = float(self.get_parameter("cup_holder_z_min_m").value)
         command += (
             f" --final-regrasp-extra-z-offset-m {regrasp_z}"
             f" --cup-holder-place-final-z-offset-m {place_z}"
+            f" --cup-holder-place-final-x-offset-m {place_x}"
             f" --cup-holder-place-final-y-offset-m {place_y}"
             f" --cup-holder-rz-offset-deg {place_rz}"
             f" --cup-holder-z-min-m {z_min}"

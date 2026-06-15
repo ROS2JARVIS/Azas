@@ -404,6 +404,7 @@ def main() -> int:
         help="마지막 디스펜서 처리 후 컵홀더에 컵을 놓음",
     )
     parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.040")
+    parser.add_argument("--cup-holder-place-final-x-offset-m", default="0.015")
     parser.add_argument("--cup-holder-place-final-y-offset-m", default="-0.010")
     parser.add_argument(
         "--cup-holder-rz-offset-deg",
@@ -503,6 +504,7 @@ def main() -> int:
         "--gripper-open-settle-seconds", str(args.gripper_open_settle_seconds),
         "--gripper-settle-seconds", str(args.gripper_settle_seconds),
         "--cup-holder-place-final-z-offset-m", str(args.cup_holder_place_final_z_offset_m),
+        "--cup-holder-place-final-x-offset-m", str(args.cup_holder_place_final_x_offset_m),
         "--cup-holder-place-final-y-offset-m", str(args.cup_holder_place_final_y_offset_m),
         "--cup-holder-rz-offset-deg", str(args.cup_holder_rz_offset_deg),
         "--cup-holder-z-min-m", str(args.cup_holder_z_min_m),

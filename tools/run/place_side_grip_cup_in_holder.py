@@ -93,6 +93,12 @@ def offset_target_y(target: TargetPose, offset_m: float) -> TargetPose:
     return TargetPose(target.label, adjusted_xyz, list(target.rpy_rad))
 
 
+def offset_target_x(target: TargetPose, offset_m: float) -> TargetPose:
+    adjusted_xyz = list(target.xyz_m)
+    adjusted_xyz[0] += float(offset_m)
+    return TargetPose(target.label, adjusted_xyz, list(target.rpy_rad))
+
+
 def offset_target_rz(target: TargetPose, offset_deg: float) -> TargetPose:
     adjusted_rpy = list(target.rpy_rad)
     adjusted_rpy[2] += math.radians(float(offset_deg))
@@ -303,6 +309,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--place-final-x-offset-m",
+        type=float,
+        default=0.015,
+        help=(
+            "Measured adjustment added only to place_final X. Default +0.015m shifts "
+            "the holder placement 15mm in positive X without rewriting calibration.yaml."
+        ),
+    )
+    parser.add_argument(
         "--place-final-y-offset-m",
         type=float,
         default=-0.010,
@@ -370,6 +385,8 @@ def main() -> int:
 
     try:
         pre_place, place_final, retreat, approach_lift_m = load_sequence(args.config)
+        if abs(args.place_final_x_offset_m) > 1e-9:
+            place_final = offset_target_x(place_final, args.place_final_x_offset_m)
         if abs(args.place_final_y_offset_m) > 1e-9:
             place_final = offset_target_y(place_final, args.place_final_y_offset_m)
         if abs(args.place_final_z_offset_m) > 1e-9:
@@ -386,6 +403,7 @@ def main() -> int:
     print(f"[Azas] config={args.config}")
     print(f"[Azas] service_prefix={args.service_prefix}")
     print(f"[Azas] approach_lift_m={approach_lift_m:.3f}")
+    print(f"[Azas] place_final_x_offset_m={args.place_final_x_offset_m:.4f}")
     print(f"[Azas] place_final_y_offset_m={args.place_final_y_offset_m:.4f}")
     print(f"[Azas] place_final_z_offset_m={args.place_final_z_offset_m:.4f}")
     print(f"[Azas] rz_offset_deg={args.rz_offset_deg:.3f}")

@@ -24,9 +24,30 @@ else
 fi
 export PYTHONPATH=/home/ssu/Azas/tools/run/python_compat:${PYTHONPATH:-}
 
+wait_for_camera_frame() {
+  local topic="$1"
+  local timeout_sec="$2"
+  local deadline=$((SECONDS + timeout_sec))
+  local sample_timeout_sec="${CAMERA_READY_SAMPLE_TIMEOUT_SEC:-3}"
+  local check_log="/tmp/azas_color_scan_camera_check.txt"
+
+  : >"${check_log}"
+  echo "[Azas] waiting for color camera frame from ${topic} (timeout=${timeout_sec}s)"
+  while (( SECONDS < deadline )); do
+    if timeout "${sample_timeout_sec}s" ros2 topic echo --no-daemon --once --qos-reliability best_effort "${topic}" >"${check_log}" 2>&1; then
+      return 0
+    fi
+    if timeout "${sample_timeout_sec}s" ros2 topic echo --no-daemon --once --qos-reliability reliable "${topic}" >"${check_log}" 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 COLOR_TOPIC="${COLOR_TOPIC:-/camera/camera/color/image_raw}"
-CAMERA_READY_TIMEOUT_SEC="${CAMERA_READY_TIMEOUT_SEC:-8}"
-if ! timeout "${CAMERA_READY_TIMEOUT_SEC}s" ros2 topic echo --no-daemon --once --qos-reliability best_effort "${COLOR_TOPIC}" >/tmp/azas_color_scan_camera_check.txt 2>&1; then
+CAMERA_READY_TIMEOUT_SEC="${CAMERA_READY_TIMEOUT_SEC:-30}"
+if ! wait_for_camera_frame "${COLOR_TOPIC}" "${CAMERA_READY_TIMEOUT_SEC}"; then
   echo "[Azas][FAIL] color_scan camera preflight failed: no frame from ${COLOR_TOPIC} within ${CAMERA_READY_TIMEOUT_SEC}s" >&2
   echo "[Azas][FAIL] Ensure RealSense publishes ${COLOR_TOPIC} with ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}, then retry." >&2
   timeout 3s ros2 topic info --no-daemon -v "${COLOR_TOPIC}" 2>&1 | sed 's/^/[Azas][camera_info] /' >&2 || true

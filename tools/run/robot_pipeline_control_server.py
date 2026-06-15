@@ -36,7 +36,7 @@ ROS_SETUP = (
     "source /opt/ros/humble/setup.bash && "
     "mkdir -p /tmp/azas_ros_logs && export ROS_LOG_DIR=/tmp/azas_ros_logs && "
     "export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-9} && "
-    "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0} && "
+    "export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-1} && "
     "export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4} && "
     "if [ -f /home/ssu/ws_moveit/install/setup.bash ]; then "
     "source /home/ssu/ws_moveit/install/setup.bash; "
@@ -320,6 +320,11 @@ def _color_recipe_direct_arg(payload: dict[str, Any]) -> str:
 
 
 def color_recipe_sequence_command(payload: dict[str, Any]) -> str:
+    cup_holder_x_offset_m = str(
+        payload.get("cup_holder_place_final_x_offset_m")
+        or os.environ.get("CUP_HOLDER_PLACE_FINAL_X_OFFSET_M")
+        or "0.015"
+    ).strip()
     cup_holder_rz_offset_deg = str(
         payload.get("cup_holder_rz_offset_deg")
         or os.environ.get("CUP_HOLDER_RZ_OFFSET_DEG")
@@ -329,6 +334,7 @@ def color_recipe_sequence_command(payload: dict[str, Any]) -> str:
         f"cd {ROOT} && {ROS_SETUP} && "
         "python3 tools/run/run_color_recipe_sequence.py --execute --confirm"
         f"{_color_recipe_direct_arg(payload)}"
+        f" --cup-holder-place-final-x-offset-m {shlex.quote(cup_holder_x_offset_m)}"
         f" --cup-holder-rz-offset-deg {shlex.quote(cup_holder_rz_offset_deg)}"
     )
 
@@ -3234,6 +3240,11 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         or env.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
         or "-0.030"
     )
+    env["CUP_HOLDER_PLACE_FINAL_X_OFFSET_M"] = str(
+        payload.get("cup_holder_place_final_x_offset_m")
+        or env.get("CUP_HOLDER_PLACE_FINAL_X_OFFSET_M")
+        or "0.015"
+    )
     env["CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M"] = str(
         payload.get("cup_holder_place_final_y_offset_m")
         or env.get("CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M")
@@ -3509,7 +3520,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"SERVICE_PREFIX={shlex.quote(service_prefix)} "
             "DISPLAY=${DISPLAY:-:0} "
             "XAUTHORITY=${XAUTHORITY:-/run/user/1000/gdm/Xauthority} "
-            "LID_ROS_LOCALHOST_ONLY=${LID_ROS_LOCALHOST_ONLY:-0} "
+            "LID_ROS_LOCALHOST_ONLY=${LID_ROS_LOCALHOST_ONLY:-1} "
             "LID_TCP_GRASP_OFFSET_Z_M=${LID_TCP_GRASP_OFFSET_Z_M:--0.032} "
             "MOVE_TO_LID_VIEW_POSE=true "
             f"bash {shlex.quote(str(direct_script))}"
@@ -3699,6 +3710,11 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             or os.environ.get("CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M")
             or "-0.030"
         ).strip()
+        place_final_x_offset_m = str(
+            payload.get("cup_holder_place_final_x_offset_m")
+            or os.environ.get("CUP_HOLDER_PLACE_FINAL_X_OFFSET_M")
+            or "0.015"
+        ).strip()
         place_final_y_offset_m = str(
             payload.get("cup_holder_place_final_y_offset_m")
             or os.environ.get("CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M")
@@ -3718,6 +3734,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--moveit-planning-time-sec 8.0 --moveit-planning-attempts 5 "
             "--moveit-velocity-scaling 0.08 --moveit-acceleration-scaling 0.06 "
             "--approach-velocity 80.0 --approach-acceleration 20.0 "
+            f"--place-final-x-offset-m {shlex.quote(place_final_x_offset_m)} "
             f"--place-final-y-offset-m {shlex.quote(place_final_y_offset_m)} "
             f"--place-final-z-offset-m {shlex.quote(place_final_z_offset_m)} "
             f"--rz-offset-deg {shlex.quote(cup_holder_rz_offset_deg)} "
@@ -4358,6 +4375,9 @@ class Handler(BaseHTTPRequestHandler):
                     "DISPENSER_TCP_NAME", DEFAULT_DISPENSER_TCP_NAME
                 ),
                 "selected_dispenser_id": os.environ.get("SELECTED_DISPENSER_ID", "2"),
+                "cup_holder_place_final_x_offset_m": os.environ.get(
+                    "CUP_HOLDER_PLACE_FINAL_X_OFFSET_M", "0.015"
+                ),
                 "cup_holder_place_final_y_offset_m": os.environ.get(
                     "CUP_HOLDER_PLACE_FINAL_Y_OFFSET_M", "-0.010"
                 ),

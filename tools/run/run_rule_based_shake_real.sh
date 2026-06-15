@@ -48,6 +48,8 @@ APPROACH_LINE_TIME="${APPROACH_LINE_TIME:-3.5}"
 SHAKE_LINE_TIME="${SHAKE_LINE_TIME:-0.40}"
 SERVICE_WAIT_TIMEOUT_SEC="${SERVICE_WAIT_TIMEOUT_SEC:-5.0}"
 MOTION_RESPONSE_TIMEOUT_SEC="${MOTION_RESPONSE_TIMEOUT_SEC:-10.0}"
+ROBOT_STATE_TIMEOUT_SEC="${ROBOT_STATE_TIMEOUT_SEC:-8.0}"
+ROBOT_STATE_RETRIES="${ROBOT_STATE_RETRIES:-3}"
 RX="${RX:-180.0}"
 RY="${RY:-0.0}"
 RZ="${RZ:-180.0}"
@@ -158,8 +160,21 @@ prefixed_service() {
 if [[ "${REQUIRE_ROBOT_STANDBY}" == "true" ]]; then
   echo "[Azas] Checking Doosan robot state before real motion."
   robot_state_service="$(prefixed_service system/get_robot_state)"
-  if ! robot_state_output="$(timeout 5s ros2 service call "${robot_state_service}" dsr_msgs2/srv/GetRobotState "{}")"; then
-    echo "[Azas] Refusing real robot shake: ${robot_state_service} did not respond."
+  robot_state_output=""
+  robot_state_ok=false
+  for attempt in $(seq 1 "${ROBOT_STATE_RETRIES}"); do
+    if robot_state_output="$(
+      timeout "${ROBOT_STATE_TIMEOUT_SEC}s" \
+        ros2 service call "${robot_state_service}" dsr_msgs2/srv/GetRobotState "{}"
+    )"; then
+      robot_state_ok=true
+      break
+    fi
+    echo "[Azas] ${robot_state_service} did not respond (attempt ${attempt}/${ROBOT_STATE_RETRIES}); retrying..."
+    sleep 0.5
+  done
+  if [[ "${robot_state_ok}" != "true" ]]; then
+    echo "[Azas] Refusing real robot shake: ${robot_state_service} did not respond after ${ROBOT_STATE_RETRIES} attempts."
     echo "[Azas] Start Doosan real bringup and confirm the robot network is connected."
     exit 1
   fi

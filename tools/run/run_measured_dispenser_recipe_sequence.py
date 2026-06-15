@@ -1785,6 +1785,7 @@ class IntegratedRecipeMotion:
         if abs(rz_offset_deg) > 1e-9:
             for posx in (pre_place, place_final, retreat):
                 posx[5] += rz_offset_deg
+        place_final[0] += self.args.cup_holder_place_final_x_offset_m * 1000.0
         place_final[1] += self.args.cup_holder_place_final_y_offset_m * 1000.0
         place_final[2] += self.args.cup_holder_place_final_z_offset_m * 1000.0
         for label, posx in (
@@ -3747,6 +3748,7 @@ def parse_args() -> argparse.Namespace:
         help="After the final dispenser re-grasp, place the held cup into calibration.yaml cup_holder.side_grip_place.",
     )
     parser.add_argument("--cup-holder-place-final-z-offset-m", type=float, default=-0.040)
+    parser.add_argument("--cup-holder-place-final-x-offset-m", type=float, default=0.015)
     parser.add_argument("--cup-holder-place-final-y-offset-m", type=float, default=-0.010)
     parser.add_argument(
         "--cup-holder-rz-offset-deg",
@@ -3965,6 +3967,7 @@ def main() -> int:
     )
     print(
         f"[Azas] cup_holder_after_sequence={str(args.place_cup_holder_after_sequence).lower()} "
+        f"place_final_x_offset_m={args.cup_holder_place_final_x_offset_m:.3f} "
         f"place_final_y_offset_m={args.cup_holder_place_final_y_offset_m:.3f} "
         f"place_final_z_offset_m={args.cup_holder_place_final_z_offset_m:.3f} "
         f"rz_offset_deg={args.cup_holder_rz_offset_deg:.1f}"
@@ -4180,6 +4183,8 @@ def main() -> int:
                         f"{args.cup_holder_retreat_acceleration:.6f}",
                         "--place-final-z-offset-m",
                         f"{args.cup_holder_place_final_z_offset_m:.6f}",
+                        "--place-final-x-offset-m",
+                        f"{args.cup_holder_place_final_x_offset_m:.6f}",
                         "--place-final-y-offset-m",
                         f"{args.cup_holder_place_final_y_offset_m:.6f}",
                         "--rz-offset-deg",
