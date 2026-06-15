@@ -220,8 +220,47 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                         LaunchConfiguration("grasp_mode"),
                         value_type=str,
                     ),
+                    "motion_link": ParameterValue(
+                        LaunchConfiguration("motion_link"),
+                        value_type=str,
+                    ),
+                    "camera_reference_link": ParameterValue(
+                        LaunchConfiguration("camera_reference_link"),
+                        value_type=str,
+                    ),
+                    "side_tcp_compensation_enabled": LaunchConfiguration(
+                        "side_tcp_compensation_enabled"
+                    ),
+                    "side_tcp_reach_m": LaunchConfiguration("side_tcp_reach_m"),
+                    "side_tcp_stage_offset_m": LaunchConfiguration(
+                        "side_tcp_stage_offset_m"
+                    ),
+                    "side_tcp_pre_offset_m": LaunchConfiguration(
+                        "side_tcp_pre_offset_m"
+                    ),
+                    "side_tcp_close_offset_m": LaunchConfiguration(
+                        "side_tcp_close_offset_m"
+                    ),
                     "side_grasp_axis": ParameterValue(
                         LaunchConfiguration("side_grasp_axis"),
+                        value_type=str,
+                    ),
+                    "side_candidate_axes": ParameterValue(
+                        LaunchConfiguration("side_candidate_axes"),
+                        value_type=str,
+                    ),
+                    "side_secondary_axis_score_penalty_m": LaunchConfiguration(
+                        "side_secondary_axis_score_penalty_m"
+                    ),
+                    "side_joint_seed_candidates_enabled": LaunchConfiguration(
+                        "side_joint_seed_candidates_enabled"
+                    ),
+                    "side_joint_seed_offsets_deg": ParameterValue(
+                        LaunchConfiguration("side_joint_seed_offsets_deg"),
+                        value_type=str,
+                    ),
+                    "side_joint_seed_positions_deg": ParameterValue(
+                        LaunchConfiguration("side_joint_seed_positions_deg"),
                         value_type=str,
                     ),
                     "side_grasp_direction": LaunchConfiguration("side_grasp_direction"),
@@ -237,6 +276,12 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "side_stage_y_max": LaunchConfiguration("side_stage_y_max"),
                     "side_target_x_offset_m": LaunchConfiguration(
                         "side_target_x_offset_m"
+                    ),
+                    "side_target_y_offset_m": LaunchConfiguration(
+                        "side_target_y_offset_m"
+                    ),
+                    "side_target_y_offset_follows_direction": LaunchConfiguration(
+                        "side_target_y_offset_follows_direction"
                     ),
                     "side_grasp_offset": LaunchConfiguration("side_grasp_offset"),
                     "side_grasp_z_offset": LaunchConfiguration("side_grasp_z_offset"),
@@ -270,6 +315,28 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                     "side_fixed_grasp_z": LaunchConfiguration("side_fixed_grasp_z"),
                     "side_project_bbox_center_to_fixed_z": LaunchConfiguration(
                         "side_project_bbox_center_to_fixed_z"
+                    ),
+                    "side_cup_collision_enabled": LaunchConfiguration(
+                        "side_cup_collision_enabled"
+                    ),
+                    "side_cup_collision_id": ParameterValue(
+                        LaunchConfiguration("side_cup_collision_id"),
+                        value_type=str,
+                    ),
+                    "side_cup_collision_radius_m": LaunchConfiguration(
+                        "side_cup_collision_radius_m"
+                    ),
+                    "side_cup_collision_height_m": LaunchConfiguration(
+                        "side_cup_collision_height_m"
+                    ),
+                    "side_cup_collision_padding_m": LaunchConfiguration(
+                        "side_cup_collision_padding_m"
+                    ),
+                    "side_cup_collision_clear_before_close": LaunchConfiguration(
+                        "side_cup_collision_clear_before_close"
+                    ),
+                    "side_cup_collision_update_wait_sec": LaunchConfiguration(
+                        "side_cup_collision_update_wait_sec"
                     ),
                     "table_collision_enabled": LaunchConfiguration(
                         "table_collision_enabled"
@@ -308,6 +375,17 @@ def _runtime_nodes(context, moveit_params, moveit_py_params, side_prepose_params
                         value_type=str,
                     ),
                     "side_tool_roll_deg": LaunchConfiguration("side_tool_roll_deg"),
+                    "side_y_tool_roll_candidates_deg": ParameterValue(
+                        LaunchConfiguration("side_y_tool_roll_candidates_deg"),
+                        value_type=str,
+                    ),
+                    "side_x_tool_roll_candidates_deg": ParameterValue(
+                        LaunchConfiguration("side_x_tool_roll_candidates_deg"),
+                        value_type=str,
+                    ),
+                    "side_tool_roll_score_penalty_m": LaunchConfiguration(
+                        "side_tool_roll_score_penalty_m"
+                    ),
                     "side_roll_deg": LaunchConfiguration("side_roll_deg"),
                     "side_pitch_deg": LaunchConfiguration("side_pitch_deg"),
                     "side_yaw_deg": LaunchConfiguration("side_yaw_deg"),
@@ -467,8 +545,78 @@ def generate_launch_description():
         "redetect_settle_sec", default_value="0.5"
     )
     grasp_mode_arg = DeclareLaunchArgument("grasp_mode", default_value="side")
+    motion_link_arg = DeclareLaunchArgument(
+        "motion_link",
+        default_value="gripper_tcp",
+        description="MoveIt pose target link. Use gripper_tcp so Cartesian cup goals command the RG2 TCP, not link_6.",
+    )
+    camera_reference_link_arg = DeclareLaunchArgument(
+        "camera_reference_link",
+        default_value="link_6",
+        description="Robot link used with T_gripper2camera.npy for hand-eye camera transforms.",
+    )
+    side_tcp_compensation_enabled_arg = DeclareLaunchArgument(
+        "side_tcp_compensation_enabled",
+        default_value="true",
+        description="Convert legacy link_6 side-grip offsets to safe gripper_tcp standoff distances.",
+    )
+    side_tcp_reach_m_arg = DeclareLaunchArgument(
+        "side_tcp_reach_m",
+        default_value="0.213",
+        description="Fixed link_6-to-gripper_tcp reach used to compensate legacy side-grip offsets.",
+    )
+    side_tcp_stage_offset_m_arg = DeclareLaunchArgument(
+        "side_tcp_stage_offset_m",
+        default_value="0.120",
+        description="Minimum TCP standoff from cup center for the low/high side staging waypoint.",
+    )
+    side_tcp_pre_offset_m_arg = DeclareLaunchArgument(
+        "side_tcp_pre_offset_m",
+        default_value="0.100",
+        description="Minimum TCP standoff from cup center for the side pre-grasp waypoint.",
+    )
+    side_tcp_close_offset_m_arg = DeclareLaunchArgument(
+        "side_tcp_close_offset_m",
+        default_value="0.055",
+        description="Minimum TCP standoff from cup center before closing to avoid pushing through the cup.",
+    )
     side_grasp_axis_arg = DeclareLaunchArgument(
         "side_grasp_axis", default_value="y_axis"
+    )
+    side_candidate_axes_arg = DeclareLaunchArgument(
+        "side_candidate_axes",
+        default_value="y,x",
+        description="Comma-separated side-grip candidate axes. y,x keeps left/right first and falls back to front/back approaches.",
+    )
+    side_secondary_axis_score_penalty_m_arg = DeclareLaunchArgument(
+        "side_secondary_axis_score_penalty_m",
+        default_value="0.15",
+        description="Score penalty in meters for axes other than side_grasp_axis, preserving the preferred axis unless it fails.",
+    )
+    side_joint_seed_candidates_enabled_arg = DeclareLaunchArgument(
+        "side_joint_seed_candidates_enabled",
+        default_value="true",
+        description="Try collision-aware joint seed/prepose offsets before side pose candidates.",
+    )
+    side_joint_seed_offsets_deg_arg = DeclareLaunchArgument(
+        "side_joint_seed_offsets_deg",
+        default_value="0,0,0,0,0,0",
+        description="Semicolon-separated joint_1..joint_6 seed offsets in degrees, relative to current joints. Applied only to x-axis side candidates.",
+    )
+    side_joint_seed_positions_deg_arg = DeclareLaunchArgument(
+        "side_joint_seed_positions_deg",
+        default_value=(
+            "62.84,36.44,128.21,91.78,-88.90,72.33;"
+            "62.84,36.44,128.21,91.78,-88.90,87.33;"
+            "62.84,36.44,128.21,91.78,-88.90,57.33;"
+            "54.84,36.44,128.21,76.78,-88.90,82.33;"
+            "70.84,36.44,128.21,106.78,-88.90,62.33;"
+            "62.84,42.44,120.21,91.78,-98.90,72.33;"
+            "62.84,30.44,136.21,91.78,-78.90,72.33;"
+            "58.84,40.44,124.21,81.78,-96.90,87.33;"
+            "66.84,32.44,132.21,101.78,-80.90,57.33"
+        ),
+        description="Semicolon-separated absolute joint_1..joint_6 seed positions in degrees. Applied only to x-axis side candidates.",
     )
     side_grasp_direction_arg = DeclareLaunchArgument(
         "side_grasp_direction",
@@ -507,8 +655,18 @@ def generate_launch_description():
     )
     side_target_x_offset_m_arg = DeclareLaunchArgument(
         "side_target_x_offset_m",
-        default_value="0.0",
+        default_value="-0.02",
         description="Planning-only base_link X compensation added to side-grip cup targets after vision/refinement.",
+    )
+    side_target_y_offset_m_arg = DeclareLaunchArgument(
+        "side_target_y_offset_m",
+        default_value="0.09",
+        description="Planning-only base_link Y compensation added to side-grip cup targets after vision/refinement.",
+    )
+    side_target_y_offset_follows_direction_arg = DeclareLaunchArgument(
+        "side_target_y_offset_follows_direction",
+        default_value="true",
+        description="If true for y-axis side grasps, apply side_target_y_offset_m with the opposite selected side direction sign.",
     )
     side_grasp_offset_arg = DeclareLaunchArgument(
         "side_grasp_offset", default_value="0.035"
@@ -572,6 +730,41 @@ def generate_launch_description():
         "side_project_bbox_center_to_fixed_z",
         default_value="true",
         description="Project the initial bbox center ray onto side_fixed_grasp_z for side target X/Y.",
+    )
+    side_cup_collision_enabled_arg = DeclareLaunchArgument(
+        "side_cup_collision_enabled",
+        default_value="true",
+        description="Add a temporary detected-cup collision object during gross side-grip motion.",
+    )
+    side_cup_collision_id_arg = DeclareLaunchArgument(
+        "side_cup_collision_id",
+        default_value="side_grip_detected_cup",
+        description="Collision object id for the temporary detected cup.",
+    )
+    side_cup_collision_radius_m_arg = DeclareLaunchArgument(
+        "side_cup_collision_radius_m",
+        default_value="0.045",
+        description="Nominal detected cup collision radius.",
+    )
+    side_cup_collision_height_m_arg = DeclareLaunchArgument(
+        "side_cup_collision_height_m",
+        default_value="0.120",
+        description="Detected cup collision cylinder height.",
+    )
+    side_cup_collision_padding_m_arg = DeclareLaunchArgument(
+        "side_cup_collision_padding_m",
+        default_value="0.015",
+        description="Extra detected cup collision radius padding for gross motion.",
+    )
+    side_cup_collision_clear_before_close_arg = DeclareLaunchArgument(
+        "side_cup_collision_clear_before_close",
+        default_value="true",
+        description="Remove detected cup collision before the final intentional close approach.",
+    )
+    side_cup_collision_update_wait_sec_arg = DeclareLaunchArgument(
+        "side_cup_collision_update_wait_sec",
+        default_value="0.15",
+        description="Small wait after publishing cup collision add/remove messages.",
     )
     dispenser_collision_enabled_arg = DeclareLaunchArgument(
         "dispenser_collision_enabled",
@@ -711,6 +904,21 @@ def generate_launch_description():
         "side_tool_roll_deg",
         default_value="0.0",
         description="Twist around the horizontal approach direction for RG2 finger alignment.",
+    )
+    side_y_tool_roll_candidates_deg_arg = DeclareLaunchArgument(
+        "side_y_tool_roll_candidates_deg",
+        default_value="configured",
+        description="Comma-separated tool-roll candidates for y-axis side grasps; configured means side_tool_roll_deg.",
+    )
+    side_x_tool_roll_candidates_deg_arg = DeclareLaunchArgument(
+        "side_x_tool_roll_candidates_deg",
+        default_value="90,-90,configured,180",
+        description="Comma-separated tool-roll candidates for x-axis side grasps; x-axis tries wrist-rotated postures first.",
+    )
+    side_tool_roll_score_penalty_m_arg = DeclareLaunchArgument(
+        "side_tool_roll_score_penalty_m",
+        default_value="0.005",
+        description="Small score penalty per later tool-roll candidate rank.",
     )
     side_roll_deg_arg = DeclareLaunchArgument(
         "side_roll_deg",
@@ -887,7 +1095,19 @@ def generate_launch_description():
             redetect_on_approach_arg,
             redetect_settle_sec_arg,
             grasp_mode_arg,
+            motion_link_arg,
+            camera_reference_link_arg,
+            side_tcp_compensation_enabled_arg,
+            side_tcp_reach_m_arg,
+            side_tcp_stage_offset_m_arg,
+            side_tcp_pre_offset_m_arg,
+            side_tcp_close_offset_m_arg,
             side_grasp_axis_arg,
+            side_candidate_axes_arg,
+            side_secondary_axis_score_penalty_m_arg,
+            side_joint_seed_candidates_enabled_arg,
+            side_joint_seed_offsets_deg_arg,
+            side_joint_seed_positions_deg_arg,
             side_grasp_direction_arg,
             side_approach_offset_arg,
             side_staging_offset_arg,
@@ -896,6 +1116,8 @@ def generate_launch_description():
             side_stage_y_min_arg,
             side_stage_y_max_arg,
             side_target_x_offset_m_arg,
+            side_target_y_offset_m_arg,
+            side_target_y_offset_follows_direction_arg,
             side_grasp_offset_arg,
             side_grasp_z_offset_arg,
             side_grasp_stop_backoff_m_arg,
@@ -909,6 +1131,13 @@ def generate_launch_description():
             side_fixed_grasp_z_enabled_arg,
             side_fixed_grasp_z_arg,
             side_project_bbox_center_to_fixed_z_arg,
+            side_cup_collision_enabled_arg,
+            side_cup_collision_id_arg,
+            side_cup_collision_radius_m_arg,
+            side_cup_collision_height_m_arg,
+            side_cup_collision_padding_m_arg,
+            side_cup_collision_clear_before_close_arg,
+            side_cup_collision_update_wait_sec_arg,
             dispenser_collision_enabled_arg,
             dispenser_collision_config_path_arg,
             dispenser_collision_publish_period_sec_arg,
@@ -933,6 +1162,9 @@ def generate_launch_description():
             workspace_boundary_wall_clearance_arg,
             side_orientation_mode_arg,
             side_tool_roll_deg_arg,
+            side_y_tool_roll_candidates_deg_arg,
+            side_x_tool_roll_candidates_deg_arg,
+            side_tool_roll_score_penalty_m_arg,
             side_roll_deg_arg,
             side_pitch_deg_arg,
             side_yaw_deg_arg,
