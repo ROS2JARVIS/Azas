@@ -393,7 +393,7 @@ class YoloCupPickNode(Node):
         self.declare_parameter("side_candidate_plan_check_enabled", True)
         self.declare_parameter("side_linear_approach_enabled", True)
         self.declare_parameter("side_final_slide_enabled", False)
-        self.declare_parameter("side_fixed_grasp_z_enabled", False)
+        self.declare_parameter("side_fixed_grasp_z_enabled", True)
         self.declare_parameter("side_fixed_grasp_z", 0.07)
         self.declare_parameter("side_project_bbox_center_to_fixed_z", True)
         self.declare_parameter("side_cup_collision_enabled", True)
