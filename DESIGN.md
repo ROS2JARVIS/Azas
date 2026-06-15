@@ -2,7 +2,7 @@
 
 ## Source of truth
 - Status: Draft
-- Last refreshed: 2026-06-13
+- Last refreshed: 2026-06-15
 - Primary product surfaces: Azas voice order screen, menu preview panel, robot pipeline status UI, kiosk/menu surfaces.
 - Evidence reviewed: `src/azas_voice/web/voice.html`, `src/azas_voice/web/voice.css`, `src/azas_voice/web/voice.js`, `src/azas_voice/azas_voice/voice_screen_node.py`, `src/azas_voice/azas_voice/voice_pipeline_executor_node.py`, `src/azas_voice/config/recipes.yaml`, `src/azas_kiosk/`.
 
@@ -12,9 +12,9 @@
 - Avoid: marketing hero pages, decorative-only UI, hidden robot motion state, fake coordinates or unsupported safety claims.
 
 ## Product goals
-- Goals: let users order many named drinks by voice or touch, preview the finished drink, and understand the robot's current manufacturing stage.
+- Goals: let users order many named drinks by voice or touch, preview the finished drink, watch the active vision feed, and understand the robot's current manufacturing stage.
 - Non-goals: manual robot coordinate entry, free-form motion generation, unsupported recipe execution outside measured dispenser/color mappings.
-- Success signals: users can pick from a larger menu, see ingredient amounts, see the current robot step, and recover from interrupted dispenser sequences.
+- Success signals: users can pick from a larger menu, see ingredient amounts, see the current robot step, see the active camera/detection process, and recover from interrupted dispenser sequences.
 
 ## Personas and jobs
 - Primary personas: demo operator, guest ordering a drink, developer validating the robot flow.
@@ -24,7 +24,7 @@
 ## Information architecture
 - Primary navigation: single voice order screen with adjacent menu/status panel.
 - Core routes/screens: voice conversation, selected drink preview, robot process stage, catalog list.
-- Content hierarchy: current order and confirmation first, finished drink preview second, recipe catalog and process detail nearby.
+- Content hierarchy: current order and confirmation first, finished drink preview second, vision feed and robot process status nearby, recipe catalog below.
 
 ## Design principles
 - Principle 1: show operational state directly instead of explaining the system.
@@ -41,8 +41,8 @@
 
 ## Components
 - Existing components to reuse: voice orb, dialogue bubbles, status grid, recipe glass SVG, ingredient chips, pipeline step list.
-- New/changed components: catalog item buttons, drink stat block, robot process scene, resume-aware pipeline stage.
-- Variants and states: idle, recommended, confirmed, making, completed, failed, dry-run, resume recovery.
+- New/changed components: catalog item buttons, drink stat block, robot process scene, resume-aware pipeline stage, live vision camera panel.
+- Variants and states: idle, recommended, confirmed, making, completed, failed, dry-run, resume recovery, Realsense live, cup upright/lying, lid detection, hand detection.
 - Token/component ownership: `src/azas_voice/web/voice.css` owns current web styling; recipe data comes from `src/azas_voice/config/recipes.yaml`.
 
 ## Accessibility
@@ -64,6 +64,7 @@
 - Success: show completed badge and final drink preview.
 - Disabled: hardware execution may remain dry-run from launch parameters.
 - Offline/slow network, if applicable: periodic refresh should keep the last known UI state visible.
+- Camera transitions: cup upright/lying view remains visible for 2 seconds after classification leaves the active stage; lid detection view stops when the pipeline enters shake; hand detection view appears during the handover stage.
 
 ## Content voice
 - Tone: concise Korean service copy.
@@ -74,7 +75,7 @@
 - Framework/styling system: static HTML/CSS/JavaScript served by `voice_screen_node.py`.
 - Design-token constraints: no central token system yet; keep colors local and ingredient-specific.
 - Performance constraints: catalog rendering should avoid repeated full DOM rebuilds unless catalog data changes.
-- Compatibility constraints: ROS nodes publish JSON status; browser UI polls `/api/state`.
+- Compatibility constraints: ROS nodes publish JSON status and ROS image topics; browser UI polls `/api/state` and fetches cache-busted JPEG camera frames from `voice_screen_node.py`.
 - Test/screenshot expectations: run parser/mapper tests for recipe changes and smoke browser/server behavior when launch environment is available.
 
 ## Open questions

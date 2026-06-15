@@ -128,6 +128,7 @@
               <li data-step="컵 픽업">컵 픽업</li>
               <li data-step="디스펜서">디스펜서</li>
               <li data-step="뚜껑·쉐이킹">뚜껑·쉐이킹</li>
+              <li data-step="손 검출">손 검출</li>
               <li data-step="완료">완료</li>
             </ol>
             <section class="robot-process" aria-label="로봇 제조 과정">
@@ -147,6 +148,21 @@
               <p id="robot-status-text" class="robot-status-text">주문 대기</p>
             </section>
           </div>
+        </section>
+
+        <section id="vision-camera-panel" class="vision-camera-panel" aria-label="실시간 비전 카메라">
+          <div class="vision-camera-title-row">
+            <div>
+              <p class="eyebrow">Azas Vision</p>
+              <h2 id="vision-camera-title">Realsense 실시간 화면</h2>
+            </div>
+            <span id="vision-camera-badge" class="vision-camera-badge">대기</span>
+          </div>
+          <div class="vision-camera-frame">
+            <img id="vision-camera-image" alt="Azas 비전 카메라 실시간 화면" />
+            <div id="vision-camera-empty" class="vision-camera-empty">카메라 프레임 대기</div>
+          </div>
+          <p id="vision-camera-detail" class="vision-camera-detail">/camera/camera/color/image_raw</p>
         </section>
 
         <section class="catalog-panel" aria-label="메뉴 카탈로그">

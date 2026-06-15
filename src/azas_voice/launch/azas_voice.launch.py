@@ -46,6 +46,10 @@ def generate_launch_description():
             DeclareLaunchArgument("run_voice_screen", default_value="true"),
             DeclareLaunchArgument("voice_screen_host", default_value="0.0.0.0"),
             DeclareLaunchArgument("voice_screen_port", default_value="8090"),
+            DeclareLaunchArgument("voice_screen_camera_color_topic", default_value="/camera/camera/color/image_raw"),
+            DeclareLaunchArgument("voice_screen_cup_detection_topic", default_value="/azas/cup_detection"),
+            DeclareLaunchArgument("voice_screen_lid_detection_topic", default_value="/azas/lid_detection"),
+            DeclareLaunchArgument("voice_screen_hand_overlay_topic", default_value="/azas/human_hand_detection/overlay"),
             DeclareLaunchArgument("use_tts", default_value="true"),
             DeclareLaunchArgument("enable_tts_audio", default_value="true"),
             DeclareLaunchArgument("tts_speech_rate", default_value="1.25"),
@@ -198,6 +202,10 @@ def generate_launch_description():
                             LaunchConfiguration("voice_screen_port"), value_type=int
                         ),
                         "stt_topic": stt_topic,
+                        "camera_color_topic": LaunchConfiguration("voice_screen_camera_color_topic"),
+                        "cup_detection_topic": LaunchConfiguration("voice_screen_cup_detection_topic"),
+                        "lid_detection_topic": LaunchConfiguration("voice_screen_lid_detection_topic"),
+                        "hand_overlay_topic": LaunchConfiguration("voice_screen_hand_overlay_topic"),
                     }
                 ],
                 condition=IfCondition(run_voice_screen),
