@@ -198,6 +198,7 @@ def main() -> int:
     parser.add_argument("--descent-velocity", type=float, default=22.0)
     parser.add_argument("--descent-acceleration", type=float, default=32.0)
     parser.add_argument("--descent-step-m", type=float, default=0.03)
+    parser.add_argument("--first-descent-step-m", type=float, default=0.08)
     parser.add_argument("--max-descent-steps", type=int, default=0,
                         help="maximum staged descent steps; 0 means use the Z floor only")
     parser.add_argument("--force-search-start-above-palm-m", type=float, default=0.16,
@@ -214,36 +215,36 @@ def main() -> int:
     parser.add_argument("--j5-max-deg", type=float, default=None)
     parser.add_argument("--skip-force-monitor", action="store_true",
                         help="pass through to handover script; staged descent remains but force abort is disabled")
-    parser.add_argument("--force-abort-delta-n", type=float, default=2.0,
+    parser.add_argument("--force-abort-delta-n", type=float, default=0.6,
                         help="force rise over baseline that counts as palm contact during descent")
-    parser.add_argument("--force-axis-delta-n", type=float, default=1.0,
+    parser.add_argument("--force-axis-delta-n", type=float, default=0.5,
                         help="also count contact when any single force axis changes by this much")
-    parser.add_argument("--contact-axis", choices=("z", "xy", "all"), default="z",
-                        help="force axes used for contact release; z is safest for vertical handover")
-    parser.add_argument("--contact-z-direction", choices=("positive", "negative", "any"), default="positive",
+    parser.add_argument("--contact-axis", choices=("z", "xy", "all"), default="all",
+                        help="force axes used for contact release; all is most sensitive for vertical handover")
+    parser.add_argument("--contact-z-direction", choices=("positive", "negative", "any"), default="any",
                         help="when --contact-axis z, require this signed Z force delta for contact")
-    parser.add_argument("--contact-step-delta-n", type=float, default=2.0,
+    parser.add_argument("--contact-step-delta-n", type=float, default=0.3,
                         help="contact candidate also requires this force jump from the previous descent step")
-    parser.add_argument("--require-force-magnitude-delta", action=argparse.BooleanOptionalAction, default=True,
+    parser.add_argument("--require-force-magnitude-delta", action=argparse.BooleanOptionalAction, default=False,
                         help="also require total force magnitude to rise before contact release")
-    parser.add_argument("--force-magnitude-delta-n", type=float, default=1.5,
+    parser.add_argument("--force-magnitude-delta-n", type=float, default=0.6,
                         help="minimum total force magnitude rise required with --require-force-magnitude-delta")
     parser.add_argument("--force-baseline-samples", type=int, default=5,
                         help="average this many GetToolForce samples before descent")
     parser.add_argument("--force-baseline-interval-sec", type=float, default=0.05,
                         help="delay between baseline force samples")
-    parser.add_argument("--force-read-settle-sec", type=float, default=0.15,
+    parser.add_argument("--force-read-settle-sec", type=float, default=0.05,
                         help="wait after each descent step before reading force")
     parser.add_argument("--release-on-contact", action=argparse.BooleanOptionalAction, default=True,
                         help="open the gripper at the first force/contact trigger during descent")
     parser.add_argument("--require-contact-for-release", action=argparse.BooleanOptionalAction, default=True,
                         help="with --release-on-contact, retreat with the cup if contact is never detected")
-    parser.add_argument("--contact-confirm-samples", type=int, default=5,
+    parser.add_argument("--contact-confirm-samples", type=int, default=2,
                         help="consecutive above-threshold force samples required before opening RG2")
-    parser.add_argument("--contact-confirm-min-hits", type=int, default=0,
+    parser.add_argument("--contact-confirm-min-hits", type=int, default=1,
                         help="minimum hit samples needed within --contact-confirm-samples; "
                              "0 means all samples")
-    parser.add_argument("--contact-confirm-interval-sec", type=float, default=0.12,
+    parser.add_argument("--contact-confirm-interval-sec", type=float, default=0.05,
                         help="delay between force confirmation samples")
     parser.add_argument("--contact-relief-lift-m", type=float, default=0.0,
                         help="deprecated/ignored: contact release now opens RG2 at the confirmed contact pose")
@@ -293,6 +294,7 @@ def main() -> int:
         "--descent-velocity", f"{args.descent_velocity:.3f}",
         "--descent-acceleration", f"{args.descent_acceleration:.3f}",
         "--descent-step-m", f"{args.descent_step_m:.3f}",
+        "--first-descent-step-m", f"{args.first_descent_step_m:.3f}",
         "--max-descent-steps", str(args.max_descent_steps),
         "--force-search-start-above-palm-m", f"{args.force_search_start_above_palm_m:.3f}",
         "--force-search-below-palm-m", f"{args.force_search_below_palm_m:.3f}",
