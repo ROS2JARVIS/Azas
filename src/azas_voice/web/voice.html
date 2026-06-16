@@ -133,17 +133,35 @@
             </ol>
             <section class="robot-process" aria-label="로봇 제조 과정">
               <div id="robot-scene" class="robot-scene" data-step="idle">
+                <div class="robot-camera">
+                  <span></span>
+                </div>
                 <div class="robot-base"></div>
                 <div class="robot-arm lower"></div>
                 <div class="robot-arm upper"></div>
                 <div class="robot-gripper"></div>
                 <div class="robot-cup">
+                  <div class="cup-lid">
+                    <span class="aruco-dot"></span>
+                  </div>
                   <span></span>
                 </div>
                 <div class="robot-dispenser">
+                  <div class="dispenser-label">디스펜서</div>
+                  <div class="dispenser-columns">
+                    <span class="dispenser-column yellow" data-id="1"></span>
+                    <span class="dispenser-column red" data-id="2"></span>
+                    <span class="dispenser-column blue" data-id="3"></span>
+                    <span class="dispenser-column green" data-id="4"></span>
+                  </div>
+                  <div class="dispenser-nozzles">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+                  <div class="dispense-stream"></div>
+                </div>
+                <div class="robot-shaker">
                   <span></span>
                 </div>
-                <div class="robot-shaker"></div>
               </div>
               <p id="robot-status-text" class="robot-status-text">주문 대기</p>
             </section>

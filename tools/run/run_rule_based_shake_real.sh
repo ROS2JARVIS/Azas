@@ -16,10 +16,14 @@ SKIP_CUP_HOLDER_PICK="${SKIP_CUP_HOLDER_PICK:-false}"
 CUP_HOLDER_PICK_CONFIG="${CUP_HOLDER_PICK_CONFIG:-${ROOT_DIR}/install/azas_bringup/share/azas_bringup/config/calibration.yaml}"
 CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M="${CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M:-0.0}"
 # Operational-only offset for the pre-shake re-grasp from cup_holder.side_grip_place.
-# Negative values lower the final grasp pose; calibration.yaml is not modified.
-CUP_HOLDER_PICK_Z_OFFSET_M="${CUP_HOLDER_PICK_Z_OFFSET_M:--0.020}"
+# Y positive moves the final grasp pose +Y; Z negative lowers it.
+# calibration.yaml is not modified.
+CUP_HOLDER_PICK_Y_OFFSET_M="${CUP_HOLDER_PICK_Y_OFFSET_M:-0.010}"
+CUP_HOLDER_PICK_Z_OFFSET_M="${CUP_HOLDER_PICK_Z_OFFSET_M:--0.037371}"
 CUP_HOLDER_PICK_WIDTH_M="${CUP_HOLDER_PICK_WIDTH_M:-0.068}"
 CUP_HOLDER_PICK_FORCE_N="${CUP_HOLDER_PICK_FORCE_N:-25.0}"
+CUP_HOLDER_PICK_POST_GRASP_SETTLE_SEC="${CUP_HOLDER_PICK_POST_GRASP_SETTLE_SEC:-0.3}"
+WORKSPACE_COLLISION_STOP_SETTLE_SEC="${WORKSPACE_COLLISION_STOP_SETTLE_SEC:-0.5}"
 USE_CURRENT_TCP_AS_SHAKE_CENTER="${USE_CURRENT_TCP_AS_SHAKE_CENTER:-false}"
 REQUIRE_JOINT_LIMITS="${REQUIRE_JOINT_LIMITS:-true}"
 REQUIRE_ROBOT_STANDBY="${REQUIRE_ROBOT_STANDBY:-true}"
@@ -290,6 +294,7 @@ fi
 
 if [[ "${SKIP_CUP_HOLDER_PICK}" != "true" ]]; then
   echo "[Azas] Cup-holder pick is required before shake. Starting measured holder side-grip pickup."
+  echo "[Azas] Cup-holder pick Y offset: ${CUP_HOLDER_PICK_Y_OFFSET_M} m (positive moves grasp pose +Y; calibration unchanged)."
   echo "[Azas] Cup-holder pick Z offset: ${CUP_HOLDER_PICK_Z_OFFSET_M} m (negative lowers grasp pose; calibration unchanged)."
   echo "[Azas] Cup-holder grasp: width=${CUP_HOLDER_PICK_WIDTH_M} m force=${CUP_HOLDER_PICK_FORCE_N} N; shake is conservative to reduce drop risk."
   python3 "${ROOT_DIR}/tools/run/pick_from_cup_holder_side_grip.py" \
@@ -298,12 +303,13 @@ if [[ "${SKIP_CUP_HOLDER_PICK}" != "true" ]]; then
     --approach-velocity 40.0 --approach-acceleration 40.0 \
     --descend-velocity 40.0 --descend-acceleration 40.0 \
     --lift-velocity 40.0 --lift-acceleration 40.0 \
+    --place-final-y-offset-m "${CUP_HOLDER_PICK_Y_OFFSET_M}" \
     --place-final-z-offset-m "${CUP_HOLDER_PICK_Z_OFFSET_M}" \
     --timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 \
     --ikin-timeout-sec 20.0 --ikin-retries 2 \
     --gripper-grasp-width-m "${CUP_HOLDER_PICK_WIDTH_M}" \
     --gripper-force-n "${CUP_HOLDER_PICK_FORCE_N}" \
-    --post-grasp-settle-sec 0.8 \
+    --post-grasp-settle-sec "${CUP_HOLDER_PICK_POST_GRASP_SETTLE_SEC}" \
     --z-max 0.28 \
     --execute --confirm ENABLE_CUP_HOLDER_PICK
   echo "[Azas] Cup-holder pick completed; continuing to shake with grasped cup."
@@ -318,7 +324,7 @@ fi
 if pgrep -f "workspace_collision_scene_node" >/dev/null 2>&1; then
   echo "[Azas] Stopping leftover workspace_collision_scene_node (it re-publishes the side-grip walls)."
   pkill -f "workspace_collision_scene_node" || true
-  sleep 1.5
+  sleep "${WORKSPACE_COLLISION_STOP_SETTLE_SEC}"
 fi
 echo "[Azas] Removing stale side-grip workspace walls from MoveIt scene (best-effort)."
 python3 "${ROOT_DIR}/tools/run/remove_moveit_collision_objects.py" \

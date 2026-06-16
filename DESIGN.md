@@ -2,9 +2,9 @@
 
 ## Source of truth
 - Status: Draft
-- Last refreshed: 2026-06-15
+- Last refreshed: 2026-06-16
 - Primary product surfaces: Azas voice order screen, menu preview panel, robot pipeline status UI, kiosk/menu surfaces.
-- Evidence reviewed: `src/azas_voice/web/voice.html`, `src/azas_voice/web/voice.css`, `src/azas_voice/web/voice.js`, `src/azas_voice/azas_voice/voice_screen_node.py`, `src/azas_voice/azas_voice/voice_pipeline_executor_node.py`, `src/azas_voice/config/recipes.yaml`, `src/azas_kiosk/`.
+- Evidence reviewed: `src/azas_voice/web/voice.html`, `src/azas_voice/web/voice.css`, `src/azas_voice/web/voice.js`, `src/azas_voice/azas_voice/voice_screen_node.py`, `src/azas_voice/azas_voice/voice_pipeline_executor_node.py`, `src/azas_voice/config/recipes.yaml`, `src/azas_kiosk/`, `docs/robot_pipeline_control.html`, `tools/run/robot_pipeline_control_server.py`.
 
 ## Brand
 - Personality: calm, precise, service-oriented cocktail robot.
@@ -40,9 +40,9 @@
 - Imagery/iconography: HTML/SVG drink preview and CSS robot scene are acceptable when real finished-drink photos are unavailable.
 
 ## Components
-- Existing components to reuse: voice orb, dialogue bubbles, status grid, recipe glass SVG, ingredient chips, pipeline step list.
-- New/changed components: catalog item buttons, drink stat block, robot process scene, resume-aware pipeline stage, live vision camera panel.
-- Variants and states: idle, recommended, confirmed, making, completed, failed, dry-run, resume recovery, Realsense live, cup upright/lying, lid detection, hand detection.
+- Existing components to reuse: voice orb, dialogue bubbles, status grid, recipe glass SVG, ingredient chips, pipeline step list, robot pipeline log tail.
+- New/changed components: catalog item buttons, drink stat block, recognizable robot/dispenser process scene, resume-aware pipeline stage, live vision camera panel, ArUco/lid status strip.
+- Variants and states: idle, recommended, confirmed, making, completed, failed, dry-run, resume recovery, Realsense live, cup upright/lying, color scan, ArUco reacquire, lid detection, lid twist success, hand detection.
 - Token/component ownership: `src/azas_voice/web/voice.css` owns current web styling; recipe data comes from `src/azas_voice/config/recipes.yaml`.
 
 ## Accessibility
@@ -72,10 +72,10 @@
 - Microcopy rules: do not expose internal implementation detail unless it helps operator recovery.
 
 ## Implementation constraints
-- Framework/styling system: static HTML/CSS/JavaScript served by `voice_screen_node.py`.
+- Framework/styling system: static HTML/CSS/JavaScript served by `voice_screen_node.py` and `tools/run/robot_pipeline_control_server.py`.
 - Design-token constraints: no central token system yet; keep colors local and ingredient-specific.
 - Performance constraints: catalog rendering should avoid repeated full DOM rebuilds unless catalog data changes.
-- Compatibility constraints: ROS nodes publish JSON status and ROS image topics; browser UI polls `/api/state` and fetches cache-busted JPEG camera frames from `voice_screen_node.py`.
+- Compatibility constraints: ROS nodes publish JSON status and ROS image topics; browser UI polls `/api/state`, `/api/running_logs`, and fetches cache-busted JPEG camera frames from the active panel server.
 - Test/screenshot expectations: run parser/mapper tests for recipe changes and smoke browser/server behavior when launch environment is available.
 
 ## Open questions

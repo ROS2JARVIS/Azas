@@ -138,7 +138,14 @@ class AutoCupFlowRouter(Node):
         # 컵홀더에 놓을 때 보정값과 place 목표 z 안전 하한 (필요 시 조정)
         self.declare_parameter("cup_holder_place_z_offset_m", -0.04)
         self.declare_parameter("cup_holder_place_x_offset_m", 0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_1_x_extra_offset_m", -0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_1_y_extra_offset_m", 0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_2_x_extra_offset_m", -0.003)
+        self.declare_parameter("cup_holder_place_final_dispenser_2_y_extra_offset_m", 0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_3_x_extra_offset_m", -0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_3_y_extra_offset_m", 0.010)
         self.declare_parameter("cup_holder_place_final_dispenser_4_x_extra_offset_m", -0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_4_y_extra_offset_m", 0.010)
         self.declare_parameter("cup_holder_place_y_offset_m", -0.010)
         self.declare_parameter("cup_holder_rz_offset_deg", -1.0)
         self.declare_parameter("cup_holder_z_min_m", 0.06)
@@ -764,7 +771,14 @@ class AutoCupFlowRouter(Node):
         regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
         place_x = float(self.get_parameter("cup_holder_place_x_offset_m").value)
+        place_d1_x = float(self.get_parameter("cup_holder_place_final_dispenser_1_x_extra_offset_m").value)
+        place_d1_y = float(self.get_parameter("cup_holder_place_final_dispenser_1_y_extra_offset_m").value)
+        place_d2_x = float(self.get_parameter("cup_holder_place_final_dispenser_2_x_extra_offset_m").value)
+        place_d2_y = float(self.get_parameter("cup_holder_place_final_dispenser_2_y_extra_offset_m").value)
+        place_d3_x = float(self.get_parameter("cup_holder_place_final_dispenser_3_x_extra_offset_m").value)
+        place_d3_y = float(self.get_parameter("cup_holder_place_final_dispenser_3_y_extra_offset_m").value)
         place_d4_x = float(self.get_parameter("cup_holder_place_final_dispenser_4_x_extra_offset_m").value)
+        place_d4_y = float(self.get_parameter("cup_holder_place_final_dispenser_4_y_extra_offset_m").value)
         place_y = float(self.get_parameter("cup_holder_place_y_offset_m").value)
         place_rz = float(self.get_parameter("cup_holder_rz_offset_deg").value)
         z_min = float(self.get_parameter("cup_holder_z_min_m").value)
@@ -773,7 +787,14 @@ class AutoCupFlowRouter(Node):
             f" --final-regrasp-extra-z-offset-m {regrasp_z}"
             f" --cup-holder-place-final-z-offset-m {place_z}"
             f" --cup-holder-place-final-x-offset-m {place_x}"
+            f" --cup-holder-place-final-dispenser-1-x-extra-offset-m {place_d1_x}"
+            f" --cup-holder-place-final-dispenser-1-y-extra-offset-m {place_d1_y}"
+            f" --cup-holder-place-final-dispenser-2-x-extra-offset-m {place_d2_x}"
+            f" --cup-holder-place-final-dispenser-2-y-extra-offset-m {place_d2_y}"
+            f" --cup-holder-place-final-dispenser-3-x-extra-offset-m {place_d3_x}"
+            f" --cup-holder-place-final-dispenser-3-y-extra-offset-m {place_d3_y}"
             f" --cup-holder-place-final-dispenser-4-x-extra-offset-m {place_d4_x}"
+            f" --cup-holder-place-final-dispenser-4-y-extra-offset-m {place_d4_y}"
             f" --cup-holder-place-final-y-offset-m {place_y}"
             f" --cup-holder-rz-offset-deg {place_rz}"
             f" --cup-holder-z-min-m {z_min}"
@@ -897,8 +918,8 @@ class AutoCupFlowRouter(Node):
             "--force-baseline-samples 5 "
             "--force-baseline-interval-sec 0.05 "
             "--force-read-settle-sec 0.08 "
-            "--force-abort-delta-n 3.5 "
-            "--force-axis-delta-n 3.5 "
+            "--force-abort-delta-n 1.0 "
+            "--force-axis-delta-n 1.0 "
             "--contact-step-delta-n 2.5 "
             "--require-force-magnitude-delta "
             "--force-magnitude-delta-n 2.0 "

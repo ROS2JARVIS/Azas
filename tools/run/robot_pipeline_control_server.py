@@ -3255,14 +3255,19 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
         or env.get("CUP_HOLDER_RZ_OFFSET_DEG")
         or "-1.0"
     )
-    # Operational-only offset for the pre-shake cup-holder re-grasp.
+    # Operational-only offsets for the pre-shake cup-holder re-grasp.
     # This intentionally does not modify calibration.yaml and is separate from the
-    # cup-holder placement offset so lowering the shake pickup does not push the
-    # cup deeper during place_cup_holder.
+    # cup-holder placement offset so tuning the shake pickup does not push the
+    # cup deeper or sideways during place_cup_holder.
+    env["CUP_HOLDER_PICK_Y_OFFSET_M"] = str(
+        payload.get("cup_holder_pick_y_offset_m")
+        or env.get("CUP_HOLDER_PICK_Y_OFFSET_M")
+        or "0.010"
+    )
     env["CUP_HOLDER_PICK_Z_OFFSET_M"] = str(
         payload.get("cup_holder_pick_z_offset_m")
         or env.get("CUP_HOLDER_PICK_Z_OFFSET_M")
-        or "-0.020"
+        or "-0.037371"
     )
     env["RT_HOST"] = str(
         payload.get("rt_host")
@@ -3759,10 +3764,15 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f" && {tumbler_scene_once('add_holder', object_id='tumbler_in_holder')}"
         )
     if step.key == "shake_closed_cup":
+        pick_y_offset_m = str(
+            payload.get("cup_holder_pick_y_offset_m")
+            or os.environ.get("CUP_HOLDER_PICK_Y_OFFSET_M")
+            or "0.010"
+        ).strip()
         pick_z_offset_m = str(
             payload.get("cup_holder_pick_z_offset_m")
             or os.environ.get("CUP_HOLDER_PICK_Z_OFFSET_M")
-            or "-0.020"
+            or "-0.037371"
         ).strip()
         holder_pick = (
             "python3 tools/run/pick_from_cup_holder_side_grip.py "
@@ -3771,11 +3781,12 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "--approach-velocity 40.0 --approach-acceleration 40.0 "
             "--descend-velocity 40.0 --descend-acceleration 40.0 "
             "--lift-velocity 40.0 --lift-acceleration 40.0 "
+            f"--place-final-y-offset-m {shlex.quote(pick_y_offset_m)} "
             f"--place-final-z-offset-m {shlex.quote(pick_z_offset_m)} "
             "--timeout-sec 90.0 --target-tolerance-mm 12.0 --verify-timeout-sec 45.0 "
             "--ikin-timeout-sec 20.0 --ikin-retries 2 "
             "--gripper-grasp-width-m 0.068 --gripper-force-n 25.0 "
-            "--post-grasp-settle-sec 0.8 "
+            "--post-grasp-settle-sec 0.3 "
             "--z-max 0.28 "
             "--execute --confirm ENABLE_CUP_HOLDER_PICK"
         )
@@ -4398,6 +4409,12 @@ class Handler(BaseHTTPRequestHandler):
                 ),
                 "cup_holder_rz_offset_deg": os.environ.get(
                     "CUP_HOLDER_RZ_OFFSET_DEG", "-1.0"
+                ),
+                "cup_holder_pick_y_offset_m": os.environ.get(
+                    "CUP_HOLDER_PICK_Y_OFFSET_M", "0.010"
+                ),
+                "cup_holder_pick_z_offset_m": os.environ.get(
+                    "CUP_HOLDER_PICK_Z_OFFSET_M", "-0.037371"
                 ),
             }
             data = []

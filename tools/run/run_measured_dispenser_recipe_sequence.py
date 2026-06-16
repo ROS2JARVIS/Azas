@@ -3750,11 +3750,74 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cup-holder-place-final-z-offset-m", type=float, default=-0.040)
     parser.add_argument("--cup-holder-place-final-x-offset-m", type=float, default=0.015)
     parser.add_argument(
+        "--cup-holder-place-final-dispenser-1-x-extra-offset-m",
+        type=float,
+        default=-0.010,
+        help=(
+            "When the final re-grasp is from physical dispenser 1, add this extra X "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--cup-holder-place-final-dispenser-1-y-extra-offset-m",
+        type=float,
+        default=0.010,
+        help=(
+            "When the final re-grasp is from physical dispenser 1, add this extra Y "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--cup-holder-place-final-dispenser-2-x-extra-offset-m",
+        type=float,
+        default=-0.003,
+        help=(
+            "When the final re-grasp is from physical dispenser 2, add this extra X "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--cup-holder-place-final-dispenser-2-y-extra-offset-m",
+        type=float,
+        default=0.010,
+        help=(
+            "When the final re-grasp is from physical dispenser 2, add this extra Y "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--cup-holder-place-final-dispenser-3-x-extra-offset-m",
+        type=float,
+        default=-0.010,
+        help=(
+            "When the final re-grasp is from physical dispenser 3, add this extra X "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--cup-holder-place-final-dispenser-3-y-extra-offset-m",
+        type=float,
+        default=0.010,
+        help=(
+            "When the final re-grasp is from physical dispenser 3, add this extra Y "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
+    parser.add_argument(
         "--cup-holder-place-final-dispenser-4-x-extra-offset-m",
         type=float,
         default=-0.010,
         help=(
             "When the final re-grasp is from physical dispenser 4, add this extra X "
+            "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--cup-holder-place-final-dispenser-4-y-extra-offset-m",
+        type=float,
+        default=0.010,
+        help=(
+            "When the final re-grasp is from physical dispenser 4, add this extra Y "
             "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
         ),
     )
@@ -3922,14 +3985,33 @@ def main() -> int:
     print(f"[Azas] dispenser_ids={','.join(dispenser_ids)}")
     grouped_dispenser_ids = group_consecutive_dispenser_ids(dispenser_ids)
     final_dispenser_id = grouped_dispenser_ids[-1][0] if grouped_dispenser_ids else ""
-    if final_dispenser_id == "4":
-        args.cup_holder_place_final_x_offset_m += (
-            args.cup_holder_place_final_dispenser_4_x_extra_offset_m
-        )
+    final_holder_offsets = {
+        "1": (
+            args.cup_holder_place_final_dispenser_1_x_extra_offset_m,
+            args.cup_holder_place_final_dispenser_1_y_extra_offset_m,
+        ),
+        "2": (
+            args.cup_holder_place_final_dispenser_2_x_extra_offset_m,
+            args.cup_holder_place_final_dispenser_2_y_extra_offset_m,
+        ),
+        "3": (
+            args.cup_holder_place_final_dispenser_3_x_extra_offset_m,
+            args.cup_holder_place_final_dispenser_3_y_extra_offset_m,
+        ),
+        "4": (
+            args.cup_holder_place_final_dispenser_4_x_extra_offset_m,
+            args.cup_holder_place_final_dispenser_4_y_extra_offset_m,
+        ),
+    }
+    extra_x_m, extra_y_m = final_holder_offsets.get(final_dispenser_id, (0.0, 0.0))
+    if abs(extra_x_m) > 1e-9 or abs(extra_y_m) > 1e-9:
+        args.cup_holder_place_final_x_offset_m += extra_x_m
+        args.cup_holder_place_final_y_offset_m += extra_y_m
         print(
-            "[Azas] dispenser 4 final cup-holder X extra offset applied: "
-            f"{args.cup_holder_place_final_dispenser_4_x_extra_offset_m:.3f} m, "
-            f"effective_place_final_x_offset_m={args.cup_holder_place_final_x_offset_m:.3f}"
+            f"[Azas] dispenser {final_dispenser_id} final cup-holder extra offset applied: "
+            f"x={extra_x_m:+.3f} m, y={extra_y_m:+.3f} m, "
+            f"effective_place_final_x_offset_m={args.cup_holder_place_final_x_offset_m:.3f}, "
+            f"effective_place_final_y_offset_m={args.cup_holder_place_final_y_offset_m:.3f}"
         )
     print(
         "[Azas] grouped_press_counts="

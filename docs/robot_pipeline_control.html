@@ -344,14 +344,14 @@
       white-space: pre-wrap;
     }
     .camera-panel {
-      margin-top: 12px;
+      margin-top: 0;
       border: 1px solid #bfdbfe;
       border-radius: 12px;
       background: #fff;
       box-shadow: var(--shadow);
       overflow: hidden;
-      grid-column: 1 / -1;
-      grid-row: auto;
+      grid-column: 2;
+      grid-row: 4;
       max-height: none;
     }
     .camera-head {
@@ -368,6 +368,7 @@
     .camera-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
     .camera-status { color: var(--muted); font-size: 13px; font-weight: 850; }
     .camera-frame {
+      position: relative;
       min-height: 420px;
       display: grid;
       place-items: center;
@@ -382,6 +383,30 @@
       font-size: 13px;
       text-align: center;
     }
+    .camera-overlay {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid rgba(153, 246, 228, 0.55);
+      border-radius: 8px;
+      background: rgba(2, 6, 23, 0.76);
+      color: #ccfbf1;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.35;
+      pointer-events: none;
+    }
+    .camera-overlay strong {
+      color: #fff;
+      overflow-wrap: anywhere;
+      text-align: right;
+    }
     .camera-result {
       max-height: 260px;
       overflow: auto;
@@ -395,7 +420,388 @@
       line-height: 1.45;
       white-space: pre-wrap;
     }
-	    .flow-item {
+    .process-panel {
+      grid-column: 2;
+      grid-row: 2;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .process-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+    .process-head h2 { margin: 0; font-size: 18px; letter-spacing: 0; }
+    .process-help { margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .process-body {
+      display: grid;
+      grid-template-columns: minmax(360px, 1.2fr) minmax(280px, 0.8fr);
+      gap: 12px;
+      padding: 12px;
+      align-items: stretch;
+    }
+    .robot-cell {
+      position: relative;
+      min-height: 318px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #f8fafc;
+      perspective: 780px;
+    }
+    .cell-floor {
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      bottom: 16px;
+      height: 150px;
+      border: 1px solid #cbd5e1;
+      background:
+        linear-gradient(90deg, rgba(148, 163, 184, 0.28) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(148, 163, 184, 0.28) 1px, transparent 1px),
+        #e7edf5;
+      background-size: 34px 34px;
+      transform: rotateX(62deg);
+      transform-origin: center bottom;
+      box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+    }
+    .scene-tag {
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      min-height: 26px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .camera-rig {
+      position: absolute;
+      right: 42px;
+      top: 42px;
+      width: 58px;
+      height: 42px;
+      border: 2px solid #0f766e;
+      border-radius: 8px;
+      background: #ccfbf1;
+      box-shadow: 0 8px 18px rgba(15, 118, 110, 0.18);
+    }
+    .camera-rig::before {
+      content: "";
+      position: absolute;
+      left: 18px;
+      top: 10px;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 3px solid #0f766e;
+      background: #f8fafc;
+    }
+    .camera-cone {
+      position: absolute;
+      right: 82px;
+      top: 62px;
+      width: 156px;
+      height: 130px;
+      clip-path: polygon(100% 22%, 0 0, 0 100%, 100% 78%);
+      background: rgba(20, 184, 166, 0.14);
+      border-left: 1px solid rgba(15, 118, 110, 0.24);
+      opacity: 0.35;
+      transition: opacity 0.16s ease, background 0.16s ease;
+    }
+    .dispenser-bank {
+      position: absolute;
+      left: 36px;
+      bottom: 86px;
+      width: 132px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      padding: 8px;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      background: #e2e8f0;
+      transform: rotateX(8deg) rotateY(-12deg);
+      box-shadow: 8px 10px 18px rgba(15, 23, 42, 0.16);
+    }
+    .dispenser-column {
+      height: 82px;
+      border-radius: 5px;
+      border: 1px solid rgba(15, 23, 42, 0.18);
+      background: #fff;
+      position: relative;
+    }
+    .dispenser-column::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -10px;
+      width: 8px;
+      height: 12px;
+      transform: translateX(-50%);
+      border-radius: 0 0 4px 4px;
+      background: #334155;
+    }
+    .dispenser-column.red { background: #fecaca; }
+    .dispenser-column.yellow { background: #fde68a; }
+    .dispenser-column.green { background: #bbf7d0; }
+    .dispenser-column.blue { background: #bfdbfe; }
+    .cup-holder-asset {
+      position: absolute;
+      right: 112px;
+      bottom: 76px;
+      width: 86px;
+      height: 50px;
+      border: 3px solid #475569;
+      border-top: 0;
+      border-radius: 0 0 10px 10px;
+      background: rgba(226, 232, 240, 0.88);
+      transform: rotateX(18deg) rotateY(12deg);
+      box-shadow: 10px 12px 18px rgba(15, 23, 42, 0.12);
+    }
+    .cup-holder-asset::before {
+      content: "";
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      top: -8px;
+      height: 10px;
+      border: 3px solid #475569;
+      border-bottom: 0;
+      border-radius: 999px 999px 0 0;
+      background: #f8fafc;
+    }
+    .robot-asset {
+      position: absolute;
+      left: 38%;
+      bottom: 82px;
+      width: 220px;
+      height: 160px;
+      transform-style: preserve-3d;
+      transition: transform 0.18s ease;
+    }
+    .robot-base {
+      position: absolute;
+      left: 24px;
+      bottom: 0;
+      width: 98px;
+      height: 36px;
+      border-radius: 8px;
+      background: #334155;
+      box-shadow: 0 12px 20px rgba(15, 23, 42, 0.2);
+    }
+    .robot-column {
+      position: absolute;
+      left: 58px;
+      bottom: 28px;
+      width: 30px;
+      height: 84px;
+      border-radius: 10px;
+      background: #64748b;
+    }
+    .arm-segment {
+      position: absolute;
+      height: 22px;
+      border-radius: 999px;
+      background: #2563eb;
+      box-shadow: inset 0 -5px 0 rgba(15, 23, 42, 0.16);
+      transform-origin: left center;
+      transition: transform 0.18s ease;
+    }
+    .arm-upper { left: 74px; bottom: 104px; width: 92px; transform: rotate(-22deg); }
+    .arm-lower { left: 146px; bottom: 138px; width: 86px; transform: rotate(34deg); }
+    .arm-joint {
+      position: absolute;
+      width: 34px;
+      height: 34px;
+      border: 6px solid #1d4ed8;
+      border-radius: 999px;
+      background: #eff6ff;
+    }
+    .joint-shoulder { left: 62px; bottom: 98px; }
+    .joint-elbow { left: 144px; bottom: 127px; }
+    .gripper-asset {
+      position: absolute;
+      left: 218px;
+      bottom: 128px;
+      width: 44px;
+      height: 36px;
+      border-left: 9px solid #1e293b;
+    }
+    .gripper-asset::before,
+    .gripper-asset::after {
+      content: "";
+      position: absolute;
+      left: 7px;
+      width: 28px;
+      height: 8px;
+      border-radius: 5px;
+      background: #1e293b;
+      transform-origin: left center;
+    }
+    .gripper-asset::before { top: 5px; transform: rotate(-18deg); }
+    .gripper-asset::after { bottom: 5px; transform: rotate(18deg); }
+    .cup-asset {
+      position: absolute;
+      left: 54%;
+      bottom: 98px;
+      width: 52px;
+      height: 74px;
+      border: 3px solid #334155;
+      border-top-width: 5px;
+      border-radius: 8px 8px 16px 16px;
+      background: rgba(255, 255, 255, 0.9);
+      transform: translateX(-50%) rotateX(8deg);
+      transition: left 0.18s ease, bottom 0.18s ease, transform 0.18s ease;
+      box-shadow: 0 12px 20px rgba(15, 23, 42, 0.15);
+    }
+    .cup-asset::after {
+      content: "";
+      position: absolute;
+      left: 7px;
+      right: 7px;
+      bottom: 9px;
+      height: 32px;
+      border-radius: 0 0 12px 12px;
+      background: #93c5fd;
+      opacity: 0.78;
+    }
+    .lid-asset {
+      position: absolute;
+      left: -5px;
+      right: -5px;
+      top: -16px;
+      height: 16px;
+      border: 2px solid #991b1b;
+      border-radius: 999px;
+      background: #fecdd3;
+    }
+    .aruco-marker {
+      position: absolute;
+      left: 50%;
+      top: -13px;
+      width: 26px;
+      height: 26px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 2px;
+      padding: 3px;
+      border: 2px solid #111827;
+      background: #fff;
+      transform: translateX(-50%) rotateX(16deg);
+      transition: box-shadow 0.16s ease, border-color 0.16s ease;
+    }
+    .aruco-marker span { background: #111827; }
+    .process-side {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      min-width: 0;
+    }
+    .stage-track {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+    }
+    .stage-node {
+      min-height: 42px;
+      display: grid;
+      align-content: center;
+      gap: 2px;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-left: 4px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      color: #334155;
+    }
+    .stage-node strong { font-size: 12px; line-height: 1.2; }
+    .stage-node span { color: var(--muted); font-size: 11px; line-height: 1.2; }
+    .stage-node.active {
+      border-color: #93c5fd;
+      border-left-color: #2563eb;
+      background: #eff6ff;
+      color: #1e3a8a;
+    }
+    .vision-stack {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      padding: 10px;
+      border: 1px solid #99f6e4;
+      border-radius: 10px;
+      background: #f0fdfa;
+    }
+    .vision-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(20, 184, 166, 0.22);
+      color: #115e59;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .vision-row:last-child { border-bottom: 0; }
+    .vision-row strong {
+      min-width: 0;
+      text-align: right;
+      color: #0f172a;
+      overflow-wrap: anywhere;
+    }
+    .process-panel.stage-camera .camera-cone,
+    .process-panel.stage-lid .camera-cone {
+      opacity: 1;
+      background: rgba(20, 184, 166, 0.22);
+    }
+    .process-panel.stage-grip .robot-asset { transform: translateX(-42px) rotateY(-9deg); }
+    .process-panel.stage-dispenser .robot-asset { transform: translateX(-116px) rotateY(-12deg); }
+    .process-panel.stage-holder .robot-asset { transform: translateX(42px) rotateY(10deg); }
+    .process-panel.stage-lid .robot-asset { transform: translateX(20px) translateY(-14px) rotateY(10deg); }
+    .process-panel.stage-shake .robot-asset { transform: translateX(58px) rotateY(12deg); }
+    .process-panel.stage-dispenser .cup-asset { left: 26%; bottom: 92px; }
+    .process-panel.stage-holder .cup-asset,
+    .process-panel.stage-lid .cup-asset { left: 78%; bottom: 96px; }
+    .process-panel.stage-shake .cup-asset {
+      left: 70%;
+      bottom: 132px;
+      animation: cupShake 620ms ease-in-out infinite;
+    }
+    .process-panel.stage-lid .aruco-marker {
+      border-color: #16a34a;
+      box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.18), 0 0 18px rgba(22, 163, 74, 0.42);
+    }
+    .process-panel.stage-camera .scene-tag { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
+    .process-panel.stage-grip .scene-tag { border-color: #fed7aa; color: #c2410c; background: #fff7ed; }
+    .process-panel.stage-dispenser .scene-tag { border-color: #fecaca; color: #b91c1c; background: #fff1f2; }
+    .process-panel.stage-holder .scene-tag { border-color: #bfdbfe; color: #1d4ed8; background: #eff6ff; }
+    .process-panel.stage-lid .scene-tag { border-color: #fecdd3; color: #be123c; background: #fff1f2; }
+    .process-panel.stage-shake .scene-tag { border-color: #bbf7d0; color: #15803d; background: #f0fdf4; }
+    @keyframes cupShake {
+      0%, 100% { transform: translateX(-50%) rotate(-4deg); }
+      50% { transform: translateX(-50%) rotate(6deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .process-panel.stage-shake .cup-asset { animation: none; }
+      .arm-segment,
+      .camera-cone,
+      .cup-asset,
+      .robot-asset { transition: none; }
+    }
+		    .flow-item {
 	      display: grid;
 	      grid-template-columns: 34px minmax(0, 1fr) 28px;
 	      gap: 10px;
@@ -448,7 +854,7 @@
       box-shadow: var(--shadow);
       overflow: hidden;
       grid-column: 1;
-      grid-row: 2 / span 2;
+      grid-row: 2 / span 3;
       position: static;
       height: 100%;
       min-height: 0;
@@ -714,7 +1120,7 @@
       box-shadow: var(--shadow);
       background: #0b1120;
       grid-column: 2;
-      grid-row: 2;
+      grid-row: 3;
       margin-top: 0;
     }
     .log-head {
@@ -749,9 +1155,10 @@
 	      .content-grid { display: contents; }
 	      .board { grid-template-columns: 1fr; }
 	      .stage-head { display: block; }
-	      .control-panel, .stage, .flow-panel, .camera-panel, .log-panel { grid-column: 1; grid-row: auto; position: static; }
+	      .control-panel, .stage, .flow-panel, .process-panel, .camera-panel, .log-panel { grid-column: 1; grid-row: auto; position: static; }
 	      .stage { max-height: none; height: auto; }
 	      .flow-head { display: block; }
+	      .process-body { grid-template-columns: 1fr; }
 	      .log-panel { position: static; height: 420px; min-height: 420px; }
 	    }
     @media (max-width: 640px) {
@@ -762,9 +1169,12 @@
 	      .field-grid { grid-template-columns: 1fr; }
 	      .board { padding: 10px; }
 	      .step { grid-template-columns: 30px 1fr 46px; min-height: auto; }
-	      .flow-strip { padding: 10px; }
-	      .flow-item { flex-basis: 190px; }
-	      .log-panel { height: 340px; min-height: 340px; }
+		      .flow-strip { padding: 10px; }
+		      .flow-item { flex-basis: 190px; }
+		      .process-body { padding: 10px; }
+		      .robot-cell { min-height: 300px; }
+		      .stage-track { grid-template-columns: 1fr; }
+		      .log-panel { height: 340px; min-height: 340px; }
 	    }
 
     /* Operator-first layout: no floating overlay, no covered content. */
@@ -889,7 +1299,10 @@
             <input id="cupHolderPlaceFinalYOffsetM" type="text" value="-0.010" placeholder="예: -0.010 (홀더 최종 Y -10mm)">
           </label>
           <label class="field">CUP_HOLDER_PICK_Z_OFFSET_M
-            <input id="cupHolderPickZOffsetM" type="text" value="-0.020" placeholder="예: -0.020 (쉐이킹 전 잡기 Z 20mm 낮춤)">
+            <input id="cupHolderPickZOffsetM" type="text" value="-0.037371" placeholder="예: -0.037371 (쉐이킹 전 잡기 Z 하한 80mm 맞춤)">
+          </label>
+          <label class="field">CUP_HOLDER_PICK_Y_OFFSET_M
+            <input id="cupHolderPickYOffsetM" type="text" value="0.010" placeholder="예: 0.010 (쉐이킹 전 잡기 Y +10mm)">
           </label>
         </div>
       </details>
@@ -1021,18 +1434,75 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
         </div>
       </details>
 
-	    <section class="flow-panel" aria-label="selected execution order">
-	      <div class="flow-head">
-	        <div>
-	          <h2>선택 실행 순서</h2>
-	          <div class="flow-help">큐 순서대로 실행됩니다. 필요한 충돌 장면 단계는 실행 전에 자동으로 보강됩니다.</div>
+		    <section class="flow-panel" aria-label="selected execution order">
+		      <div class="flow-head">
+		        <div>
+		          <h2>선택 실행 순서</h2>
+		          <div class="flow-help">큐 순서대로 실행됩니다. 필요한 충돌 장면 단계는 실행 전에 자동으로 보강됩니다.</div>
 	        </div>
 	        <span class="pill info" id="flowMode">대기</span>
-	      </div>
-	      <div id="flow" class="flow-strip"></div>
-	    </section>
-	
-	    <div class="content-grid">
+		      </div>
+		      <div id="flow" class="flow-strip"></div>
+		    </section>
+
+        <section id="processPanel" class="process-panel stage-idle" aria-label="robot process visualization">
+          <div class="process-head">
+            <div>
+              <h2>3D 공정 시각화</h2>
+              <div id="processDetail" class="process-help">실행 대기 중입니다.</div>
+            </div>
+            <span id="processStagePill" class="pill kind">대기</span>
+          </div>
+          <div class="process-body">
+            <div class="robot-cell" aria-hidden="true">
+              <div class="cell-floor"></div>
+              <div class="scene-tag" id="sceneStageTag">대기</div>
+              <div class="camera-rig"></div>
+              <div class="camera-cone"></div>
+              <div class="dispenser-bank">
+                <div class="dispenser-column red"></div>
+                <div class="dispenser-column yellow"></div>
+                <div class="dispenser-column green"></div>
+                <div class="dispenser-column blue"></div>
+              </div>
+              <div class="cup-holder-asset"></div>
+              <div class="robot-asset">
+                <div class="robot-base"></div>
+                <div class="robot-column"></div>
+                <div class="arm-joint joint-shoulder"></div>
+                <div class="arm-segment arm-upper"></div>
+                <div class="arm-joint joint-elbow"></div>
+                <div class="arm-segment arm-lower"></div>
+                <div class="gripper-asset"></div>
+              </div>
+              <div class="cup-asset">
+                <div class="lid-asset">
+                  <div class="aruco-marker">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="process-side">
+              <div class="stage-track">
+                <div class="stage-node" data-process-node="camera"><strong>카메라</strong><span>RealSense/색상/ArUco</span></div>
+                <div class="stage-node" data-process-node="grip"><strong>컵 픽업</strong><span>side-grip/직립화</span></div>
+                <div class="stage-node" data-process-node="dispenser"><strong>디스펜서</strong><span>컵놓기/프레스/재파지</span></div>
+                <div class="stage-node" data-process-node="holder"><strong>컵홀더</strong><span>최종 배치/재픽업</span></div>
+                <div class="stage-node" data-process-node="lid"><strong>뚜껑</strong><span>ArUco pose/J6 twist</span></div>
+                <div class="stage-node" data-process-node="shake"><strong>쉐이킹</strong><span>재파지 후 흔들기</span></div>
+              </div>
+              <div class="vision-stack">
+                <div class="vision-row"><span>카메라</span><strong id="visionCameraStatus">스냅샷 대기</strong></div>
+                <div class="vision-row"><span>ArUco</span><strong id="visionArucoStatus">검출 대기</strong></div>
+                <div class="vision-row"><span>마커</span><strong id="visionMarkerMeta">DICT_6X6_250 · id 0</strong></div>
+                <div class="vision-row"><span>최근 상태</span><strong id="visionLastStatus">대기</strong></div>
+              </div>
+            </div>
+          </div>
+        </section>
+		
+		    <div class="content-grid">
     <section class="stage">
       <div class="stage-head">
         <div>
@@ -1056,7 +1526,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     </aside>
     </div>
 
-      <section class="camera-panel" aria-label="camera preview" hidden>
+	      <section class="camera-panel" aria-label="camera preview">
         <div class="camera-head">
           <div>
             <h2>RealSense 카메라 화면</h2>
@@ -1070,9 +1540,13 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
             <button id="refreshCamera" type="button">새로고침</button>
           </div>
         </div>
-        <div class="camera-frame">
-          <img id="cameraPreview" alt="RealSense color preview" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
-        </div>
+	        <div class="camera-frame">
+	          <img id="cameraPreview" alt="RealSense color preview" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+	          <div class="camera-overlay">
+	            <span>카메라/검출</span>
+	            <strong id="cameraVisionOverlay">ArUco 검출 대기</strong>
+	          </div>
+	        </div>
         <pre id="colorScanResult" class="camera-result">색상 스캔 결과 대기</pre>
       </section>
   </main>
@@ -1118,12 +1592,13 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       "pick_from_dispenser_3",
       "pick_from_dispenser_4",
     ]);
-    const groupOrder = ["core", "voice", "grip", "move", "press", "shake", "blocked", "etc"];
-    const groupLabels = {
-      core: "연결/준비",
-      voice: "수빈 STT/주문 UI",
-      grip: "그리퍼",
-      move: "컵 이동/배치",
+	    const groupOrder = ["core", "voice", "camera", "grip", "move", "press", "shake", "blocked", "etc"];
+	    const groupLabels = {
+	      core: "연결/준비",
+	      voice: "수빈 STT/주문 UI",
+	      camera: "카메라/인식",
+	      grip: "그리퍼",
+	      move: "컵 이동/배치",
       press: "통합 디스펜서 (컵놓기→프레스→다시잡기)",
       shake: "쉐이킹",
       blocked: "미구현/보류",
@@ -1145,11 +1620,20 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
 	    const flowEl = document.getElementById("flow");
 	    const flowModeEl = document.getElementById("flowMode");
 	    const selectedCountEl = document.getElementById("selectedCount");
-	    const loadedCountEl = document.getElementById("loadedCount");
-	    const cameraPreviewEl = document.getElementById("cameraPreview");
-	    const cameraStatusEl = document.getElementById("cameraStatus");
-	    const colorScanResultEl = document.getElementById("colorScanResult");
-	    const commandModalBackdrop = document.getElementById("commandModalBackdrop");
+		    const loadedCountEl = document.getElementById("loadedCount");
+		    const cameraPreviewEl = document.getElementById("cameraPreview");
+		    const cameraStatusEl = document.getElementById("cameraStatus");
+		    const colorScanResultEl = document.getElementById("colorScanResult");
+		    const processPanelEl = document.getElementById("processPanel");
+		    const processStagePillEl = document.getElementById("processStagePill");
+		    const processDetailEl = document.getElementById("processDetail");
+		    const sceneStageTagEl = document.getElementById("sceneStageTag");
+		    const visionCameraStatusEl = document.getElementById("visionCameraStatus");
+		    const visionArucoStatusEl = document.getElementById("visionArucoStatus");
+		    const cameraVisionOverlayEl = document.getElementById("cameraVisionOverlay");
+		    const visionMarkerMetaEl = document.getElementById("visionMarkerMeta");
+		    const visionLastStatusEl = document.getElementById("visionLastStatus");
+		    const commandModalBackdrop = document.getElementById("commandModalBackdrop");
 	    const commandModalTitle = document.getElementById("commandModalTitle");
 	    const commandModalEditor = document.getElementById("commandModalEditor");
 	    let commandModalStepKey = "";
@@ -1160,8 +1644,9 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
 	    let itemStatuses = new Map();
 	    let isRunning = false;
 	    let nextQueueId = 1;
-      let runningLogTimer = null;
-      let activeLogKeys = new Set();
+	      let runningLogTimer = null;
+	      let activeLogKeys = new Set();
+	      let lastCameraRefreshAt = 0;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -1204,9 +1689,9 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
       return allSteps.filter((step) => matchesSearch(step));
     }
 
-    function payload() {
-      return {
-        robot_host: document.getElementById("robotHost").value.trim(),
+	    function payload() {
+	      return {
+	        robot_host: document.getElementById("robotHost").value.trim(),
         robot_name: document.getElementById("robotName").value.trim(),
         service_prefix: document.getElementById("servicePrefix").value.trim(),
         rt_host: document.getElementById("rtHost").value.trim(),
@@ -1216,35 +1701,182 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
         cup_holder_place_final_z_offset_m: document.getElementById("cupHolderPlaceFinalZOffsetM").value.trim(),
         cup_holder_place_final_y_offset_m: document.getElementById("cupHolderPlaceFinalYOffsetM").value.trim(),
         cup_holder_pick_z_offset_m: document.getElementById("cupHolderPickZOffsetM").value.trim(),
+        cup_holder_pick_y_offset_m: document.getElementById("cupHolderPickYOffsetM").value.trim(),
         armed: document.getElementById("armed").checked,
-        selected: selectedStepKeys()
-      };
-    }
+	        selected: selectedStepKeys()
+	      };
+	    }
 
-    function refreshCameraPreview() {
-      if (!cameraPreviewEl) return;
-      if (cameraStatusEl) cameraStatusEl.textContent = "갱신 중...";
-      cameraPreviewEl.src = `/api/camera_snapshot.jpg?t=${Date.now()}`;
-    }
+	    const processStageClasses = ["stage-idle", "stage-camera", "stage-grip", "stage-dispenser", "stage-holder", "stage-lid", "stage-shake"];
+	    const processStageMeta = {
+	      idle: {label: "대기", detail: "실행 대기 중입니다.", pill: "kind"},
+	      camera: {label: "카메라", detail: "RealSense/검출 단계입니다.", pill: "info"},
+	      grip: {label: "컵 픽업", detail: "컵을 side-grip으로 잡는 단계입니다.", pill: "info"},
+	      dispenser: {label: "디스펜서", detail: "컵놓기, 프레스, 재파지 단계입니다.", pill: "real"},
+	      holder: {label: "컵홀더", detail: "컵홀더 배치 또는 재픽업 단계입니다.", pill: "info"},
+	      lid: {label: "ArUco 뚜껑", detail: "뚜껑 마커 검출과 J6 체결 단계입니다.", pill: "real"},
+	      shake: {label: "쉐이킹", detail: "닫힌 컵 재파지 후 쉐이킹 단계입니다.", pill: "ok"}
+	    };
 
-    cameraPreviewEl?.addEventListener("load", () => {
-      if (cameraStatusEl) cameraStatusEl.textContent = `화면 수신됨 ${new Date().toLocaleTimeString()}`;
-    });
-    cameraPreviewEl?.addEventListener("error", () => {
-      if (cameraStatusEl) cameraStatusEl.textContent = "화면 없음: RealSense 시작 필요";
-    });
+	    function setVisionCameraStatus(text) {
+	      if (visionCameraStatusEl) visionCameraStatusEl.textContent = text;
+	    }
 
-    async function refreshColorScanResult() {
-      if (!colorScanResultEl) return;
-      colorScanResultEl.textContent = "색상 스캔 결과 확인 중...";
-      try {
-        const res = await fetch("/api/dispenser_color_map");
-        const data = await res.json();
-        colorScanResultEl.textContent = JSON.stringify(data, null, 2);
-      } catch (err) {
-        colorScanResultEl.textContent = String(err);
-      }
-    }
+	    function setVisionArucoStatus(text) {
+	      if (visionArucoStatusEl) visionArucoStatusEl.textContent = text;
+	      if (cameraVisionOverlayEl) cameraVisionOverlayEl.textContent = text;
+	    }
+
+	    function setVisionLastStatus(text) {
+	      if (visionLastStatusEl) visionLastStatusEl.textContent = text;
+	    }
+
+	    function updateProcessScene(stage = "idle", detail = "", options = {}) {
+	      const safeStage = processStageMeta[stage] ? stage : "idle";
+	      const meta = processStageMeta[safeStage];
+	      if (processPanelEl) {
+	        processPanelEl.classList.remove(...processStageClasses);
+	        processPanelEl.classList.add(`stage-${safeStage}`);
+	      }
+	      const label = options.label || meta.label;
+	      if (processStagePillEl) {
+	        processStagePillEl.className = `pill ${options.pill || meta.pill}`;
+	        processStagePillEl.textContent = label;
+	      }
+	      if (sceneStageTagEl) sceneStageTagEl.textContent = label;
+	      if (processDetailEl) processDetailEl.textContent = detail || meta.detail;
+	      for (const node of document.querySelectorAll("[data-process-node]")) {
+	        node.classList.toggle("active", node.dataset.processNode === safeStage);
+	      }
+	      if (options.lastStatus) setVisionLastStatus(options.lastStatus);
+	    }
+
+	    function processStageFromStepKey(key) {
+	      const lower = String(key || "").toLowerCase();
+	      if (!lower) return {stage: "idle", label: "대기"};
+	      if (lower.includes("lid") || lower.includes("aruco") || lower === "pick_lid") return {stage: "lid", label: "ArUco 뚜껑"};
+	      if (lower.includes("shake")) return {stage: "shake", label: "쉐이킹"};
+	      if (lower.includes("color_scan") || lower.includes("camera") || lower.includes("detect") || lower.includes("yolo")) return {stage: "camera", label: "카메라"};
+	      if (lower.includes("side_grip") || lower.includes("uprighting") || lower.includes("gripper")) return {stage: "grip", label: "컵 픽업"};
+	      if (lower.includes("holder")) return {stage: "holder", label: "컵홀더"};
+	      if (lower.includes("dispenser") || lower.includes("press") || lower.includes("recipe_sequence")) return {stage: "dispenser", label: "디스펜서"};
+	      if (lower.includes("voice") || lower.includes("stt")) return {stage: "idle", label: "주문"};
+	      if (lower.includes("tmux") || lower.includes("connect") || lower.includes("robot")) return {stage: "camera", label: "연결 준비"};
+	      return {stage: "idle", label: "대기"};
+	    }
+
+	    function maybeRefreshCameraForStage(stage) {
+	      if (stage !== "camera" && stage !== "lid") return;
+	      const now = Date.now();
+	      if (now - lastCameraRefreshAt < 5000) return;
+	      lastCameraRefreshAt = now;
+	      refreshCameraPreview();
+	    }
+
+	    function updateProcessSceneFromStep(key, status = "") {
+	      const stageInfo = processStageFromStepKey(key);
+	      const step = stepByKey(key);
+	      const statusText = statusLabels[status] || "";
+	      const detail = `${step?.label || key || processStageMeta[stageInfo.stage].detail}${statusText ? ` · ${statusText}` : ""}`;
+	      updateProcessScene(stageInfo.stage, detail, {label: stageInfo.label, lastStatus: statusText || "큐 대기"});
+	      if (stageInfo.stage === "lid") setVisionArucoStatus(status === "running" ? "ArUco 확인 중" : "ArUco 검출 대기");
+	      maybeRefreshCameraForStage(stageInfo.stage);
+	    }
+
+	    function lidStatusLabel(status) {
+	      const labels = {
+	        lid_pose_received: "뚜껑 pose 수신",
+	        lid_plan_computed: "뚜껑 경로 계산",
+	        visual_refine_align_lid: "ArUco 보정 정렬",
+	        visual_refine_align_lid_ikin: "ArUco 보정 IK",
+	        visual_refine_start: "ArUco 재관측",
+	        visual_refine_success: "ArUco 재관측 성공",
+	        pick_j6_yaw_alignment: "J6 yaw 정렬",
+	        pick_j6_yaw_already_aligned: "J6 yaw 정렬 완료",
+	        motion_sequence_requested: "뚜껑 체결 완료",
+	        success: "ArUco 체결 성공",
+	        failed: "ArUco 체결 실패",
+	        timeout: "ArUco 대기 시간초과"
+	      };
+	      return labels[status] || status.replaceAll("_", " ");
+	    }
+
+	    function updateVisionStatusFromText(text) {
+	      const raw = String(text || "");
+	      if (!raw) return;
+	      const lower = raw.toLowerCase();
+	      if (lower.includes("aruco") || raw.includes("뚜껑")) {
+	        updateProcessScene("lid", "ArUco/뚜껑 로그 수신", {label: "ArUco 뚜껑"});
+	        setVisionArucoStatus("ArUco 로그 수신");
+	      }
+	      const markerMatch = raw.match(/aruco=([A-Za-z0-9_]+:\d+)/);
+	      if (markerMatch && visionMarkerMetaEl) visionMarkerMetaEl.textContent = markerMatch[1];
+	      const lidStatusMatch = raw.match(/lid_grip_status(?:_ignored)?=([A-Za-z0-9_]+)/);
+	      if (lidStatusMatch) {
+	        const status = lidStatusLabel(lidStatusMatch[1]);
+	        setVisionArucoStatus(status);
+	        updateProcessScene("lid", status, {label: "ArUco 뚜껑", lastStatus: status});
+	      }
+	      if (/visual_refine|재관측/.test(raw)) {
+	        const status = "ArUco 재관측";
+	        setVisionArucoStatus(status);
+	        updateProcessScene("lid", status, {label: "ArUco 뚜껑", lastStatus: status});
+	      }
+	      if (/ArUco lid_grip_close 성공|motion_sequence_requested|lid_grip_status=success/.test(raw)) {
+	        const status = "ArUco 체결 성공";
+	        setVisionArucoStatus(status);
+	        updateProcessScene("lid", status, {label: "ArUco 뚜껑", lastStatus: status});
+	      }
+	      const axisMatch = raw.match(/["']?axis["']?\s*[:=]\s*["']?([xyz])/i);
+	      const yawMatch = raw.match(/(?:aruco_yaw_deg|lid_pose_yaw_deg|yaw)["']?\s*[:=]\s*["']?(-?\d+(?:\.\d+)?)/i);
+	      if ((axisMatch || yawMatch) && visionMarkerMetaEl) {
+	        const axis = axisMatch ? `axis ${axisMatch[1].toUpperCase()}` : "";
+	        const yaw = yawMatch ? `yaw ${yawMatch[1]}deg` : "";
+	        visionMarkerMetaEl.textContent = [axis, yaw].filter(Boolean).join(" · ");
+	      }
+	      if (/color_scan|색상 스캔|dispenser_color_map|핸들검출/i.test(raw)) {
+	        updateProcessScene("camera", "색상/핸들 검출 로그 수신", {label: "카메라", lastStatus: "색상 스캔"});
+	      }
+	      if (/cup-holder pick completed|cup holder pick|cup-holder pick|컵홀더 재픽업/i.test(raw)) {
+	        updateProcessScene("holder", "컵홀더 재픽업/배치 로그 수신", {label: "컵홀더", lastStatus: "컵홀더"});
+	      }
+	      if (/SHAKE START|SHAKE DONE|shake sequence/i.test(raw)) {
+	        updateProcessScene("shake", "쉐이킹 로그 수신", {label: "쉐이킹", lastStatus: "쉐이킹"});
+	      }
+	    }
+
+	    function refreshCameraPreview() {
+	      if (!cameraPreviewEl) return;
+	      if (cameraStatusEl) cameraStatusEl.textContent = "갱신 중...";
+	      setVisionCameraStatus("갱신 중");
+	      cameraPreviewEl.src = `/api/camera_snapshot.jpg?t=${Date.now()}`;
+	    }
+
+	    cameraPreviewEl?.addEventListener("load", () => {
+	      const status = `화면 수신됨 ${new Date().toLocaleTimeString()}`;
+	      if (cameraStatusEl) cameraStatusEl.textContent = status;
+	      setVisionCameraStatus(status);
+	    });
+	    cameraPreviewEl?.addEventListener("error", () => {
+	      const status = "화면 없음: RealSense 시작 필요";
+	      if (cameraStatusEl) cameraStatusEl.textContent = status;
+	      setVisionCameraStatus(status);
+	    });
+
+	    async function refreshColorScanResult() {
+	      if (!colorScanResultEl) return;
+	      colorScanResultEl.textContent = "색상 스캔 결과 확인 중...";
+	      updateProcessScene("camera", "색상 스캔 결과 확인 중", {label: "카메라", lastStatus: "색상 결과 확인"});
+	      try {
+	        const res = await fetch("/api/dispenser_color_map");
+	        const data = await res.json();
+	        colorScanResultEl.textContent = JSON.stringify(data, null, 2);
+	        updateProcessScene("camera", "색상 스캔 결과 표시", {label: "카메라", lastStatus: data.fallback ? "색상맵 없음" : "색상맵 갱신"});
+	      } catch (err) {
+	        colorScanResultEl.textContent = String(err);
+	        setVisionLastStatus("색상 결과 오류");
+	      }
+	    }
 
     async function saveManualColorMap() {
       const current = colorScanResultEl?.textContent || "";
@@ -1466,13 +2098,14 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
 	      updateSelectedCount();
 	    }
 
-	    function renderFlow(currentId = "") {
-	      compactSelectionQueue();
-	      if (!selectedQueue.length) {
-	        flowEl.innerHTML = `<div class="flow-empty">아직 선택된 단계가 없습니다.</div>`;
-	        flowModeEl.textContent = isRunning ? "실행 중" : "대기";
-	        return;
-	      }
+		    function renderFlow(currentId = "") {
+		      compactSelectionQueue();
+		      if (!selectedQueue.length) {
+		        flowEl.innerHTML = `<div class="flow-empty">아직 선택된 단계가 없습니다.</div>`;
+		        flowModeEl.textContent = isRunning ? "실행 중" : "대기";
+		        if (!isRunning) updateProcessScene("idle", "실행 대기 중입니다.", {label: "대기", lastStatus: "대기"});
+		        return;
+		      }
 	      const parts = [];
 	      selectedQueue.forEach((item, index) => {
 	        const step = stepByKey(item.key);
@@ -1494,29 +2127,37 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
 	            <button class="flow-remove" type="button" data-remove-flow="${escapeHtml(item.id)}" title="순서에서 제거">×</button>
 	          </div>
 	        `);
-	      });
-	      flowEl.innerHTML = parts.join("");
-	      flowModeEl.textContent = isRunning ? "실행 중" : `큐 ${selectedQueue.length}`;
-	    }
+		      });
+		      flowEl.innerHTML = parts.join("");
+		      flowModeEl.textContent = isRunning ? "실행 중" : `큐 ${selectedQueue.length}`;
+		      const currentItem = currentId ? selectedQueue.find((item) => item.id === currentId) : null;
+		      if (currentItem) {
+		        updateProcessSceneFromStep(currentItem.key, itemStatuses.get(currentItem.id) || "running");
+		      } else if (!isRunning && selectedQueue[0]) {
+		        updateProcessSceneFromStep(selectedQueue[0].key, itemStatuses.get(selectedQueue[0].id) || "");
+		      }
+		    }
 
-	    function resetResultBadges() {
-	      resultStatuses = new Map();
-	      itemStatuses = new Map();
+		    function resetResultBadges() {
+		      resultStatuses = new Map();
+		      itemStatuses = new Map();
       for (const row of document.querySelectorAll(".step")) {
         row.classList.remove("status-running", "status-starting", "status-started", "status-restarted", "status-passed", "status-failed", "status-blocked", "status-timeout");
       }
 	      for (const badge of document.querySelectorAll(".result-badge")) {
 	        badge.className = "pill result-badge";
 	        badge.textContent = "";
-	      }
-	      renderFlow();
-	    }
+		      }
+		      renderFlow();
+		      updateProcessScene("idle", "실행 대기 중입니다.", {label: "대기", lastStatus: "대기"});
+		    }
 
-	    function setStepStatus(key, status, itemId = "") {
-	      const safeStatus = statusLabels[status] ? status : "failed";
-	      resultStatuses.set(key, safeStatus);
-	      if (itemId) itemStatuses.set(itemId, safeStatus);
-	      const row = document.querySelector(`.step[data-step-key="${CSS.escape(key)}"]`);
+		    function setStepStatus(key, status, itemId = "") {
+		      const safeStatus = statusLabels[status] ? status : "failed";
+		      resultStatuses.set(key, safeStatus);
+		      if (itemId) itemStatuses.set(itemId, safeStatus);
+		      updateProcessSceneFromStep(key, safeStatus);
+		      const row = document.querySelector(`.step[data-step-key="${CSS.escape(key)}"]`);
 	      const badge = document.querySelector(`.result-badge[data-result-for="${CSS.escape(key)}"]`);
 	      if (!row || !badge) {
 	        renderFlow();
@@ -1559,11 +2200,12 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
 	              status: "failed",
 	              output: data.error ? `서버 오류: ${data.error}` : `결과 없음: ${JSON.stringify(data)}`
 	            }];
-	        for (const returned of results) {
-	          setStepStatus(returned.key || key, returned.status, returned.key === key ? itemId : "");
-	        }
-	        log.textContent = JSON.stringify({execution_order: data.execution_order || body.selected, results}, null, 2);
-	      } catch (err) {
+		        for (const returned of results) {
+		          setStepStatus(returned.key || key, returned.status, returned.key === key ? itemId : "");
+		        }
+		        log.textContent = JSON.stringify({execution_order: data.execution_order || body.selected, results}, null, 2);
+		        updateVisionStatusFromText(log.textContent);
+		      } catch (err) {
 	        setStepStatus(key, "failed", itemId);
 	        log.textContent = String(err);
 	      } finally {
@@ -1639,11 +2281,12 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
         const data = await res.json();
         const items = Array.isArray(data.logs) ? data.logs : [];
         const body = formatRunningLogs(items);
-        if (body) {
-          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\nstdout/stderr tail을 그대로 표시합니다.\n\n${body}`;
-        } else if (force) {
-          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\n현재 패널이 추적 중인 실행 프로세스 로그가 없습니다.`;
-        }
+	        if (body) {
+	          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\nstdout/stderr tail을 그대로 표시합니다.\n\n${body}`;
+	          updateVisionStatusFromText(body);
+	        } else if (force) {
+	          log.textContent = `실시간 터미널 로그 (${new Date().toLocaleTimeString()})\n현재 패널이 추적 중인 실행 프로세스 로그가 없습니다.`;
+	        }
       } catch (err) {
         if (force) log.textContent = String(err);
       }
@@ -1891,9 +2534,10 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
         for (const returned of results) {
           const queuedItem = selectedQueue.find((item) => item.key === returned.key);
           setStepStatus(returned.key || "pipeline", returned.status, queuedItem?.id || "");
-        }
-        log.textContent = JSON.stringify({execution_order: data.execution_order || keys, results}, null, 2);
-        if (results.some((item) => item.key === "color_scan" && item.status === "passed")) {
+	        }
+	        log.textContent = JSON.stringify({execution_order: data.execution_order || keys, results}, null, 2);
+	        updateVisionStatusFromText(log.textContent);
+	        if (results.some((item) => item.key === "color_scan" && item.status === "passed")) {
           await refreshColorScanResult();
         }
       } catch (err) {
@@ -2003,9 +2647,10 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
 	            }
 	          }
 	          if (shouldStop) break;
-	        }
-	        log.textContent = JSON.stringify({execution_order: results.map((item) => item.key), results}, null, 2);
-	      } catch (err) {
+		        }
+		        log.textContent = JSON.stringify({execution_order: results.map((item) => item.key), results}, null, 2);
+		        updateVisionStatusFromText(log.textContent);
+		      } catch (err) {
 	        log.textContent = String(err);
 	      } finally {
 	        isRunning = false;
@@ -2084,6 +2729,7 @@ SERVICE_PREFIX=dsr01 DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-/run/user/1
     });
 
     refreshColorScanResult();
+    refreshCameraPreview();
     loadSteps().catch((err) => { log.textContent = String(err); focusLog(); });
   </script>
 </body>

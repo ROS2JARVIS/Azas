@@ -71,9 +71,10 @@ def load_sequence(config_path: Path) -> tuple[TargetPose, TargetPose, TargetPose
     return pre_place, place_final, retreat, approach_lift_m
 
 
-def offset_target_z(target: TargetPose, offset_m: float) -> TargetPose:
+def offset_target_yz(target: TargetPose, y_offset_m: float, z_offset_m: float) -> TargetPose:
     adjusted_xyz = list(target.xyz_m)
-    adjusted_xyz[2] += float(offset_m)
+    adjusted_xyz[1] += float(y_offset_m)
+    adjusted_xyz[2] += float(z_offset_m)
     return TargetPose(target.label, adjusted_xyz, list(target.rpy_rad))
 
 
@@ -188,8 +189,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--place-final-z-offset-m",
         type=float,
-        default=-0.020,
+        default=-0.037371,
         help="Operational Z adjustment for pre-shake cup-holder re-grasp; negative lowers place_final Z.",
+    )
+    parser.add_argument(
+        "--place-final-y-offset-m",
+        type=float,
+        default=0.010,
+        help="Operational Y adjustment for pre-shake cup-holder re-grasp; positive moves place_final +Y.",
     )
     parser.add_argument("--timeout-sec", type=float, default=90.0)
     parser.add_argument("--wait-service-sec", type=float, default=8.0)
@@ -208,7 +215,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gripper-grasp-width-m", type=float, default=0.068)
     parser.add_argument("--gripper-force-n", type=float, default=20.0)
     parser.add_argument("--gripper-timeout-sec", type=float, default=12.0)
-    parser.add_argument("--post-grasp-settle-sec", type=float, default=0.8)
+    parser.add_argument("--post-grasp-settle-sec", type=float, default=0.3)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
         "--confirm",
@@ -229,8 +236,12 @@ def main() -> int:
 
     try:
         pre_place, place_final, retreat, approach_lift_m = load_sequence(args.config)
-        if abs(args.place_final_z_offset_m) > 1e-9:
-            place_final = offset_target_z(place_final, args.place_final_z_offset_m)
+        if abs(args.place_final_y_offset_m) > 1e-9 or abs(args.place_final_z_offset_m) > 1e-9:
+            place_final = offset_target_yz(
+                place_final,
+                args.place_final_y_offset_m,
+                args.place_final_z_offset_m,
+            )
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"[FAIL] {exc}")
         return 2
@@ -240,6 +251,7 @@ def main() -> int:
     print(f"[Azas] service_prefix={args.service_prefix}")
     print("[Azas] source=cup_holder.side_grip_place measured poses; no operator/LLM-generated cup coordinates")
     print(f"[Azas] approach_lift_m={approach_lift_m:.3f}")
+    print(f"[Azas] place_final_y_offset_m={args.place_final_y_offset_m:.4f}")
     print(f"[Azas] place_final_z_offset_m={args.place_final_z_offset_m:.4f}")
     print_target(retreat)
     print_target(place_final)
