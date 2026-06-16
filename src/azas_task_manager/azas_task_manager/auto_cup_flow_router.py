@@ -131,6 +131,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("recipe_colors", "")
         # 디스펜서 누르기 종료 후 디스펜서 앞의 컵을 마지막으로 재파지할 때 z 실측 보정값
         self.declare_parameter("final_regrasp_x_offset_m", 0.02)
+        self.declare_parameter("final_regrasp_dispenser_2_x_offset_m", 0.010)
         self.declare_parameter("final_regrasp_z_offset_m", 0.0)
         # 잡기 직전 pre 위치(cup_place 기준 X offset) 보정값. 스크립트 기본 -0.09에 -30mm 추가
         self.declare_parameter("cup_pre_from_place_x_offset_m", -0.12)
@@ -141,7 +142,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("cup_holder_place_final_dispenser_1_x_extra_offset_m", -0.010)
         self.declare_parameter("cup_holder_place_final_dispenser_1_y_extra_offset_m", 0.010)
         self.declare_parameter("cup_holder_place_final_dispenser_2_x_extra_offset_m", -0.003)
-        self.declare_parameter("cup_holder_place_final_dispenser_2_y_extra_offset_m", 0.010)
+        self.declare_parameter("cup_holder_place_final_dispenser_2_y_extra_offset_m", 0.005)
         self.declare_parameter("cup_holder_place_final_dispenser_3_x_extra_offset_m", -0.010)
         self.declare_parameter("cup_holder_place_final_dispenser_3_y_extra_offset_m", 0.010)
         self.declare_parameter("cup_holder_place_final_dispenser_4_x_extra_offset_m", -0.010)
@@ -768,6 +769,7 @@ class AutoCupFlowRouter(Node):
         dispenser_3_pre_x = float(self.get_parameter("dispenser_3_cup_pre_extra_x_offset_m").value)
         command += f" --dispenser-3-cup-pre-extra-x-offset-m {dispenser_3_pre_x}"
         regrasp_x = float(self.get_parameter("final_regrasp_x_offset_m").value)
+        regrasp_d2_x = float(self.get_parameter("final_regrasp_dispenser_2_x_offset_m").value)
         regrasp_z = float(self.get_parameter("final_regrasp_z_offset_m").value)
         place_z = float(self.get_parameter("cup_holder_place_z_offset_m").value)
         place_x = float(self.get_parameter("cup_holder_place_x_offset_m").value)
@@ -784,6 +786,7 @@ class AutoCupFlowRouter(Node):
         z_min = float(self.get_parameter("cup_holder_z_min_m").value)
         command += (
             f" --final-regrasp-extra-x-offset-m {regrasp_x}"
+            f" --final-regrasp-dispenser-2-x-offset-m {regrasp_d2_x}"
             f" --final-regrasp-extra-z-offset-m {regrasp_z}"
             f" --cup-holder-place-final-z-offset-m {place_z}"
             f" --cup-holder-place-final-x-offset-m {place_x}"
@@ -900,6 +903,7 @@ class AutoCupFlowRouter(Node):
             "--confirm AUTO_HANDOVER_ON_PALM "
             "--handover-attempts 3 "
             "--handover-retry-sleep-sec 1.0 "
+            "--no-diagonal-approach "
             "--trigger-stable-count 2 "
             "--trigger-window-sec 1.5 "
             "--trigger-min-stable-sec 1.0 "
@@ -920,15 +924,17 @@ class AutoCupFlowRouter(Node):
             "--force-baseline-samples 5 "
             "--force-baseline-interval-sec 0.05 "
             "--force-read-settle-sec 0.08 "
-            "--force-abort-delta-n 1.0 "
-            "--force-axis-delta-n 1.0 "
-            "--contact-step-delta-n 2.5 "
+            "--force-abort-delta-n 0.8 "
+            "--force-axis-delta-n 0.5 "
+            "--contact-step-delta-n 1.0 "
             "--require-force-magnitude-delta "
-            "--force-magnitude-delta-n 2.0 "
+            "--force-magnitude-delta-n 0.8 "
             "--contact-confirm-samples 3 "
             "--contact-confirm-min-hits 3 "
             "--contact-confirm-interval-sec 0.08 "
             "--descent-step-m 0.030 "
+            "--coarse-descent-step-m 0.080 "
+            "--fine-descent-start-above-palm-m 0.080 "
             "--transit-velocity 55 "
             "--transit-acceleration 75 "
             "--descent-velocity 22 "

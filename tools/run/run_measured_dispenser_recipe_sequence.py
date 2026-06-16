@@ -3737,6 +3737,15 @@ def parse_args() -> argparse.Namespace:
             "to the cup re-grasp target. Positive X moves closer toward the dispenser/cup."
         ),
     )
+    parser.add_argument(
+        "--final-regrasp-dispenser-2-x-offset-m",
+        type=float,
+        default=0.010,
+        help=(
+            "When physical dispenser 2 is the final re-grasp before cup-holder placement, "
+            "override the final re-grasp X offset with this value."
+        ),
+    )
     parser.add_argument("--final-regrasp-extra-y-offset-m", type=float, default=0.0)
     parser.add_argument("--final-regrasp-extra-z-offset-m", type=float, default=0.0)
     parser.add_argument("--final-regrasp-grasp-width-m", type=float, default=0.068)
@@ -3779,7 +3788,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cup-holder-place-final-dispenser-2-y-extra-offset-m",
         type=float,
-        default=0.010,
+        default=0.005,
         help=(
             "When the final re-grasp is from physical dispenser 2, add this extra Y "
             "offset to CUP_HOLDER_PLACE_FINAL without editing calibration.yaml."
@@ -3985,6 +3994,12 @@ def main() -> int:
     print(f"[Azas] dispenser_ids={','.join(dispenser_ids)}")
     grouped_dispenser_ids = group_consecutive_dispenser_ids(dispenser_ids)
     final_dispenser_id = grouped_dispenser_ids[-1][0] if grouped_dispenser_ids else ""
+    if final_dispenser_id == "2":
+        args.final_regrasp_extra_x_offset_m = args.final_regrasp_dispenser_2_x_offset_m
+        print(
+            "[Azas] dispenser 2 final re-grasp X offset override applied: "
+            f"effective_final_regrasp_extra_x_offset_m={args.final_regrasp_extra_x_offset_m:.3f}"
+        )
     final_holder_offsets = {
         "1": (
             args.cup_holder_place_final_dispenser_1_x_extra_offset_m,

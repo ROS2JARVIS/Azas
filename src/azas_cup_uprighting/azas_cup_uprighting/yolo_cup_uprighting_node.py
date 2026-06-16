@@ -142,7 +142,10 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             log.warn("이미 시퀀스 실행 중입니다.")
             return
 
-        detections = self.run_yolo(frame)
+        detections = self.pick_snapshot_detections()
+        if detections is None:
+            log.error("pick snapshot 없음: YOLO 재검출 없이 시퀀스를 중단합니다.")
+            return False
         self._detections = detections
         target = self._select_target(detections)
         

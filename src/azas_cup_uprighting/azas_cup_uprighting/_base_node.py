@@ -85,8 +85,12 @@ class BaseMoveItPickNode(Node):
             self.get_parameter("skip_initial_home_move").value
         )
         self._last_pick_time = 0.0
+        self._auto_pick_attempt_started = False
         self._detections: list[dict] = []
+        self._pick_snapshot_detections: list[dict] | None = None
         self._frozen_frame = None
+        self._camera_paused = False
+        self._camera_lock = threading.RLock()
 
         # ── Hand-Eye ──
         self.gripper2cam, calib_file = perc.load_hand_eye()
@@ -167,16 +171,27 @@ class BaseMoveItPickNode(Node):
 
     # ── 콜백 ──
     def _cam_info_cb(self, msg):
-        self.intrinsics = {
-            "fx": msg.k[0], "fy": msg.k[4],
-            "ppx": msg.k[2], "ppy": msg.k[5],
-        }
+        with self._camera_lock:
+            if self._camera_paused:
+                return
+            self.intrinsics = {
+                "fx": msg.k[0], "fy": msg.k[4],
+                "ppx": msg.k[2], "ppy": msg.k[5],
+            }
 
     def _color_cb(self, msg):
-        self.color_image = self._imgmsg_to_bgr(msg)
+        image = self._imgmsg_to_bgr(msg)
+        with self._camera_lock:
+            if self._camera_paused:
+                return
+            self.color_image = image
 
     def _depth_cb(self, msg):
-        self.depth_image = self._imgmsg_to_array(msg)
+        image = self._imgmsg_to_array(msg)
+        with self._camera_lock:
+            if self._camera_paused:
+                return
+            self.depth_image = image
 
     # cv_bridge는 NumPy 1.x ABI로 빌드되어 ~/.local의 NumPy 2.x와 충돌
     # (_ARRAY_API not found → segfault)하므로 직접 변환한다.
@@ -242,13 +257,76 @@ class BaseMoveItPickNode(Node):
     def pixel_to_base(self, px, py):
         if not self._ensure_moveit():
             return None
+        with self._camera_lock:
+            depth_image = None if self.depth_image is None else self.depth_image.copy()
+            intrinsics = None if self.intrinsics is None else dict(self.intrinsics)
         return perc.pixel_to_base(
             self.robot, self.gripper2cam,
-            self.depth_image, self.intrinsics,
+            depth_image, intrinsics,
             px, py, self.get_logger())
 
-    def run_yolo(self, frame):
-        return perc.run_yolo(self.yolo, frame, self.depth_image)
+    def run_yolo(self, frame, depth_image=None):
+        if depth_image is None:
+            with self._camera_lock:
+                depth_image = None if self.depth_image is None else self.depth_image.copy()
+        return perc.run_yolo(self.yolo, frame, depth_image)
+
+    def current_camera_snapshot(self):
+        with self._camera_lock:
+            frame = None if self.color_image is None else self.color_image.copy()
+            depth_image = None if self.depth_image is None else self.depth_image.copy()
+            intrinsics = None if self.intrinsics is None else dict(self.intrinsics)
+        return frame, depth_image, intrinsics
+
+    def pause_camera_for_pick(
+        self,
+        frame: np.ndarray | None = None,
+        *,
+        depth_image=None,
+        intrinsics=None,
+        detections=None,
+    ):
+        """Freeze the frame/depth/intrinsics chosen for the active pick."""
+        with self._camera_lock:
+            if frame is None:
+                if self.color_image is None:
+                    return None
+                frame = self.color_image
+
+            frozen_frame = frame.copy()
+            frozen_depth = (
+                None if depth_image is None
+                else depth_image.copy()
+            )
+            if frozen_depth is None and self.depth_image is not None:
+                frozen_depth = self.depth_image.copy()
+            frozen_intrinsics = (
+                None if intrinsics is None
+                else dict(intrinsics)
+            )
+            if frozen_intrinsics is None and self.intrinsics is not None:
+                frozen_intrinsics = dict(self.intrinsics)
+
+            self.color_image = frozen_frame.copy()
+            self.depth_image = None if frozen_depth is None else frozen_depth.copy()
+            self.intrinsics = None if frozen_intrinsics is None else dict(frozen_intrinsics)
+            self._camera_paused = True
+            self._frozen_frame = frozen_frame.copy()
+            snapshot_detections = self._detections if detections is None else detections
+            self._pick_snapshot_detections = [dict(d) for d in snapshot_detections]
+            self._detections = [dict(d) for d in self._pick_snapshot_detections]
+            return frozen_frame
+
+    def resume_camera_after_pick(self):
+        with self._camera_lock:
+            self._camera_paused = False
+            self._pick_snapshot_detections = None
+
+    def pick_snapshot_detections(self) -> list[dict] | None:
+        with self._camera_lock:
+            if self._pick_snapshot_detections is None:
+                return None
+            return [dict(d) for d in self._pick_snapshot_detections]
 
     # ════════════════════════════════════════════
     #  Motion 래퍼
@@ -297,6 +375,10 @@ class BaseMoveItPickNode(Node):
         실패 시 None.
         """
         log = self.get_logger()
+        if self._camera_paused:
+            log.error("재검출 차단: pick 카메라 freeze 중입니다.")
+            return None
+
         ori = self.home_ori
         ox, oy = cfg.APPROACH_OFFSET
         if not self._ensure_moveit():
@@ -371,19 +453,50 @@ class BaseMoveItPickNode(Node):
     # ════════════════════════════════════════════
     #  Pick 백그라운드 + freeze
     # ════════════════════════════════════════════
-    def _pick_in_thread(self, frame: np.ndarray):
+    def _pick_in_thread(
+        self,
+        frame: np.ndarray,
+        *,
+        depth_image=None,
+        intrinsics=None,
+        detections=None,
+        auto_trigger: bool = False,
+    ):
         if self.picking:
             return
-        self._frozen_frame = frame.copy()
+        if auto_trigger and self._auto_pick_attempt_started:
+            self.get_logger().warn("auto pick은 이미 1회 시작되었습니다. 재검출/재시도 없이 무시합니다.")
+            return
+        if auto_trigger:
+            self._auto_pick_attempt_started = True
+
+        frozen_frame = self.pause_camera_for_pick(
+            frame,
+            depth_image=depth_image,
+            intrinsics=intrinsics,
+            detections=detections,
+        )
+        if frozen_frame is None:
+            self.get_logger().error("pick 시작 실패: 카메라 프레임 없음")
+            return
+        self.get_logger().info("pick 시작: 카메라 입력을 고정하고 완료 전까지 새 프레임을 무시합니다.")
 
         def _work():
             success = False
             try:
-                success = bool(self.detect_and_pick(frame))
+                success = bool(self.detect_and_pick(frozen_frame))
             finally:
-                self._frozen_frame = None
-            if success and self._exit_after_pick:
-                self.get_logger().info("exit_after_pick=true and pick completed; closing cup_uprighting node")
+                if not (self._exit_after_pick and auto_trigger):
+                    self._frozen_frame = None
+                    self.resume_camera_after_pick()
+
+            if self._exit_after_pick and (success or auto_trigger):
+                if success:
+                    self.get_logger().info("exit_after_pick=true and pick completed; closing cup_uprighting node")
+                else:
+                    self.get_logger().error(
+                        "auto pick failed; closing cup_uprighting node without re-detection/retry"
+                    )
                 rclpy.shutdown()
 
         threading.Thread(target=_work, daemon=True).start()
@@ -471,21 +584,28 @@ class BaseMoveItPickNode(Node):
                 continue
 
             # ── Live 분기 ──
-            if self.color_image is None:
+            frame, depth_image, intrinsics = self.current_camera_snapshot()
+            if frame is None:
                 time.sleep(0.01)
                 continue
 
-            frame = self.color_image.copy()
-            self._detections = self.run_yolo(frame)
+            self._detections = self.run_yolo(frame, depth_image)
 
             now = time.time()
             if (self._auto_mode
                     and not self.picking
+                    and not self._auto_pick_attempt_started
                     and self.is_auto_ready()
                     and (now - self._last_pick_time) >= cfg.AUTO_PICK_INTERVAL):
                 if self._select_target(self._detections) is not None:
                     self._last_pick_time = now
-                    self._pick_in_thread(frame)
+                    self._pick_in_thread(
+                        frame,
+                        depth_image=depth_image,
+                        intrinsics=intrinsics,
+                        detections=self._detections,
+                        auto_trigger=True,
+                    )
                     continue
 
             vis = self._draw_detections(frame)
@@ -496,7 +616,12 @@ class BaseMoveItPickNode(Node):
                 break
             elif key == ord("p"):
                 log.info("[KEY] manual pick")
-                self._pick_in_thread(frame)
+                self._pick_in_thread(
+                    frame,
+                    depth_image=depth_image,
+                    intrinsics=intrinsics,
+                    detections=self._detections,
+                )
             elif key == ord("a"):
                 self._auto_mode = not self._auto_mode
                 log.info(f"[KEY] auto {'ON' if self._auto_mode else 'OFF'}")

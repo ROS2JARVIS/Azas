@@ -3262,7 +3262,7 @@ def shell_env(payload: dict[str, Any]) -> dict[str, str]:
     env["CUP_HOLDER_PICK_Y_OFFSET_M"] = str(
         payload.get("cup_holder_pick_y_offset_m")
         or env.get("CUP_HOLDER_PICK_Y_OFFSET_M")
-        or "0.010"
+        or "0.005"
     )
     env["CUP_HOLDER_PICK_Z_OFFSET_M"] = str(
         payload.get("cup_holder_pick_z_offset_m")
@@ -3767,7 +3767,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
         pick_y_offset_m = str(
             payload.get("cup_holder_pick_y_offset_m")
             or os.environ.get("CUP_HOLDER_PICK_Y_OFFSET_M")
-            or "0.010"
+            or "0.005"
         ).strip()
         pick_z_offset_m = str(
             payload.get("cup_holder_pick_z_offset_m")
@@ -3841,14 +3841,19 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"{ROS_SETUP} && "
             "echo '[Azas] HANDOVER START: 펼친 손바닥을 추적해 컵을 손 위에 내려놓습니다.' && "
             "echo '[Azas] 전제: 손 검출 시작 버튼이 켜져 있고, 받는 사람이 손바닥을 펴고 멈춰 있어야 합니다.' && "
-            "echo '[Azas] 안전: 하강은 2cm 스텝마다 외력을 확인하고, 손이 움직이면 자동 후퇴합니다.' && "
+            "echo '[Azas] 안전: XY 도착 후 초반은 큰 Z 스텝, 손 근처는 작은 Z 스텝마다 외력을 확인합니다.' && "
             "python3 tools/run/handover_cup_to_palm.py "
             f"--service-prefix {service_prefix} "
             f"--release-tcp-above-palm-m {shlex.quote(release_height_m)} "
+            "--no-diagonal-approach "
             "--transit-velocity 10.0 --transit-acceleration 14.0 "
             "--descent-velocity 4.0 --descent-acceleration 6.0 "
+            "--coarse-descent-step-m 0.080 --fine-descent-start-above-palm-m 0.080 "
             "--movel-retries 2 --movel-retry-sleep-sec 1.0 "
-            "--force-abort-delta-n 10.0 "
+            "--force-abort-delta-n 0.8 "
+            "--force-axis-delta-n 0.5 "
+            "--contact-step-delta-n 1.0 "
+            "--force-magnitude-delta-n 0.8 "
             "--execute --confirm ENABLE_HUMAN_PALM_HANDOVER "
             "--approve-motion ENABLE_HUMAN_PALM_HANDOVER_MOTION "
             "--approve-release RELEASE_CUP_NOW"
@@ -4412,7 +4417,7 @@ class Handler(BaseHTTPRequestHandler):
                     "CUP_HOLDER_RZ_OFFSET_DEG", "-1.0"
                 ),
                 "cup_holder_pick_y_offset_m": os.environ.get(
-                    "CUP_HOLDER_PICK_Y_OFFSET_M", "0.010"
+                    "CUP_HOLDER_PICK_Y_OFFSET_M", "0.005"
                 ),
                 "cup_holder_pick_z_offset_m": os.environ.get(
                     "CUP_HOLDER_PICK_Z_OFFSET_M", "-0.037371"

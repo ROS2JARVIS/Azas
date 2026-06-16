@@ -367,6 +367,7 @@ def main() -> int:
     parser.add_argument("--regrasp-rear-entry-offset-x-m", default="-0.090")
     parser.add_argument("--regrasp-rear-entry-offset-y-m", default="0.0")
     parser.add_argument("--final-regrasp-extra-x-offset-m", default="0.020")
+    parser.add_argument("--final-regrasp-dispenser-2-x-offset-m", default="0.010")
     parser.add_argument("--skip-initial-move-release", action="store_true",
                         help="복구 모드: 컵이 이미 첫 디스펜서 front-hold에 놓여 있다고 가정하고 press부터 시작")
     parser.add_argument(
@@ -408,7 +409,7 @@ def main() -> int:
     parser.add_argument("--cup-holder-place-final-dispenser-1-x-extra-offset-m", default="-0.010")
     parser.add_argument("--cup-holder-place-final-dispenser-1-y-extra-offset-m", default="0.010")
     parser.add_argument("--cup-holder-place-final-dispenser-2-x-extra-offset-m", default="-0.003")
-    parser.add_argument("--cup-holder-place-final-dispenser-2-y-extra-offset-m", default="0.010")
+    parser.add_argument("--cup-holder-place-final-dispenser-2-y-extra-offset-m", default="0.005")
     parser.add_argument("--cup-holder-place-final-dispenser-3-x-extra-offset-m", default="-0.010")
     parser.add_argument("--cup-holder-place-final-dispenser-3-y-extra-offset-m", default="0.010")
     parser.add_argument("--cup-holder-place-final-dispenser-4-x-extra-offset-m", default="-0.010")
@@ -491,6 +492,7 @@ def main() -> int:
         "--regrasp-rear-entry-offset-x-m", str(args.regrasp_rear_entry_offset_x_m),
         "--regrasp-rear-entry-offset-y-m", str(args.regrasp_rear_entry_offset_y_m),
         "--final-regrasp-extra-x-offset-m", str(args.final_regrasp_extra_x_offset_m),
+        "--final-regrasp-dispenser-2-x-offset-m", str(args.final_regrasp_dispenser_2_x_offset_m),
         "--final-regrasp-extra-y-offset-m", str(args.final_regrasp_extra_y_offset_m),
         "--final-regrasp-extra-z-offset-m", str(args.final_regrasp_extra_z_offset_m),
         "--final-regrasp-grasp-width-m", str(args.final_regrasp_grasp_width_m),

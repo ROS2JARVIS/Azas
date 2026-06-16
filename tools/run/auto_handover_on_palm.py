@@ -184,6 +184,8 @@ def main() -> int:
     parser.add_argument("--handover-retry-sleep-sec", type=float, default=1.0,
                         help="delay before waiting for a stable palm again after a retryable failure")
     parser.add_argument("--release-tcp-above-palm-m", default="0.08")
+    parser.add_argument("--diagonal-approach", action=argparse.BooleanOptionalAction, default=None,
+                        help="pass through to handover_cup_to_palm.py; default there is XY first, then Z")
     parser.add_argument("--skip-observe", action="store_true",
                         help="do not move to the observe/camera-home joint pose before waiting for a palm")
     parser.add_argument("--observe-joints", default="3.0,-12.7,44.0,-9.0,133.0,90.0",
@@ -205,6 +207,8 @@ def main() -> int:
     parser.add_argument("--descent-velocity", type=float, default=22.0)
     parser.add_argument("--descent-acceleration", type=float, default=32.0)
     parser.add_argument("--descent-step-m", type=float, default=0.03)
+    parser.add_argument("--coarse-descent-step-m", type=float, default=0.08)
+    parser.add_argument("--fine-descent-start-above-palm-m", type=float, default=0.08)
     parser.add_argument("--max-descent-steps", type=int, default=0,
                         help="maximum staged descent steps; 0 means use the Z floor only")
     parser.add_argument("--force-search-start-above-palm-m", type=float, default=0.16,
@@ -225,19 +229,19 @@ def main() -> int:
     parser.add_argument("--j5-max-deg", type=float, default=None)
     parser.add_argument("--skip-force-monitor", action="store_true",
                         help="pass through to handover script; staged descent remains but force abort is disabled")
-    parser.add_argument("--force-abort-delta-n", type=float, default=2.0,
+    parser.add_argument("--force-abort-delta-n", type=float, default=0.8,
                         help="force rise over baseline that counts as palm contact during descent")
-    parser.add_argument("--force-axis-delta-n", type=float, default=1.0,
+    parser.add_argument("--force-axis-delta-n", type=float, default=0.5,
                         help="also count contact when any single force axis changes by this much")
     parser.add_argument("--contact-axis", choices=("z", "xy", "all"), default="z",
                         help="force axes used for contact release; z is safest for vertical handover")
     parser.add_argument("--contact-z-direction", choices=("positive", "negative", "any"), default="positive",
                         help="when --contact-axis z, require this signed Z force delta for contact")
-    parser.add_argument("--contact-step-delta-n", type=float, default=2.0,
+    parser.add_argument("--contact-step-delta-n", type=float, default=1.0,
                         help="contact candidate also requires this force jump from the previous descent step")
     parser.add_argument("--require-force-magnitude-delta", action=argparse.BooleanOptionalAction, default=True,
                         help="also require total force magnitude to rise before contact release")
-    parser.add_argument("--force-magnitude-delta-n", type=float, default=1.5,
+    parser.add_argument("--force-magnitude-delta-n", type=float, default=0.8,
                         help="minimum total force magnitude rise required with --require-force-magnitude-delta")
     parser.add_argument("--force-baseline-samples", type=int, default=5,
                         help="average this many GetToolForce samples before descent")
@@ -297,6 +301,8 @@ def main() -> int:
         "--descent-velocity", f"{args.descent_velocity:.3f}",
         "--descent-acceleration", f"{args.descent_acceleration:.3f}",
         "--descent-step-m", f"{args.descent_step_m:.3f}",
+        "--coarse-descent-step-m", f"{args.coarse_descent_step_m:.3f}",
+        "--fine-descent-start-above-palm-m", f"{args.fine_descent_start_above_palm_m:.3f}",
         "--max-descent-steps", str(args.max_descent_steps),
         "--force-search-start-above-palm-m", f"{args.force_search_start_above_palm_m:.3f}",
         "--force-search-below-palm-m", f"{args.force_search_below_palm_m:.3f}",
@@ -323,6 +329,10 @@ def main() -> int:
         cmd += ["--hand-sample-spread-max-m", f"{args.hand_sample_spread_max_m:.3f}"]
     if args.hand_recheck_tolerance_m is not None:
         cmd += ["--hand-recheck-tolerance-m", f"{args.hand_recheck_tolerance_m:.3f}"]
+    if args.diagonal_approach is True:
+        cmd += ["--diagonal-approach"]
+    elif args.diagonal_approach is False:
+        cmd += ["--no-diagonal-approach"]
     if args.skip_hand_recheck:
         cmd += ["--skip-hand-recheck"]
     if args.move_timeout_sec is not None:

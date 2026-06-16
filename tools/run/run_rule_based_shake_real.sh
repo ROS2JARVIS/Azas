@@ -18,7 +18,7 @@ CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M="${CUP_HOLDER_PLACE_FINAL_Z_OFFSET_M:-0.0}"
 # Operational-only offset for the pre-shake re-grasp from cup_holder.side_grip_place.
 # Y positive moves the final grasp pose +Y; Z negative lowers it.
 # calibration.yaml is not modified.
-CUP_HOLDER_PICK_Y_OFFSET_M="${CUP_HOLDER_PICK_Y_OFFSET_M:-0.010}"
+CUP_HOLDER_PICK_Y_OFFSET_M="${CUP_HOLDER_PICK_Y_OFFSET_M:-0.005}"
 CUP_HOLDER_PICK_Z_OFFSET_M="${CUP_HOLDER_PICK_Z_OFFSET_M:--0.037371}"
 CUP_HOLDER_PICK_WIDTH_M="${CUP_HOLDER_PICK_WIDTH_M:-0.068}"
 CUP_HOLDER_PICK_FORCE_N="${CUP_HOLDER_PICK_FORCE_N:-25.0}"

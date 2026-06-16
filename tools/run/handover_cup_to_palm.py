@@ -407,9 +407,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-hand-recheck", action="store_true",
                         help="use the initially sampled palm for descent without the pre-descent palm re-check")
     parser.add_argument("--transit-z-m", type=float, default=0.45)
-    parser.add_argument("--diagonal-approach", action=argparse.BooleanOptionalAction, default=True,
+    parser.add_argument("--diagonal-approach", action=argparse.BooleanOptionalAction, default=False,
                         help="move toward the palm with XYZ blended to the descent-start height; "
-                             "--no-diagonal-approach keeps the older XY-at-transit-height behavior")
+                             "default is safer XY-at-transit-height, then vertical Z descent")
     parser.add_argument("--above-palm-m", type=float, default=0.12,
                         help="TCP height above the palm before the staged descent")
     parser.add_argument("--release-tcp-above-palm-m", type=float, default=0.08,
@@ -420,21 +420,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-search-below-palm-m", type=float, default=0.10,
                         help="with --release-on-contact, search down to this far below the detected palm before aborting")
     parser.add_argument("--descent-step-m", type=float, default=0.03)
+    parser.add_argument("--coarse-descent-step-m", type=float, default=0.08,
+                        help="larger initial Z step while still checking force after each step")
+    parser.add_argument("--fine-descent-start-above-palm-m", type=float, default=0.08,
+                        help="switch to --descent-step-m at this TCP height above the detected palm")
     parser.add_argument("--max-descent-steps", type=int, default=0,
                         help="maximum staged descent steps; 0 means use the Z floor only")
-    parser.add_argument("--force-abort-delta-n", type=float, default=2.0,
+    parser.add_argument("--force-abort-delta-n", type=float, default=0.8,
                         help="abort descent when |tool force| rises this much over the pre-descent baseline")
-    parser.add_argument("--force-axis-delta-n", type=float, default=1.0,
+    parser.add_argument("--force-axis-delta-n", type=float, default=0.5,
                         help="trigger contact when the monitored force axis changes by this much")
     parser.add_argument("--contact-axis", choices=("z", "xy", "all"), default="z",
                         help="force axes used for contact release; z is safest for vertical handover")
     parser.add_argument("--contact-z-direction", choices=("positive", "negative", "any"), default="positive",
                         help="when --contact-axis z, require this signed Z force delta for contact")
-    parser.add_argument("--contact-step-delta-n", type=float, default=2.0,
+    parser.add_argument("--contact-step-delta-n", type=float, default=1.0,
                         help="contact candidate also requires this force jump from the previous descent step")
     parser.add_argument("--require-force-magnitude-delta", action=argparse.BooleanOptionalAction, default=True,
                         help="also require total force magnitude to rise before contact release")
-    parser.add_argument("--force-magnitude-delta-n", type=float, default=1.5,
+    parser.add_argument("--force-magnitude-delta-n", type=float, default=0.8,
                         help="minimum total force magnitude rise required with --require-force-magnitude-delta")
     parser.add_argument("--force-baseline-samples", type=int, default=5,
                         help="average this many GetToolForce samples before descent")
@@ -553,7 +557,14 @@ def main() -> int:
         release = [palm[0], palm[1], palm[2] + args.release_tcp_above_palm_m]
         contact_floor_z = max(args.z_min, palm[2] - max(args.force_search_below_palm_m, 0.0))
         retreat = [palm[0], palm[1], palm[2] + args.retreat_lift_m]
-        plan_items = [("LIFT", lift), (approach_label, approach), ("ABOVE_PALM", above_palm)]
+        monitored_descent_start = above_palm if args.diagonal_approach else approach
+        monitored_descent_start_label = "ABOVE_PALM" if args.diagonal_approach else approach_label
+        fine_descent_start_z = palm[2] + max(args.fine_descent_start_above_palm_m, 0.0)
+        coarse_step_m = max(args.coarse_descent_step_m, args.descent_step_m, 0.005)
+        fine_step_m = max(args.descent_step_m, 0.005)
+        plan_items = [("LIFT", lift), (approach_label, approach)]
+        if args.diagonal_approach and math.dist(approach, above_palm) > 0.001:
+            plan_items.append(("ABOVE_PALM", above_palm))
         if not args.release_on_contact:
             plan_items.append(("RELEASE", release))
         plan_items.append(("RETREAT", retreat))
@@ -563,14 +574,16 @@ def main() -> int:
             print(f"[PLAN] CONTACT_SEARCH_FLOOR: z_m={contact_floor_z:.3f}")
             print(
                 "[PLAN] force-only Z search: "
-                f"start_z={above_palm[2]:.3f} palm_z={palm[2]:.3f} floor_z={contact_floor_z:.3f}; "
+                f"start_z={monitored_descent_start[2]:.3f} palm_z={palm[2]:.3f} "
+                f"floor_z={contact_floor_z:.3f}; "
                 "gripper opens only after confirmed contact"
             )
         print(
-            "[PLAN] descent ABOVE_PALM -> "
+            f"[PLAN] monitored descent {monitored_descent_start_label} -> "
             f"{'CONTACT_SEARCH_FLOOR' if args.release_on_contact else 'RELEASE'} in "
-            f"{math.ceil((above_palm[2] - (contact_floor_z if args.release_on_contact else release[2])) / max(args.descent_step_m, 0.005))} steps of "
-            f"{args.descent_step_m * 1000.0:.0f}mm with force abort delta {args.force_abort_delta_n:.1f}N"
+            f"coarse {coarse_step_m * 1000.0:.0f}mm steps until "
+            f"{args.fine_descent_start_above_palm_m * 1000.0:.0f}mm above palm, then "
+            f"fine {fine_step_m * 1000.0:.0f}mm steps with force abort delta {args.force_abort_delta_n:.1f}N"
         )
         if args.max_descent_steps > 0:
             no_contact_action = "retreat with cup" if args.require_contact_for_release else "open at final descent pose"
@@ -604,12 +617,14 @@ def main() -> int:
         run_movel(args, approach, label=approach_motion_label,
                   velocity=args.transit_velocity, acceleration=args.transit_acceleration,
                   rpy_deg=preserved_rpy)
-        if math.dist(approach, above_palm) > 0.001:
+        if args.diagonal_approach and math.dist(approach, above_palm) > 0.001:
             run_movel(args, above_palm, label="ABOVE_PALM vertical pre-descent",
                       velocity=args.descent_velocity, acceleration=args.descent_acceleration,
                       rpy_deg=preserved_rpy)
-        else:
+        elif args.diagonal_approach:
             print("[Azas] ABOVE_PALM equals approach target; skipping duplicate pre-descent move")
+        else:
+            print("[Azas] XY target reached; all following Z descent steps are force-monitored")
 
         # Hand must still be where we planned; people move. This can be skipped
         # when the camera re-check is known to jump after arm motion.
@@ -641,7 +656,7 @@ def main() -> int:
                 f"|f|={baseline_mag:.2f}N contact_axis={args.contact_axis} "
                 f"contact_z_direction={args.contact_z_direction}"
             )
-        z = above_palm[2]
+        z = monitored_descent_start[2]
         contact_release = False
         descent_floor_z = contact_floor_z if args.release_on_contact else release[2]
         previous_force = list(baseline)
@@ -651,8 +666,16 @@ def main() -> int:
                 print(f"[Azas] max descent steps reached ({args.max_descent_steps}) without confirmed contact")
                 break
             descent_step_index += 1
-            z = max(z - max(args.descent_step_m, 0.005), descent_floor_z)
-            run_movel(args, [palm[0], palm[1], z], label=f"descent step to z={z:.3f}m",
+            if z > fine_descent_start_z + 1e-6:
+                step_m = coarse_step_m
+                next_z = max(z - step_m, fine_descent_start_z, descent_floor_z)
+                step_label = "coarse"
+            else:
+                step_m = fine_step_m
+                next_z = max(z - step_m, descent_floor_z)
+                step_label = "fine"
+            z = next_z
+            run_movel(args, [palm[0], palm[1], z], label=f"{step_label} descent step to z={z:.3f}m",
                       velocity=args.descent_velocity, acceleration=args.descent_acceleration,
                       rpy_deg=preserved_rpy)
             if not args.skip_force_monitor:
