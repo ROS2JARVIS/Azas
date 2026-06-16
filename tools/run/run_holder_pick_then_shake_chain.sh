@@ -35,6 +35,7 @@ mkdir -p "${ROS_LOG_DIR}"
 
 echo "[Azas] HOLDER_PICK_THEN_SHAKE START: skip_holder_pick=${SKIP_CUP_HOLDER_PICK}"
 echo "[Azas] source=measured cup_holder.side_grip_place and existing shake sequence; no generated cup coordinates"
+echo "[Azas] direct holder-to-shake path: skipping MoveIt state-validity prewait; joint bounds and target verification remain enabled"
 
 SERVICE_PREFIX="${SERVICE_PREFIX}" \
 GRASPED_CUP_TEST_MODE=true \
@@ -75,7 +76,7 @@ VERIFY_JOINT_TARGETS=true \
 JOINT_TARGET_TOLERANCE_DEG=8.0 \
 JOINT_TARGET_WAIT_EXTRA_SEC=3.0 \
 JOINT_TARGET_POLL_SEC=0.05 \
-REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true \
+REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=false \
 REAL_ROBOT_MOTION_CONFIRM=ENABLE_REAL_ROBOT_MOTION \
 bash tools/run/run_rule_based_shake_real.sh
 

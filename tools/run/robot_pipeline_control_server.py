@@ -371,7 +371,8 @@ def chain_shake_after_lid_command(lid_cmd: str, payload: dict[str, Any]) -> str:
     wait_cmd = (
         f"cd {ROOT} && {ROS_SETUP} && "
         f"python3 {shlex.quote(str(wait_script))} "
-        "--timeout-sec 900 --success-status motion_sequence_requested"
+        "--timeout-sec \"${LID_GRIP_STATUS_TIMEOUT_SEC:-240}\" "
+        "--success-status motion_sequence_requested"
     )
     return (
         f"( {lid_cmd} ) & "
@@ -3808,7 +3809,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             "JOINT_SHAKE_PEAK_VELOCITY_LIMIT_DEG_S=130.0 "
             "VERIFY_JOINT_TARGETS=true JOINT_TARGET_TOLERANCE_DEG=8.0 "
             "JOINT_TARGET_WAIT_EXTRA_SEC=3.0 JOINT_TARGET_POLL_SEC=0.05 "
-            "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=true "
+            "REQUIRE_STATE_VALIDITY_FOR_JOINT_SHAKE=false "
             "REAL_ROBOT_MOTION_CONFIRM=ENABLE_REAL_ROBOT_MOTION "
             "tools/run/run_rule_based_shake_real.sh"
             " && echo '[Azas] SHAKE DONE: 손 검출/핸드오버를 위해 카메라 포즈로 복귀합니다 (컵 파지 유지).' && "
