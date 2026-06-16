@@ -47,6 +47,7 @@ CONFIRM_PHRASE = "ENABLE_HUMAN_PALM_HANDOVER"
 MOTION_APPROVAL_PHRASE = "ENABLE_HUMAN_PALM_HANDOVER_MOTION"
 RELEASE_APPROVAL_PHRASE = "RELEASE_CUP_NOW"
 DIRECT_CONFIRM_PHRASE = "ENABLE_DIRECT_MOVEL"
+RETRYABLE_MOTION_FAILURE_RC = 11
 
 
 def prefixed_service(prefix: str, suffix: str) -> str:
@@ -246,6 +247,8 @@ def run_movel(
         "--wait-service-sec", f"{args.wait_service_sec:.1f}",
         "--verify-timeout-sec", f"{args.verify_timeout_sec:.1f}",
         "--target-tolerance-mm", f"{args.target_tolerance_mm:.1f}",
+        "--movel-retries", str(args.movel_retries),
+        "--movel-retry-sleep-sec", f"{args.movel_retry_sleep_sec:.1f}",
         "--ikin-timeout-sec", f"{args.ikin_timeout_sec:.1f}",
         "--ikin-retries", str(args.ikin_retries),
         "--ikin-sol-spaces", args.ikin_sol_spaces,
@@ -471,6 +474,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--move-timeout-sec", type=float, default=60.0)
     parser.add_argument("--verify-timeout-sec", type=float, default=90.0)
     parser.add_argument("--target-tolerance-mm", type=float, default=25.0)
+    parser.add_argument("--movel-retries", type=int, default=2,
+                        help="retry each MoveLine step this many times when accepted motion does not reach target")
+    parser.add_argument("--movel-retry-sleep-sec", type=float, default=1.0)
     parser.add_argument("--ikin-timeout-sec", type=float, default=20.0)
     parser.add_argument("--ikin-retries", type=int, default=2)
     parser.add_argument("--ikin-sol-spaces", default="2,0,1,3,4,5,6,7",
@@ -513,6 +519,7 @@ def main() -> int:
     if not args.execute:
         print("[DRY-RUN] --execute not set; perception + plan only, no robot command sent.")
 
+    cup_released = False
     perception = HandoverPerception(args)
     try:
         # --- PERCEPTION + PLAN (no motion) ---
@@ -736,6 +743,7 @@ def main() -> int:
                 preapproved=args.approve_release,
             )
         open_gripper(args)
+        cup_released = True
         time.sleep(1.0)
         run_movel(args, retreat, label="RETREAT vertical after release",
                   velocity=args.transit_velocity, acceleration=args.transit_acceleration,
@@ -744,6 +752,9 @@ def main() -> int:
         return 0
     except RuntimeError as exc:
         print(f"[FAIL] {exc}")
+        if not cup_released and str(exc).startswith("MoveLine step failed:"):
+            print("[Azas] retryable pre-release motion failure; caller may re-sample the palm and retry.")
+            return RETRYABLE_MOTION_FAILURE_RC
         return 1
     finally:
         perception.close()

@@ -3847,6 +3847,7 @@ def command_for(step: Step, payload: dict[str, Any]) -> str:
             f"--release-tcp-above-palm-m {shlex.quote(release_height_m)} "
             "--transit-velocity 10.0 --transit-acceleration 14.0 "
             "--descent-velocity 4.0 --descent-acceleration 6.0 "
+            "--movel-retries 2 --movel-retry-sleep-sec 1.0 "
             "--force-abort-delta-n 10.0 "
             "--execute --confirm ENABLE_HUMAN_PALM_HANDOVER "
             "--approve-motion ENABLE_HUMAN_PALM_HANDOVER_MOTION "

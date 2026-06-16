@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""One-shot auto handover: wait for a stable open palm, then hand the cup over.
+"""Auto handover: wait for a stable open palm, then hand the cup over.
 
 Panel flow "손 보이면 자동 핸드오버": this watcher holds NO motion of its own.
 It only listens to /azas/human_hand_detection (published by
 run_human_hand_detection.sh ONLY while an open palm stays spatially stable)
 and, once the palm has been continuously stable for the trigger window, runs
-the existing gated handover script tools/run/handover_cup_to_palm.py exactly
-once and exits with its return code.
+the existing gated handover script tools/run/handover_cup_to_palm.py. If the
+handover script reports a retryable pre-release motion failure, this watcher
+waits for a stable palm again and retries up to --handover-attempts.
 
 Layered safety (kept from the manual flow):
   - trigger needs N stable detections inside a sliding window (person must
     hold the palm open and still BEFORE the robot starts at all)
   - handover_cup_to_palm.py then re-samples the palm itself, checks workspace
     bounds, re-checks the palm before descent, and aborts on any force spike
-  - one-shot: after one attempt (success or abort) this watcher exits, so the
-    robot never re-launches at a hand by itself
+  - bounded retry: only pre-release motion failures are retried; after release
+    or non-motion aborts, this watcher exits with the script return code
 
 Usage:
   python3 tools/run/auto_handover_on_palm.py                      # dry-run
@@ -37,6 +38,7 @@ HAND_TOPIC = "/azas/human_hand_detection"
 STATUS_TOPIC = "/azas/human_hand_detection/status"
 CONFIRM_PHRASE = "AUTO_HANDOVER_ON_PALM"
 MOVEJ_CONFIRM_PHRASE = "ENABLE_DIRECT_MOVEJ"
+RETRYABLE_HANDOVER_RC = 11
 
 
 def wait_for_stable_palm(args: argparse.Namespace) -> bool:
@@ -87,7 +89,8 @@ def wait_for_stable_palm(args: argparse.Namespace) -> bool:
     node.create_subscription(String, STATUS_TOPIC, on_status, 10)
     print(
         f"[Azas] 손 대기 시작: {args.trigger_window_sec:.1f}초 안에 안정 검출 "
-        f"{args.trigger_stable_count}개가 쌓이면 핸드오버를 1회 실행합니다 "
+        f"{args.trigger_stable_count}개가 쌓이면 핸드오버를 최대 "
+        f"{max(int(args.handover_attempts), 1)}회 실행합니다 "
         f"(최대 {args.wait_timeout_sec:.0f}초 대기, 대기 중 로봇 모션 없음)."
     )
     deadline = time.monotonic() + args.wait_timeout_sec
@@ -176,6 +179,10 @@ def main() -> int:
                         help="auto trigger rejects hands farther than this camera depth")
     parser.add_argument("--wait-timeout-sec", type=float, default=180.0,
                         help="give up (exit 3, no motion) when no stable palm appears in time")
+    parser.add_argument("--handover-attempts", type=int, default=3,
+                        help="maximum full handover attempts; retries only pre-release motion failures")
+    parser.add_argument("--handover-retry-sleep-sec", type=float, default=1.0,
+                        help="delay before waiting for a stable palm again after a retryable failure")
     parser.add_argument("--release-tcp-above-palm-m", default="0.08")
     parser.add_argument("--skip-observe", action="store_true",
                         help="do not move to the observe/camera-home joint pose before waiting for a palm")
@@ -207,6 +214,10 @@ def main() -> int:
     parser.add_argument("--move-timeout-sec", type=float, default=None)
     parser.add_argument("--verify-timeout-sec", type=float, default=None)
     parser.add_argument("--target-tolerance-mm", type=float, default=None)
+    parser.add_argument("--movel-retries", type=int, default=None,
+                        help="pass through to handover_cup_to_palm.py for each MoveLine step")
+    parser.add_argument("--movel-retry-sleep-sec", type=float, default=None,
+                        help="pass through to handover_cup_to_palm.py")
     parser.add_argument("--ikin-timeout-sec", type=float, default=None)
     parser.add_argument("--ikin-retries", type=int, default=None)
     parser.add_argument("--ikin-sol-spaces", default=None)
@@ -276,14 +287,7 @@ def main() -> int:
         if rc != 0:
             return rc
 
-    if not wait_for_stable_palm(args):
-        print(
-            f"[FAIL] {args.wait_timeout_sec:.0f}초 안에 안정적인 손바닥이 없어 종료합니다 (로봇 모션 없음). "
-            "손 검출 화면에서 STABLE이 뜨는 위치를 확인한 뒤 다시 실행하세요."
-        )
-        return 3
-
-    print("[Azas] 손 트리거 충족. 핸드오버를 1회 실행합니다 (이후 자동 재시도 없음).")
+    handover_attempts = max(int(args.handover_attempts), 1)
     cmd = [
         sys.executable, str(HANDOVER_SCRIPT),
         "--service-prefix", args.service_prefix,
@@ -327,6 +331,10 @@ def main() -> int:
         cmd += ["--verify-timeout-sec", f"{args.verify_timeout_sec:.1f}"]
     if args.target_tolerance_mm is not None:
         cmd += ["--target-tolerance-mm", f"{args.target_tolerance_mm:.1f}"]
+    if args.movel_retries is not None:
+        cmd += ["--movel-retries", str(args.movel_retries)]
+    if args.movel_retry_sleep_sec is not None:
+        cmd += ["--movel-retry-sleep-sec", f"{args.movel_retry_sleep_sec:.1f}"]
     if args.ikin_timeout_sec is not None:
         cmd += ["--ikin-timeout-sec", f"{args.ikin_timeout_sec:.1f}"]
     if args.ikin_retries is not None:
@@ -367,12 +375,32 @@ def main() -> int:
         ]
     if args.no_service_prefix_fallback:
         cmd += ["--no-service-prefix-fallback"]
-    rc = subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
-    if rc == 0:
-        print("[PASS] 자동 핸드오버 완료.")
-    else:
-        print(f"[FAIL] 핸드오버가 비정상 종료했습니다 (rc={rc}); 위 로그를 확인하세요.")
-    return rc
+    last_rc = 3
+    for attempt in range(1, handover_attempts + 1):
+        if attempt > 1:
+            time.sleep(max(float(args.handover_retry_sleep_sec), 0.0))
+        if not wait_for_stable_palm(args):
+            print(
+                f"[FAIL] {args.wait_timeout_sec:.0f}초 안에 안정적인 손바닥이 없어 종료합니다 (로봇 모션 없음). "
+                "손 검출 화면에서 STABLE이 뜨는 위치를 확인한 뒤 다시 실행하세요."
+            )
+            return 3
+
+        print(f"[Azas] 손 트리거 충족. 핸드오버 {attempt}/{handover_attempts}회를 실행합니다.")
+        last_rc = subprocess.run(cmd, cwd=str(ROOT), check=False).returncode
+        if last_rc == 0:
+            print("[PASS] 자동 핸드오버 완료.")
+            return 0
+        if last_rc == RETRYABLE_HANDOVER_RC and attempt < handover_attempts:
+            print(
+                f"[WARN] 핸드오버 {attempt}/{handover_attempts}회가 실행 불가/도달 실패로 종료했습니다 "
+                f"(rc={last_rc}); 손을 다시 안정 검출한 뒤 재시도합니다."
+            )
+            continue
+        break
+
+    print(f"[FAIL] 핸드오버가 비정상 종료했습니다 (rc={last_rc}); 위 로그를 확인하세요.")
+    return last_rc
 
 
 if __name__ == "__main__":

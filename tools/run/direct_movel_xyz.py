@@ -114,6 +114,11 @@ def last_alarm_text(node: Any, prefix: str, timeout_sec: float) -> str:
     return str(response)
 
 
+def alarm_indicates_unreachable(text: str) -> bool:
+    normalized = text.lower()
+    return "not reachable" in normalized or "unreachable" in normalized
+
+
 def xyz_distance_mm(actual: list[float], target: list[float]) -> float:
     return sum((actual[index] - target[index]) ** 2 for index in range(3)) ** 0.5
 
@@ -125,12 +130,20 @@ def wait_for_target(
     *,
     tolerance_mm: float,
     timeout_sec: float,
+    abort_on_unreachable_alarm: bool = False,
 ) -> bool:
+    started_at = time.monotonic()
     deadline = time.monotonic() + max(timeout_sec, 0.1)
     last_line = ""
+    next_alarm_check = 0.0
+    initial_distance: float | None = None
+    best_distance: float | None = None
     while time.monotonic() < deadline:
         actual = current_posx(node, prefix, timeout_sec=5.0)
         distance = xyz_distance_mm(actual, target_pos_mm_deg)
+        if initial_distance is None:
+            initial_distance = distance
+        best_distance = distance if best_distance is None else min(best_distance, distance)
         last_line = (
             "[Azas] verify xyz="
             f"[{actual[0]:.1f}, {actual[1]:.1f}, {actual[2]:.1f}] "
@@ -140,6 +153,16 @@ def wait_for_target(
         print(last_line)
         if distance <= tolerance_mm:
             return True
+        now = time.monotonic()
+        if abort_on_unreachable_alarm and now >= next_alarm_check:
+            next_alarm_check = now + 1.0
+            alarm = last_alarm_text(node, prefix, timeout_sec=5.0)
+            if alarm_indicates_unreachable(alarm):
+                progress = max(0.0, (initial_distance or distance) - (best_distance or distance))
+                if now - started_at >= 2.0 and progress < 3.0:
+                    print("[WARN] target verification aborted early: controller reported unreachable pose")
+                    print(alarm)
+                    return False
         time.sleep(1.0)
     print("[FAIL] target verification timeout")
     if last_line:
@@ -212,6 +235,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--verify-timeout-sec", type=float, default=70.0)
     parser.add_argument("--target-tolerance-mm", type=float, default=15.0)
+    parser.add_argument(
+        "--movel-retries",
+        type=int,
+        default=1,
+        help="number of MoveLine execution attempts when target verification fails",
+    )
+    parser.add_argument(
+        "--movel-retry-sleep-sec",
+        type=float,
+        default=1.0,
+        help="delay before retrying a failed MoveLine execution attempt",
+    )
+    parser.add_argument(
+        "--abort-verify-on-unreachable-alarm",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="stop target verification early when the controller reports a NOT REACHABLE alarm",
+    )
     parser.add_argument(
         "--execute",
         action="store_true",
@@ -376,40 +417,70 @@ def main() -> int:
         req.blend_type = BLENDING_SPEED_TYPE_DUPLICATE
         req.sync_type = SYNC
 
-        future = client.call_async(req)
-        rclpy.spin_until_future_complete(node, future, timeout_sec=max(args.timeout_sec, 0.1))
-        if not future.done():
-            print(f"[WARN] MoveLine response timeout after {args.timeout_sec:.1f}s")
-            if args.verify_target:
-                print("[Azas] MoveLine request may still be executing; verifying target before failing.")
-                if wait_for_target(
-                    node,
-                    args.service_prefix,
-                    pos_mm_deg,
-                    tolerance_mm=max(args.target_tolerance_mm, 0.1),
-                    timeout_sec=max(args.verify_timeout_sec, 0.1),
-                ):
-                    print("[PASS] target reached after MoveLine response timeout")
-                    return 0
-            print("[FAIL] MoveLine response timeout and target verification did not pass")
-            return 1
-        if future.exception() is not None:
-            print(f"[FAIL] MoveLine exception: {future.exception()}")
-            return 1
-        response = future.result()
-        if response is None or not response.success:
-            print("[FAIL] MoveLine returned success=false")
-            return 1
-        print("[PASS] MoveLine accepted by service")
-        if args.verify_target and not wait_for_target(
-            node,
-            args.service_prefix,
-            pos_mm_deg,
-            tolerance_mm=max(args.target_tolerance_mm, 0.1),
-            timeout_sec=max(args.verify_timeout_sec, 0.1),
-        ):
-            return 1
-        return 0
+        move_attempts = max(int(args.movel_retries), 1)
+        last_failure = ""
+        for move_attempt in range(1, move_attempts + 1):
+            if move_attempts > 1:
+                print(f"[Azas] MoveLine execution attempt {move_attempt}/{move_attempts}")
+            if move_attempt > 1:
+                time.sleep(max(float(args.movel_retry_sleep_sec), 0.0))
+
+            future = client.call_async(req)
+            rclpy.spin_until_future_complete(node, future, timeout_sec=max(args.timeout_sec, 0.1))
+            if not future.done():
+                last_failure = f"MoveLine response timeout after {args.timeout_sec:.1f}s"
+                print(f"[WARN] {last_failure}")
+                if args.verify_target:
+                    print("[Azas] MoveLine request may still be executing; verifying target before retry/fail.")
+                    if wait_for_target(
+                        node,
+                        args.service_prefix,
+                        pos_mm_deg,
+                        tolerance_mm=max(args.target_tolerance_mm, 0.1),
+                        timeout_sec=max(args.verify_timeout_sec, 0.1),
+                        abort_on_unreachable_alarm=bool(args.abort_verify_on_unreachable_alarm),
+                    ):
+                        print("[PASS] target reached after MoveLine response timeout")
+                        return 0
+                    last_failure = "MoveLine response timeout and target verification did not pass"
+                if move_attempt < move_attempts:
+                    print("[WARN] MoveLine attempt failed; retrying.")
+                    continue
+                print(f"[FAIL] {last_failure}")
+                return 1
+            if future.exception() is not None:
+                last_failure = f"MoveLine exception: {future.exception()}"
+                if move_attempt < move_attempts:
+                    print(f"[WARN] {last_failure}; retrying.")
+                    continue
+                print(f"[FAIL] {last_failure}")
+                return 1
+            response = future.result()
+            if response is None or not response.success:
+                last_failure = "MoveLine returned success=false"
+                if move_attempt < move_attempts:
+                    print(f"[WARN] {last_failure}; retrying.")
+                    continue
+                print(f"[FAIL] {last_failure}")
+                return 1
+            print("[PASS] MoveLine accepted by service")
+            if args.verify_target and not wait_for_target(
+                node,
+                args.service_prefix,
+                pos_mm_deg,
+                tolerance_mm=max(args.target_tolerance_mm, 0.1),
+                timeout_sec=max(args.verify_timeout_sec, 0.1),
+                abort_on_unreachable_alarm=bool(args.abort_verify_on_unreachable_alarm),
+            ):
+                last_failure = "MoveLine target verification failed"
+                if move_attempt < move_attempts:
+                    print("[WARN] MoveLine target verification failed; retrying.")
+                    continue
+                print(f"[FAIL] {last_failure} after {move_attempts} attempt(s)")
+                return 1
+            return 0
+        print(f"[FAIL] {last_failure or 'MoveLine failed'}")
+        return 1
     except RuntimeError as exc:
         print(f"[FAIL] {exc}")
         return 1
