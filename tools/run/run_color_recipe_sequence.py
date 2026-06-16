@@ -405,7 +405,13 @@ def main() -> int:
     )
     parser.add_argument("--cup-holder-place-final-z-offset-m", default="-0.040")
     parser.add_argument("--cup-holder-place-final-x-offset-m", default="0.015")
+    parser.add_argument("--cup-holder-place-final-dispenser-1-x-extra-offset-m", default="-0.010")
+    parser.add_argument("--cup-holder-place-final-dispenser-2-x-extra-offset-m", default="-0.005")
+    parser.add_argument("--cup-holder-place-final-dispenser-2-y-extra-offset-m", default="0.008")
+    parser.add_argument("--cup-holder-place-final-dispenser-3-x-extra-offset-m", default="-0.005")
+    parser.add_argument("--cup-holder-place-final-dispenser-3-y-extra-offset-m", default="0.005")
     parser.add_argument("--cup-holder-place-final-dispenser-4-x-extra-offset-m", default="-0.010")
+    parser.add_argument("--cup-holder-place-final-dispenser-4-y-extra-offset-m", default="0.004")
     parser.add_argument("--cup-holder-place-final-y-offset-m", default="-0.010")
     parser.add_argument(
         "--cup-holder-rz-offset-deg",
@@ -506,7 +512,18 @@ def main() -> int:
         "--gripper-settle-seconds", str(args.gripper_settle_seconds),
         "--cup-holder-place-final-z-offset-m", str(args.cup_holder_place_final_z_offset_m),
         "--cup-holder-place-final-x-offset-m", str(args.cup_holder_place_final_x_offset_m),
+        "--cup-holder-place-final-dispenser-1-x-extra-offset-m",
+        str(args.cup_holder_place_final_dispenser_1_x_extra_offset_m),
+        "--cup-holder-place-final-dispenser-2-x-extra-offset-m",
+        str(args.cup_holder_place_final_dispenser_2_x_extra_offset_m),
+        "--cup-holder-place-final-dispenser-2-y-extra-offset-m",
+        str(args.cup_holder_place_final_dispenser_2_y_extra_offset_m),
+        "--cup-holder-place-final-dispenser-3-x-extra-offset-m",
+        str(args.cup_holder_place_final_dispenser_3_x_extra_offset_m),
+        "--cup-holder-place-final-dispenser-3-y-extra-offset-m",
+        str(args.cup_holder_place_final_dispenser_3_y_extra_offset_m),
         "--cup-holder-place-final-dispenser-4-x-extra-offset-m", str(args.cup_holder_place_final_dispenser_4_x_extra_offset_m),
+        "--cup-holder-place-final-dispenser-4-y-extra-offset-m", str(args.cup_holder_place_final_dispenser_4_y_extra_offset_m),
         "--cup-holder-place-final-y-offset-m", str(args.cup_holder_place_final_y_offset_m),
         "--cup-holder-rz-offset-deg", str(args.cup_holder_rz_offset_deg),
         "--cup-holder-z-min-m", str(args.cup_holder_z_min_m),

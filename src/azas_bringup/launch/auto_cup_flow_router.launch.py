@@ -43,7 +43,13 @@ def generate_launch_description():
         DeclareLaunchArgument("final_regrasp_z_offset_m", default_value="0.0"),
         DeclareLaunchArgument("cup_holder_place_z_offset_m", default_value="-0.04"),
         DeclareLaunchArgument("cup_holder_place_x_offset_m", default_value="0.010"),
+        DeclareLaunchArgument("cup_holder_place_final_dispenser_1_x_extra_offset_m", default_value="-0.010"),
+        DeclareLaunchArgument("cup_holder_place_final_dispenser_2_x_extra_offset_m", default_value="-0.005"),
+        DeclareLaunchArgument("cup_holder_place_final_dispenser_2_y_extra_offset_m", default_value="0.008"),
+        DeclareLaunchArgument("cup_holder_place_final_dispenser_3_x_extra_offset_m", default_value="-0.005"),
+        DeclareLaunchArgument("cup_holder_place_final_dispenser_3_y_extra_offset_m", default_value="0.005"),
         DeclareLaunchArgument("cup_holder_place_final_dispenser_4_x_extra_offset_m", default_value="-0.010"),
+        DeclareLaunchArgument("cup_holder_place_final_dispenser_4_y_extra_offset_m", default_value="0.004"),
         DeclareLaunchArgument("cup_holder_place_y_offset_m", default_value="-0.010"),
         DeclareLaunchArgument("cup_holder_rz_offset_deg", default_value="-1.0"),
         DeclareLaunchArgument("cup_holder_z_min_m", default_value="0.06"),
@@ -125,8 +131,32 @@ def generate_launch_description():
                 "final_regrasp_z_offset_m": ParameterValue(LaunchConfiguration("final_regrasp_z_offset_m"), value_type=float),
                 "cup_holder_place_z_offset_m": ParameterValue(LaunchConfiguration("cup_holder_place_z_offset_m"), value_type=float),
                 "cup_holder_place_x_offset_m": ParameterValue(LaunchConfiguration("cup_holder_place_x_offset_m"), value_type=float),
+                "cup_holder_place_final_dispenser_1_x_extra_offset_m": ParameterValue(
+                    LaunchConfiguration("cup_holder_place_final_dispenser_1_x_extra_offset_m"),
+                    value_type=float,
+                ),
+                "cup_holder_place_final_dispenser_2_x_extra_offset_m": ParameterValue(
+                    LaunchConfiguration("cup_holder_place_final_dispenser_2_x_extra_offset_m"),
+                    value_type=float,
+                ),
+                "cup_holder_place_final_dispenser_2_y_extra_offset_m": ParameterValue(
+                    LaunchConfiguration("cup_holder_place_final_dispenser_2_y_extra_offset_m"),
+                    value_type=float,
+                ),
+                "cup_holder_place_final_dispenser_3_x_extra_offset_m": ParameterValue(
+                    LaunchConfiguration("cup_holder_place_final_dispenser_3_x_extra_offset_m"),
+                    value_type=float,
+                ),
+                "cup_holder_place_final_dispenser_3_y_extra_offset_m": ParameterValue(
+                    LaunchConfiguration("cup_holder_place_final_dispenser_3_y_extra_offset_m"),
+                    value_type=float,
+                ),
                 "cup_holder_place_final_dispenser_4_x_extra_offset_m": ParameterValue(
                     LaunchConfiguration("cup_holder_place_final_dispenser_4_x_extra_offset_m"),
+                    value_type=float,
+                ),
+                "cup_holder_place_final_dispenser_4_y_extra_offset_m": ParameterValue(
+                    LaunchConfiguration("cup_holder_place_final_dispenser_4_y_extra_offset_m"),
                     value_type=float,
                 ),
                 "cup_holder_place_y_offset_m": ParameterValue(LaunchConfiguration("cup_holder_place_y_offset_m"), value_type=float),
