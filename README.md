@@ -155,6 +155,10 @@ YOLO/ArUco/sticker 기반 lid pose 후보
 뚜껑과 쉐이킹 경로는 실제 로봇 pose, RG2 상태, 관절 한계, 작업공간 경계를 확인한 뒤 실행되도록 구성되어 있습니다.
 
 <p align="center">
+<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/1bcc4341-5dfe-4ff9-ba15-1c1e9db5c739" />
+</p>
+
+<p align="center">
 <img width="1278" height="817" alt="Image" src="https://github.com/user-attachments/assets/b4ab75db-0314-4b0b-b260-fb5285322ac3" />
 </p>
 
@@ -174,6 +178,10 @@ RealSense color/depth
 ```
 
 핸드오버는 사람 근처 동작이므로 카메라 검출만으로 무조건 release하지 않습니다. stable palm, Z 하강 중 힘 변화, 접촉 확인, 후퇴 단계가 별도로 분리되어 있습니다.
+
+<p align="center">
+<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/f50c2164-8ce1-4a50-af9f-4426e37581bb" />
+</p>
 
 ---
 
