@@ -137,6 +137,10 @@ STT 또는 키오스크
 
 레시피는 색상과 펌프 횟수의 symbolic plan입니다. 디스펜서 좌표와 press 깊이는 `calibration.yaml` 및 측정 스크립트 결과를 사용합니다.
 
+<p align="center">
+<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/532d2701-d0b9-4d37-b184-7f46a0dbad74" />
+</p>
+
 ### 3. 뚜껑 체결과 쉐이킹
 
 ```text
