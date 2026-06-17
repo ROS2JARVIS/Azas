@@ -54,7 +54,7 @@ run_one_order() {
     classifier_arch:=resnet18 \
     route_hold_sec:=2.0 \
     route_stable_required_samples:=5 \
-    route_stable_min_sec:=0.8
+    route_stable_min_sec:=2.0
 }
 
 if [[ "${LOOP}" == "true" ]]; then

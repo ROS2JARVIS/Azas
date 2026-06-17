@@ -74,7 +74,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("classifier_min_confidence", 0.70)
         self.declare_parameter("route_timeout_sec", 30.0)
         self.declare_parameter("route_stable_required_samples", 5)
-        self.declare_parameter("route_stable_min_sec", 0.8)
+        self.declare_parameter("route_stable_min_sec", 2.0)
         self.declare_parameter("route_hold_sec", 3.5)
         self.declare_parameter("show_classification_window", True)
         self.declare_parameter("window_name", "Azas cup route classifier")

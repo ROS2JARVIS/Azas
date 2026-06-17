@@ -106,13 +106,21 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             x1, y1, x2, y2 = det["box"]
             cx, cy = det["cx"], det["cy"]
 
-            # 컵 주축 각도 계산
-            theta = calculate_cup_orientation(self.depth_image, det["box"], frame)
+            if "cup_grasp_theta_rad" in det and "cup_axis_theta_rad" in det:
+                theta = float(det["cup_axis_theta_rad"])
+                is_top = bool(det.get("cup_top_aligned_with_axis", True))
+                top_theta = float(det["cup_grasp_theta_rad"])
+            else:
+                # 컵 주축 각도 계산
+                theta = calculate_cup_orientation(self.depth_image, det["box"], frame)
 
-            # 입구 방향 판별
-            is_top = is_top_pointing_towards_theta(frame, det["box"], theta)
+                # 입구 방향 판별
+                is_top = is_top_pointing_towards_theta(frame, det["box"], theta)
 
-            top_theta = theta if is_top else theta + np.pi
+                top_theta = theta if is_top else theta + np.pi
+                det["cup_axis_theta_rad"] = float(theta)
+                det["cup_top_aligned_with_axis"] = bool(is_top)
+                det["cup_grasp_theta_rad"] = float(top_theta)
 
             length = max(x2 - x1, y2 - y1) // 2
             dx = int(np.cos(theta) * length)
@@ -142,7 +150,13 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             log.warn("이미 시퀀스 실행 중입니다.")
             return
 
-        detections = self.run_yolo(frame)
+        frozen_frame = self._frozen_frame if self._frozen_frame is not None else frame
+        frame_snapshot = frozen_frame.copy()
+        if self._frozen_detections is not None:
+            detections = [dict(d) for d in self._frozen_detections]
+            log.info("[VISION] frozen detection snapshot 사용: YOLO 재실행 생략")
+        else:
+            detections = self.run_yolo(frame_snapshot)
         self._detections = detections
         target = self._select_target(detections)
         
@@ -150,21 +164,28 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             log.warn("쓰러진 컵을 찾을 수 없습니다.")
             return
 
+        if "cup_grasp_theta_rad" in target:
+            cup_theta = float(target["cup_grasp_theta_rad"])
+            is_top = bool(target.get("cup_top_aligned_with_axis", True))
+            if is_top:
+                log.info("[VISION] frozen 파지 방향 snapshot 사용: 정방향, 방향 재계산 생략")
+            else:
+                log.info("[VISION] frozen 파지 방향 snapshot 사용: 반대 방향, 180도 뒤집은 값을 유지")
+        else:
+            cup_theta = calculate_cup_orientation(self.depth_image, target["box"], frame_snapshot)
+            is_top = is_top_pointing_towards_theta(frame_snapshot, target["box"], cup_theta)
+
+            if not is_top:
+                log.info("[VISION] 컵이 반대로 누워있습니다. 카메라 상향 유지를 위해 파지 방향을 180도 뒤집습니다.")
+                cup_theta += np.pi
+            else:
+                log.info("[VISION] 컵이 정방향입니다. 기본 파지 방향을 유지합니다.")
+
         base = self.pixel_to_base(target["cx"], target["cy"])
         if base is None:
             log.error("픽셀 -> 베이스 3D 좌표 변환 실패.")
             return
         bx, by, bz = base
-        
-        cup_theta = calculate_cup_orientation(self.depth_image, target["box"], frame)
-
-        is_top = is_top_pointing_towards_theta(frame, target["box"], cup_theta)
-        
-        if not is_top:
-            log.info("[VISION] 컵이 반대로 누워있습니다. 카메라 상향 유지를 위해 파지 방향을 180도 뒤집습니다.")
-            cup_theta += np.pi  
-        else:
-            log.info("[VISION] 컵이 정방향입니다. 기본 파지 방향을 유지합니다.")
 
         self.picking = True
         try:
@@ -231,8 +252,8 @@ class YoloCupUprightingNode(BaseMoveItPickNode):
             return False
         time.sleep(1.0)
 
-        log.info("[4] 홈 위치로 복귀 (파지 유지)")
-        if self.go_home_pose():
+        log.info("[4] 로봇 홈 위치로 복귀 (카메라 관측 자세 아님, 파지 유지)")
+        if self.go_robot_home_pose():
             log.info("=> 홈 복귀 성공. 전체 구출 시퀀스 완수.")
             return True
         else:

@@ -72,6 +72,7 @@ class BaseMoveItPickNode(Node):
 
         # ── 픽 상태 ──
         self.declare_parameter("auto_pick", False)
+        self.declare_parameter("auto_pick_stable_min_sec", 3.0)
         self.declare_parameter("exit_after_pick", False)
         self.declare_parameter("skip_initial_home_move", False)
         self.declare_parameter("controller_action_name", "/dsr01/dsr_moveit_controller/follow_joint_trajectory")
@@ -85,8 +86,10 @@ class BaseMoveItPickNode(Node):
             self.get_parameter("skip_initial_home_move").value
         )
         self._last_pick_time = 0.0
+        self._auto_pick_candidate_since = 0.0
         self._detections: list[dict] = []
         self._frozen_frame = None
+        self._frozen_detections: list[dict] | None = None
 
         # ── Hand-Eye ──
         self.gripper2cam, calib_file = perc.load_hand_eye()
@@ -288,6 +291,15 @@ class BaseMoveItPickNode(Node):
         home_state.update()
         return self.plan_state(home_state)
 
+    def go_robot_home_pose(self) -> bool:
+        """카메라 관측 자세가 아닌 로봇 기본 home 자세로 이동."""
+        if not self._ensure_moveit():
+            return False
+        home_state = RobotState(self.robot_model)
+        home_state.joint_positions = cfg.ROBOT_HOME_JOINTS
+        home_state.update()
+        return self.plan_state(home_state)
+
     # ════════════════════════════════════════════
     #  Approach + 재검출
     # ════════════════════════════════════════════
@@ -375,6 +387,14 @@ class BaseMoveItPickNode(Node):
         if self.picking:
             return
         self._frozen_frame = frame.copy()
+        self._frozen_detections = [dict(d) for d in self._detections]
+        direction_snapshots = sum(
+            1 for det in self._frozen_detections if "cup_grasp_theta_rad" in det
+        )
+        self.get_logger().info(
+            "pick 시작: frozen frame/detection snapshot을 유지하고 완료 전까지 새 카메라 방향 인식을 생략합니다. "
+            f"direction_snapshots={direction_snapshots}/{len(self._frozen_detections)}"
+        )
 
         def _work():
             success = False
@@ -382,6 +402,7 @@ class BaseMoveItPickNode(Node):
                 success = bool(self.detect_and_pick(frame))
             finally:
                 self._frozen_frame = None
+                self._frozen_detections = None
             if success and self._exit_after_pick:
                 self.get_logger().info("exit_after_pick=true and pick completed; closing cup_uprighting node")
                 rclpy.shutdown()
@@ -477,18 +498,34 @@ class BaseMoveItPickNode(Node):
 
             frame = self.color_image.copy()
             self._detections = self.run_yolo(frame)
+            target = self._select_target(self._detections)
+            vis = self._draw_detections(frame)
 
             now = time.time()
             if (self._auto_mode
                     and not self.picking
                     and self.is_auto_ready()
                     and (now - self._last_pick_time) >= cfg.AUTO_PICK_INTERVAL):
-                if self._select_target(self._detections) is not None:
-                    self._last_pick_time = now
-                    self._pick_in_thread(frame)
-                    continue
+                if target is None:
+                    self._auto_pick_candidate_since = 0.0
+                else:
+                    if self._auto_pick_candidate_since <= 0.0:
+                        self._auto_pick_candidate_since = now
+                        self.get_logger().info(
+                            "[AUTO] 컵 방향 안정 관측 시작: "
+                            f"{float(self.get_parameter('auto_pick_stable_min_sec').value):.1f}s 후 frozen"
+                        )
+                    stable_elapsed = now - self._auto_pick_candidate_since
+                    stable_min_sec = max(
+                        0.0,
+                        float(self.get_parameter("auto_pick_stable_min_sec").value),
+                    )
+                    if stable_elapsed >= stable_min_sec:
+                        self._last_pick_time = now
+                        self._auto_pick_candidate_since = 0.0
+                        self._pick_in_thread(frame)
+                        continue
 
-            vis = self._draw_detections(frame)
             cv2.imshow(self.WINDOW_NAME, vis)
 
             key = cv2.waitKey(1) & 0xFF

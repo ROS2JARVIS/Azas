@@ -23,7 +23,7 @@ def generate_launch_description():
         DeclareLaunchArgument("route_timeout_sec", default_value="30.0"),
         DeclareLaunchArgument("route_hold_sec", default_value="3.5"),
         DeclareLaunchArgument("route_stable_required_samples", default_value="5"),
-        DeclareLaunchArgument("route_stable_min_sec", default_value="0.8"),
+        DeclareLaunchArgument("route_stable_min_sec", default_value="2.0"),
         DeclareLaunchArgument("show_classification_window", default_value="true"),
         DeclareLaunchArgument("side_extra_args", default_value=""),
         DeclareLaunchArgument("cup_uprighting_extra_args", default_value=""),
