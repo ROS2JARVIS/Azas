@@ -110,7 +110,13 @@ RealSense D435i
 <img width="1314" height="1020" alt="Image" src="https://github.com/user-attachments/assets/113f1ce9-0a87-4d90-9daf-7b7af6ded177" />
 </p>
 <p align="center">
-<img width="1314" height="1020" alt="Image" src="https://github.com/user-attachments/assets/b6b5b2f6-440d-45be-a2ca-c6e2a14cb619" />
+<img width="1248" height="1032" alt="Image" src="https://github.com/user-attachments/assets/aebae8ae-071d-45cb-84bb-a4180ec2ab67" />
+</p>
+<p align="center">
+<img width="1079" height="765" alt="Image" src="https://github.com/user-attachments/assets/f0d446ba-c9e9-4e3c-a3e0-0acc58d651e9" />
+</p>
+<p align="center">
+<img width="1388" height="776" alt="Image" src="https://github.com/user-attachments/assets/2dd0a13a-7278-4620-95e1-50ef65575ae9" />
 </p>
 
 ### 2. 주문에서 디스펜서 출수까지
@@ -139,6 +145,10 @@ YOLO/ArUco/sticker 기반 lid pose 후보
 ```
 
 뚜껑과 쉐이킹 경로는 실제 로봇 pose, RG2 상태, 관절 한계, 작업공간 경계를 확인한 뒤 실행되도록 구성되어 있습니다.
+
+<p align="center">
+<img width="1278" height="817" alt="Image" src="https://github.com/user-attachments/assets/b4ab75db-0314-4b0b-b260-fb5285322ac3" />
+</p>
 
 ### 4. 사람 손바닥 핸드오버
 
