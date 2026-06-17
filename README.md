@@ -29,6 +29,12 @@ LLM 또는 음성 인식은 사용자 의도와 레시피 선택까지만 담당
 | 사람 핸드오버 | MediaPipe 손바닥 검출, stable palm 후보, XY 선이동 후 Z 하강, force contact 감지 후 release |
 | 안전/운영 | strict live gate, no-motion checks, 측정 YAML, 로그/패널, 단계형 현장 runbook |
 
+<p align="center">
+<img width="2032" height="1286" alt="Image" src="https://github.com/user-attachments/assets/be781226-fe22-4f49-a8ac-4f7d8a4639c4" />
+</p>
+<p align="center">
+<img width="1362" height="623" alt="Image" src="https://github.com/user-attachments/assets/d31949f5-1e2c-4e6e-9765-9aed3c464237" />
+</p>
 ---
 
 ## 주요 태스크
