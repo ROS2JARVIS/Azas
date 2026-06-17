@@ -107,6 +107,10 @@ RealSense D435i
 컵 좌표는 반드시 이 파이프라인 또는 실측된 calibration/config 파일에서만 옵니다. README, 코드, 스크립트에 임의 좌표를 새로 만들지 않습니다.
 
 <p align="center">
+<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/7efc940d-1a6f-4fd1-a57b-7d8f23eb2ccb" />
+</p>
+
+<p align="center">
 <img width="1314" height="1020" alt="Image" src="https://github.com/user-attachments/assets/113f1ce9-0a87-4d90-9daf-7b7af6ded177" />
 </p>
 <p align="center">
