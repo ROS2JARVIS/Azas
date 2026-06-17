@@ -155,11 +155,11 @@ YOLO/ArUco/sticker 기반 lid pose 후보
 뚜껑과 쉐이킹 경로는 실제 로봇 pose, RG2 상태, 관절 한계, 작업공간 경계를 확인한 뒤 실행되도록 구성되어 있습니다.
 
 <p align="center">
-<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/f269a1af-e3db-44ed-b52d-5e45e8c31dfc" />
+<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/d95eb3db-2e68-4f7f-a018-90aaea51110f" />
 </p>
 
 <p align="center">
-<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/51c628bc-06eb-45b5-a4b8-38445083fb11" />
+<img width="400" height="225" alt="Image" src="https://github.com/user-attachments/assets/8209314f-6cf8-402d-8522-071c6fa0529d" />
 </p>
 
 <p align="center">
