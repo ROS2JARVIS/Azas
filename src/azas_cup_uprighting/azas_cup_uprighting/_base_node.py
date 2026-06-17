@@ -90,6 +90,7 @@ class BaseMoveItPickNode(Node):
         self._detections: list[dict] = []
         self._frozen_frame = None
         self._frozen_detections: list[dict] | None = None
+        self._shutdown_after_pick_requested = False
 
         # ── Hand-Eye ──
         self.gripper2cam, calib_file = perc.load_hand_eye()
@@ -401,11 +402,15 @@ class BaseMoveItPickNode(Node):
             try:
                 success = bool(self.detect_and_pick(frame))
             finally:
-                self._frozen_frame = None
-                self._frozen_detections = None
-            if success and self._exit_after_pick:
-                self.get_logger().info("exit_after_pick=true and pick completed; closing cup_uprighting node")
-                rclpy.shutdown()
+                if success and self._exit_after_pick:
+                    self._shutdown_after_pick_requested = True
+                    self._auto_mode = False
+                    self._auto_pick_candidate_since = 0.0
+                    self.get_logger().info("exit_after_pick=true and pick completed; closing cup_uprighting node")
+                    rclpy.shutdown()
+                else:
+                    self._frozen_frame = None
+                    self._frozen_detections = None
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -492,6 +497,10 @@ class BaseMoveItPickNode(Node):
                 continue
 
             # ── Live 분기 ──
+            if self._shutdown_after_pick_requested:
+                time.sleep(0.01)
+                continue
+
             if self.color_image is None:
                 time.sleep(0.01)
                 continue
