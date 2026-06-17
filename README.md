@@ -76,6 +76,10 @@ LLM 또는 음성 인식은 사용자 의도와 레시피 선택까지만 담당
 
 각 stage는 resume state와 로그를 남깁니다. 실패 시 어느 단계에서 멈췄는지 확인할 수 있도록 `/tmp/azas_ros_logs`, `/tmp/azas_router_logs`, `outputs/` 아래에 실행 산출물이 저장됩니다.
 
+<p align="center">
+<img width="2048" height="519" alt="Image" src="https://github.com/user-attachments/assets/6dcbee5a-5c50-43ac-bf6c-70bf0d444814" />
+</p>
+
 ---
 
 ## 핵심 파이프라인
