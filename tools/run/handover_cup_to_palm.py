@@ -54,6 +54,17 @@ def prefixed_service(prefix: str, suffix: str) -> str:
     return f"/{clean}/{suffix}" if clean else f"/{suffix}"
 
 
+def clamp(value: float, lower: float, upper: float) -> float:
+    return min(max(value, lower), upper)
+
+
+def parse_ikin_sol_spaces(value: str) -> list[int]:
+    values = [int(part.strip()) for part in str(value).split(",") if part.strip()]
+    if not values:
+        raise ValueError("--ikin-sol-spaces did not contain any solution spaces")
+    return values
+
+
 def resolve_service_prefix(node, srv_type, requested_prefix: str, wait_sec: float, *, allow_fallback: bool) -> str:
     requested = requested_prefix.strip("/")
     if requested or not allow_fallback:
@@ -72,7 +83,7 @@ class HandoverPerception:
     def __init__(self, args: argparse.Namespace) -> None:
         import rclpy
         import tf2_ros
-        from dsr_msgs2.srv import GetCurrentPosx, GetToolForce
+        from dsr_msgs2.srv import GetCurrentPosx, GetToolForce, Ikin
         from geometry_msgs.msg import PointStamped
         from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
@@ -97,6 +108,7 @@ class HandoverPerception:
         self.get_tool_force = self.node.create_client(
             GetToolForce, prefixed_service(prefix, "aux_control/get_tool_force")
         )
+        self.ikin = self.node.create_client(Ikin, prefixed_service(prefix, "motion/ikin"))
         self.hand_points: list[tuple[float, list[float]]] = []
         hand_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -160,6 +172,60 @@ class HandoverPerception:
             if index + 1 < count:
                 time.sleep(max(interval_sec, 0.0))
         return [value / count for value in total]
+
+    def ikin_pose_ok(
+        self,
+        xyz_m: list[float],
+        rpy_deg: list[float],
+        *,
+        args: argparse.Namespace,
+        label: str,
+    ) -> tuple[bool, str]:
+        from dsr_msgs2.srv import Ikin
+
+        timeout_sec = max(float(args.ikin_timeout_sec), 0.1)
+        if not self.ikin.wait_for_service(timeout_sec=timeout_sec):
+            return False, f"{label}: Ikin service unavailable"
+        try:
+            sol_spaces = parse_ikin_sol_spaces(args.ikin_sol_spaces)
+        except ValueError as exc:
+            return False, str(exc)
+
+        pos_mm_deg = [
+            xyz_m[0] * 1000.0,
+            xyz_m[1] * 1000.0,
+            xyz_m[2] * 1000.0,
+            rpy_deg[0],
+            rpy_deg[1],
+            rpy_deg[2],
+        ]
+        last_failure = ""
+        for sol_space in sol_spaces:
+            req = Ikin.Request()
+            req.pos = pos_mm_deg
+            req.sol_space = int(sol_space)
+            req.ref = 0  # DR_BASE
+            future = self.ikin.call_async(req)
+            self.rclpy.spin_until_future_complete(self.node, future, timeout_sec=timeout_sec)
+            if not future.done():
+                last_failure = f"sol_space={sol_space} timeout after {timeout_sec:.1f}s"
+                continue
+            if future.exception() is not None:
+                last_failure = f"sol_space={sol_space} exception: {future.exception()}"
+                continue
+            response = future.result()
+            if response is None or not bool(response.success):
+                last_failure = f"sol_space={sol_space} success=false"
+                continue
+            joints = [float(value) for value in list(response.conv_posj)]
+            if len(joints) >= 5 and not float(args.j5_min_deg) <= joints[4] <= float(args.j5_max_deg):
+                last_failure = (
+                    f"sol_space={sol_space} joint_5={joints[4]:.1f} outside "
+                    f"[{float(args.j5_min_deg):.1f}, {float(args.j5_max_deg):.1f}]"
+                )
+                continue
+            return True, f"sol_space={sol_space}"
+        return False, last_failure or "no IK solution"
 
     def base_to_camera(self) -> np.ndarray:
         import rclpy.time
@@ -390,6 +456,112 @@ def require_typed_approval(phrase: str, *, prompt: str, preapproved: str = "") -
         raise RuntimeError(f"operator approval mismatch; expected {phrase}")
 
 
+def bound_handover_xy(x: float, y: float, args: argparse.Namespace) -> list[float]:
+    x = clamp(x, args.handover_target_x_min_m, args.handover_target_x_max_m)
+    y = clamp(y, args.handover_target_y_min_m, args.handover_target_y_max_m)
+    radius = math.hypot(x, y)
+    min_radius = max(float(args.handover_target_xy_radius_min_m), 0.0)
+    max_radius = max(float(args.handover_target_xy_radius_max_m), min_radius + 1e-6)
+    if radius > max_radius:
+        scale = max_radius / radius
+        x *= scale
+        y *= scale
+    elif 1e-6 < radius < min_radius:
+        scale = min_radius / radius
+        x *= scale
+        y *= scale
+    return [
+        clamp(x, args.handover_target_x_min_m, args.handover_target_x_max_m),
+        clamp(y, args.handover_target_y_min_m, args.handover_target_y_max_m),
+    ]
+
+
+def handover_descent_z_limits(palm_z: float, args: argparse.Namespace) -> tuple[float, float]:
+    start_z = palm_z + max(float(args.force_search_start_above_palm_m), 0.0)
+    if args.release_on_contact:
+        floor_z = max(float(args.z_min), palm_z - max(float(args.force_search_below_palm_m), 0.0))
+    else:
+        floor_z = palm_z + float(args.release_tcp_above_palm_m)
+    return start_z, floor_z
+
+
+def ik_probe_poses_for_handover_target(
+    xy: list[float],
+    palm_z: float,
+    args: argparse.Namespace,
+) -> list[list[float]]:
+    start_z, floor_z = handover_descent_z_limits(palm_z, args)
+    z_values = [start_z, floor_z]
+    if abs(start_z - floor_z) > 0.04:
+        z_values.insert(1, (start_z + floor_z) * 0.5)
+    return [[xy[0], xy[1], clamp(z, args.z_min, args.z_max)] for z in z_values]
+
+
+def select_ik_reachable_handover_target(
+    perception: HandoverPerception,
+    palm: list[float],
+    current_m: list[float],
+    rpy_deg: list[float],
+    args: argparse.Namespace,
+) -> list[float]:
+    nearest_xy = bound_handover_xy(palm[0], palm[1], args)
+    current_xy = bound_handover_xy(current_m[0], current_m[1], args)
+    max_adjust = max(float(args.max_handover_target_adjust_m), 0.0)
+    last_failure = ""
+    seen: set[tuple[float, float]] = set()
+
+    # Start at the closest bounded point to the detected palm. If that is still
+    # outside the robot's IK envelope, pull the target toward the current robot
+    # side-grip pose in small increments and use the first fully IK-valid point.
+    for blend in (0.0, 0.10, 0.20, 0.35, 0.50, 0.65, 0.80, 1.0):
+        xy = [
+            nearest_xy[0] + (current_xy[0] - nearest_xy[0]) * blend,
+            nearest_xy[1] + (current_xy[1] - nearest_xy[1]) * blend,
+        ]
+        xy = bound_handover_xy(xy[0], xy[1], args)
+        key = (round(xy[0], 4), round(xy[1], 4))
+        if key in seen:
+            continue
+        seen.add(key)
+        adjust_m = math.dist([palm[0], palm[1]], xy)
+        if max_adjust > 0.0 and adjust_m > max_adjust:
+            last_failure = (
+                f"candidate x={xy[0]:.3f} y={xy[1]:.3f} is "
+                f"{adjust_m * 1000.0:.0f}mm from detected palm, above "
+                f"max_handover_target_adjust={max_adjust * 1000.0:.0f}mm"
+            )
+            continue
+
+        probe_poses = ik_probe_poses_for_handover_target(xy, palm[2], args)
+        failures = []
+        for index, pose in enumerate(probe_poses, start=1):
+            ok, detail = perception.ikin_pose_ok(pose, rpy_deg, args=args, label=f"handover_target_probe_{index}")
+            if not ok:
+                failures.append(f"z={pose[2]:.3f}: {detail}")
+        if not failures:
+            if adjust_m > 0.001:
+                print(
+                    "[Azas] handover target adjusted toward IK-valid workspace: "
+                    f"palm_xy=[{palm[0]:.3f}, {palm[1]:.3f}] "
+                    f"target_xy=[{xy[0]:.3f}, {xy[1]:.3f}] "
+                    f"offset={adjust_m * 1000.0:.0f}mm"
+                )
+            else:
+                print("[Azas] detected palm XY is inside the IK-checked handover target envelope")
+            return [xy[0], xy[1], palm[2]]
+        last_failure = "; ".join(failures)
+        print(
+            "[Azas] IK rejected handover target candidate: "
+            f"x={xy[0]:.3f} y={xy[1]:.3f} offset={adjust_m * 1000.0:.0f}mm; "
+            f"{last_failure}"
+        )
+
+    raise RuntimeError(
+        "No IK-valid handover target found near the detected palm. "
+        f"Last failure: {last_failure}. Move the palm closer to the robot's front-center handover area."
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--service-prefix", default=os.environ.get("SERVICE_PREFIX", ""))
@@ -417,38 +589,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-search-below-palm-m", type=float, default=0.10,
                         help="with --release-on-contact, search down to this far below the detected palm before aborting")
     parser.add_argument("--descent-step-m", type=float, default=0.03)
+    parser.add_argument("--first-descent-step-m", type=float, default=0.08,
+                        help="first Z descent step before force/contact checks; subsequent steps use --descent-step-m")
     parser.add_argument("--max-descent-steps", type=int, default=0,
                         help="maximum staged descent steps; 0 means use the Z floor only")
-    parser.add_argument("--force-abort-delta-n", type=float, default=2.0,
+    parser.add_argument("--force-abort-delta-n", type=float, default=0.6,
                         help="abort descent when |tool force| rises this much over the pre-descent baseline")
-    parser.add_argument("--force-axis-delta-n", type=float, default=1.0,
+    parser.add_argument("--force-axis-delta-n", type=float, default=0.5,
                         help="trigger contact when the monitored force axis changes by this much")
-    parser.add_argument("--contact-axis", choices=("z", "xy", "all"), default="z",
-                        help="force axes used for contact release; z is safest for vertical handover")
-    parser.add_argument("--contact-z-direction", choices=("positive", "negative", "any"), default="positive",
+    parser.add_argument("--contact-axis", choices=("z", "xy", "all"), default="all",
+                        help="force axes used for contact release; all is most sensitive for handover release")
+    parser.add_argument("--contact-z-direction", choices=("positive", "negative", "any"), default="any",
                         help="when --contact-axis z, require this signed Z force delta for contact")
-    parser.add_argument("--contact-step-delta-n", type=float, default=2.0,
+    parser.add_argument("--contact-step-delta-n", type=float, default=0.3,
                         help="contact candidate also requires this force jump from the previous descent step")
-    parser.add_argument("--require-force-magnitude-delta", action=argparse.BooleanOptionalAction, default=True,
+    parser.add_argument("--require-force-magnitude-delta", action=argparse.BooleanOptionalAction, default=False,
                         help="also require total force magnitude to rise before contact release")
-    parser.add_argument("--force-magnitude-delta-n", type=float, default=1.5,
+    parser.add_argument("--force-magnitude-delta-n", type=float, default=0.6,
                         help="minimum total force magnitude rise required with --require-force-magnitude-delta")
     parser.add_argument("--force-baseline-samples", type=int, default=5,
                         help="average this many GetToolForce samples before descent")
     parser.add_argument("--force-baseline-interval-sec", type=float, default=0.05,
                         help="delay between baseline force samples")
-    parser.add_argument("--force-read-settle-sec", type=float, default=0.15,
+    parser.add_argument("--force-read-settle-sec", type=float, default=0.05,
                         help="wait after each descent step before reading force")
     parser.add_argument("--release-on-contact", action="store_true",
                         help="during staged descent, treat a force rise as palm contact: stop, open RG2, then retreat")
     parser.add_argument("--require-contact-for-release", action=argparse.BooleanOptionalAction, default=True,
                         help="with --release-on-contact, only open RG2 after contact is detected")
-    parser.add_argument("--contact-confirm-samples", type=int, default=5,
+    parser.add_argument("--contact-confirm-samples", type=int, default=2,
                         help="consecutive above-threshold force samples required before opening RG2")
-    parser.add_argument("--contact-confirm-min-hits", type=int, default=0,
+    parser.add_argument("--contact-confirm-min-hits", type=int, default=1,
                         help="minimum hit samples needed within --contact-confirm-samples; "
                              "0 means all samples, preserving the strict default")
-    parser.add_argument("--contact-confirm-interval-sec", type=float, default=0.12,
+    parser.add_argument("--contact-confirm-interval-sec", type=float, default=0.05,
                         help="delay between force confirmation samples")
     parser.add_argument("--contact-relief-lift-m", type=float, default=0.0,
                         help="deprecated/ignored: contact release now opens RG2 at the confirmed contact pose")
@@ -468,6 +642,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--z-max", type=float, default=0.75)
     parser.add_argument("--palm-z-max-m", type=float, default=0.50,
                         help="reject palms higher than this (likely a mis-detection)")
+    parser.add_argument("--handover-target-x-min-m", type=float, default=0.18,
+                        help="minimum IK-biased TCP target x for handover; detected palm is not rewritten")
+    parser.add_argument("--handover-target-x-max-m", type=float, default=0.65,
+                        help="maximum IK-biased TCP target x for handover")
+    parser.add_argument("--handover-target-y-min-m", type=float, default=-0.55,
+                        help="minimum IK-biased TCP target y for handover")
+    parser.add_argument("--handover-target-y-max-m", type=float, default=0.55,
+                        help="maximum IK-biased TCP target y for handover")
+    parser.add_argument("--handover-target-xy-radius-min-m", type=float, default=0.25,
+                        help="minimum base XY radius for the IK-biased handover target")
+    parser.add_argument("--handover-target-xy-radius-max-m", type=float, default=0.62,
+                        help="maximum base XY radius for the IK-biased handover target")
+    parser.add_argument("--max-handover-target-adjust-m", type=float, default=0.20,
+                        help="fail closed if the IK-valid handover target would be farther from the detected palm")
     parser.add_argument("--move-timeout-sec", type=float, default=60.0)
     parser.add_argument("--verify-timeout-sec", type=float, default=90.0)
     parser.add_argument("--target-tolerance-mm", type=float, default=25.0)
@@ -527,25 +715,45 @@ def main() -> int:
                 and args.z_min <= palm[2] <= min(args.z_max, args.palm_z_max_m)):
             print(f"[BLOCKED] palm outside handover workspace bounds; refusing: palm={palm}")
             return 1
+        preserved_rpy = current[3:6]
+        handover_target = select_ik_reachable_handover_target(
+            perception,
+            palm,
+            current_m,
+            preserved_rpy,
+            args,
+        )
 
         lift = [current_m[0], current_m[1], max(current_m[2], args.transit_z_m)]
-        contact_start_z = palm[2] + max(args.force_search_start_above_palm_m, 0.0)
-        descent_start_z = contact_start_z if args.release_on_contact else palm[2] + args.above_palm_m
+        contact_start_z = handover_target[2] + max(args.force_search_start_above_palm_m, 0.0)
+        descent_start_z = (
+            contact_start_z
+            if args.release_on_contact
+            else handover_target[2] + args.above_palm_m
+        )
         if args.diagonal_approach:
             approach_z = max(args.z_min, min(args.z_max, descent_start_z))
             approach_label = "APPROACH"
         else:
             approach_z = max(args.transit_z_m, descent_start_z)
             approach_label = "ABOVE_HIGH"
-        approach = [palm[0], palm[1], approach_z]
+        approach = [handover_target[0], handover_target[1], approach_z]
         above_palm = [
-            palm[0],
-            palm[1],
+            handover_target[0],
+            handover_target[1],
             descent_start_z,
         ]
-        release = [palm[0], palm[1], palm[2] + args.release_tcp_above_palm_m]
-        contact_floor_z = max(args.z_min, palm[2] - max(args.force_search_below_palm_m, 0.0))
-        retreat = [palm[0], palm[1], palm[2] + args.retreat_lift_m]
+        release = [
+            handover_target[0],
+            handover_target[1],
+            handover_target[2] + args.release_tcp_above_palm_m,
+        ]
+        contact_floor_z = max(args.z_min, handover_target[2] - max(args.force_search_below_palm_m, 0.0))
+        retreat = [
+            handover_target[0],
+            handover_target[1],
+            handover_target[2] + args.retreat_lift_m,
+        ]
         plan_items = [("LIFT", lift), (approach_label, approach), ("ABOVE_PALM", above_palm)]
         if not args.release_on_contact:
             plan_items.append(("RELEASE", release))
@@ -563,7 +771,8 @@ def main() -> int:
             "[PLAN] descent ABOVE_PALM -> "
             f"{'CONTACT_SEARCH_FLOOR' if args.release_on_contact else 'RELEASE'} in "
             f"{math.ceil((above_palm[2] - (contact_floor_z if args.release_on_contact else release[2])) / max(args.descent_step_m, 0.005))} steps of "
-            f"{args.descent_step_m * 1000.0:.0f}mm with force abort delta {args.force_abort_delta_n:.1f}N"
+            f"{args.first_descent_step_m * 1000.0:.0f}mm first / "
+            f"{args.descent_step_m * 1000.0:.0f}mm subsequent with force abort delta {args.force_abort_delta_n:.1f}N"
         )
         if args.max_descent_steps > 0:
             no_contact_action = "retreat with cup" if args.require_contact_for_release else "open at final descent pose"
@@ -585,7 +794,6 @@ def main() -> int:
             ),
             preapproved=args.approve_motion,
         )
-        preserved_rpy = current[3:6]
         run_movel(args, lift, label="LIFT to transit height (Z-only)",
                   velocity=args.transit_velocity, acceleration=args.transit_acceleration,
                   rpy_deg=preserved_rpy)
@@ -644,8 +852,9 @@ def main() -> int:
                 print(f"[Azas] max descent steps reached ({args.max_descent_steps}) without confirmed contact")
                 break
             descent_step_index += 1
-            z = max(z - max(args.descent_step_m, 0.005), descent_floor_z)
-            run_movel(args, [palm[0], palm[1], z], label=f"descent step to z={z:.3f}m",
+            descent_step_m = args.first_descent_step_m if descent_step_index == 1 else args.descent_step_m
+            z = max(z - max(descent_step_m, 0.005), descent_floor_z)
+            run_movel(args, [handover_target[0], handover_target[1], z], label=f"descent step to z={z:.3f}m",
                       velocity=args.descent_velocity, acceleration=args.descent_acceleration,
                       rpy_deg=preserved_rpy)
             if not args.skip_force_monitor:

@@ -58,7 +58,7 @@ ros2 launch azas_bringup auto_cup_flow_router.launch.py \
   classifier_arch:=resnet18 \
   route_hold_sec:=2.0 \
   route_stable_required_samples:=5 \
-  route_stable_min_sec:=0.8 \
+  route_stable_min_sec:=3.0 \
   recipe_colors:="${RECIPE_COLORS}" \
   resume_mode:="${AUTO_FLOW_RESUME_MODE}" \
   resume_state_file:="${AUTO_FLOW_RESUME_STATE_FILE}" \

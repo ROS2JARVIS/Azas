@@ -42,6 +42,15 @@ HOME_JOINTS = {
     "joint_6": math.radians(90.0),
 }
 
+ROBOT_HOME_JOINTS = {
+    "joint_1": math.radians(0.0),
+    "joint_2": math.radians(0.0),
+    "joint_3": math.radians(90.0),
+    "joint_4": math.radians(0.0),
+    "joint_5": math.radians(90.0),
+    "joint_6": math.radians(90.0),
+}
+
 
 # ── Pick 파라미터 (m) ────────────────────────────────
 Z_OFFSET = 0.20    # gripper tip ↔ link_6 (depth 측정 base z + 이 값 = pick_z)

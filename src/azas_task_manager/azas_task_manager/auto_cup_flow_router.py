@@ -74,7 +74,7 @@ class AutoCupFlowRouter(Node):
         self.declare_parameter("classifier_min_confidence", 0.70)
         self.declare_parameter("route_timeout_sec", 30.0)
         self.declare_parameter("route_stable_required_samples", 5)
-        self.declare_parameter("route_stable_min_sec", 0.8)
+        self.declare_parameter("route_stable_min_sec", 2.0)
         self.declare_parameter("route_hold_sec", 3.5)
         self.declare_parameter("show_classification_window", True)
         self.declare_parameter("window_name", "Azas cup route classifier")
@@ -916,24 +916,25 @@ class AutoCupFlowRouter(Node):
             "--hand-sample-spread-max-m 0.05 "
             "--skip-hand-recheck "
             "--release-on-contact "
-            "--no-require-contact-for-release "
+            "--require-contact-for-release "
             "--force-search-start-above-palm-m 0.16 "
             "--force-search-below-palm-m 0.10 "
             "--max-descent-steps 10 "
-            "--contact-axis z "
-            "--contact-z-direction positive "
+            "--contact-axis all "
+            "--contact-z-direction any "
             "--force-baseline-samples 5 "
             "--force-baseline-interval-sec 0.05 "
-            "--force-read-settle-sec 0.08 "
-            "--force-abort-delta-n 3.5 "
-            "--force-axis-delta-n 3.5 "
-            "--contact-step-delta-n 2.5 "
-            "--require-force-magnitude-delta "
-            "--force-magnitude-delta-n 2.0 "
-            "--contact-confirm-samples 3 "
-            "--contact-confirm-min-hits 3 "
-            "--contact-confirm-interval-sec 0.08 "
+            "--force-read-settle-sec 0.05 "
+            "--force-abort-delta-n 0.6 "
+            "--force-axis-delta-n 0.5 "
+            "--contact-step-delta-n 0.3 "
+            "--no-require-force-magnitude-delta "
+            "--force-magnitude-delta-n 0.6 "
+            "--contact-confirm-samples 2 "
+            "--contact-confirm-min-hits 1 "
+            "--contact-confirm-interval-sec 0.05 "
             "--descent-step-m 0.030 "
+            "--first-descent-step-m 0.080 "
             "--transit-velocity 55 "
             "--transit-acceleration 75 "
             "--descent-velocity 22 "
